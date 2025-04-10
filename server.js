@@ -5,11 +5,25 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// Garbage collection helper - Force garbage collection when possible
+// Garbage collection helper
 function forceGC() {
   if (global.gc) {
     global.gc();
     console.log('Forced garbage collection');
+  }
+}
+
+// Clear files in a directory
+function clearDirectory(directory) {
+  if (fs.existsSync(directory)) {
+    const files = fs.readdirSync(directory);
+    for (const file of files) {
+      try {
+        fs.unlinkSync(path.join(directory, file));
+      } catch (err) {
+        console.error(`Failed to delete ${file}: ${err.message}`);
+      }
+    }
   }
 }
 
@@ -22,16 +36,8 @@ const tempDir = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir);
 } else {
-  // Clean any leftover files in temp directory
-  const files = fs.readdirSync(tempDir);
-  for (const file of files) {
-    fs.unlinkSync(path.join(tempDir, file));
-  }
+  clearDirectory(tempDir);
 }
-
-client.once('ready', () => {
-  console.log('Bot is ready!');
-});
 
 // Implement a queue system to avoid processing multiple requests at once
 const queue = [];
@@ -50,9 +56,13 @@ async function processQueue() {
     console.error('Error processing queue task:', error);
   }
   
+  // Clean up and reset
+  clearDirectory(tempDir);
   isProcessing = false;
-  forceGC(); // Try to free memory
-  processQueue(); // Process next item
+  forceGC();
+  
+  // Delay the next task to let memory settle
+  setTimeout(processQueue, 2000);
 }
 
 // Handler for !oot command
@@ -63,57 +73,48 @@ async function handleOotCommand(message, channelUrl) {
     // Send initial processing message
     processingMsg = await message.channel.send('Processing your request, this might take a while...');
     
-    // Get videos from the channel (reduced to 3 for memory concerns)
-    const videos = await sampleYouTubeChannel(channelUrl, 3);
+    // Reduce to only 2 videos to save memory
+    const videos = await sampleYouTubeChannel(channelUrl, 2);
     
-    if (videos.length < 3) {
+    if (videos.length < 2) {
       await processingMsg.edit('Could not find enough videos on that channel.');
       return;
     }
     
     await processingMsg.edit('Found videos, now creating compilation...');
-    forceGC(); // Try to free memory
+    forceGC();
     
-    // Create compilation video with reduced quality
+    // Create compilation video
     const outputPath = await createVideoCompilation(videos, tempDir);
-    forceGC(); // Try to free memory
+    forceGC();
     
     // Check if file exists and is not empty
-    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0) {
-      await processingMsg.edit('Failed to create video compilation.');
-      return;
-    }
-    
-    const fileSize = fs.statSync(outputPath).size;
-    console.log(`Compilation created: ${fileSize} bytes`);
-    
-    if (fileSize < 1024) {
-      await processingMsg.edit('Created compilation is too small to be valid.');
-      fs.unlinkSync(outputPath);
-      return;
-    }
-    
-    if (fileSize > 7900000) { // Discord's file limit is ~8MB
-      await processingMsg.edit('Compilation is too large to upload to Discord. Try a channel with shorter videos.');
-      fs.unlinkSync(outputPath);
+    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 100) {
+      await processingMsg.edit('Failed to create video compilation. The server might be under high load.');
       return;
     }
     
     await processingMsg.edit('Compilation created, uploading now...');
     
-    // Send the video
-    const attachment = new AttachmentBuilder(outputPath, { name: 'compilation.mp4' });
-    await message.channel.send({ 
-      content: 'Here is your video compilation from ' + channelUrl, 
-      files: [attachment] 
-    });
-    
-    // Clean up
-    fs.unlinkSync(outputPath);
-    
-    // Delete processing message
-    await processingMsg.delete().catch(console.error);
-    
+    try {
+      // Send the video
+      const attachment = new AttachmentBuilder(outputPath, { name: 'compilation.mp4' });
+      await message.channel.send({ 
+        content: `Here's a video compilation representing ${channelUrl}`, 
+        files: [attachment] 
+      });
+      
+      // Delete processing message only after successful upload
+      await processingMsg.delete().catch(console.error);
+    } catch (uploadError) {
+      console.error('Upload error:', uploadError);
+      await processingMsg.edit(`Error uploading video: ${uploadError.message}`);
+    } finally {
+      // Always clean up the file
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
+      }
+    }
   } catch (error) {
     console.error('Error processing !oot command:', error);
     
@@ -122,8 +123,22 @@ async function handleOotCommand(message, channelUrl) {
     } else {
       await message.channel.send(`Error creating compilation: ${error.message}`);
     }
+    
+    // Clean up temporary directory on error
+    clearDirectory(tempDir);
   }
 }
+
+client.once('ready', () => {
+  console.log('Bot is ready!');
+  
+  // Every hour, force garbage collection and clear temp directory
+  setInterval(() => {
+    console.log('Performing scheduled cleanup...');
+    clearDirectory(tempDir);
+    forceGC();
+  }, 60 * 60 * 1000);
+});
 
 client.on('messageCreate', async (message) => {
   if (message.content === '!hello') {
@@ -145,13 +160,26 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// Handle process events
+// Error handling for the process
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled rejection at:', promise, 'reason:', reason);
+});
+
+// Handle termination signals
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, cleaning up...');
+  clearDirectory(tempDir);
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, cleaning up...');
+  clearDirectory(tempDir);
+  process.exit(0);
 });
 
 client.login(process.env.DISCORD_BOT_TOKEN);

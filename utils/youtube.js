@@ -26,11 +26,13 @@ function extractChannelIdentifier(channelUrl) {
 /**
  * Sample random videos from a YouTube channel
  */
-async function sampleYouTubeChannel(channelUrl, count = 5) {
+async function sampleYouTubeChannel(channelUrl, count = 2) {
   try {
     const channelIdentifier = extractChannelIdentifier(channelUrl);
     
-    // Search for the channel first
+    console.log(`Searching for channel: ${channelIdentifier}`);
+    
+    // Search for the channel first with reduced limit
     const searchResults = await YouTube.search(channelIdentifier, {
       type: 'channel',
       limit: 1
@@ -43,9 +45,9 @@ async function sampleYouTubeChannel(channelUrl, count = 5) {
     const channelInfo = searchResults[0];
     console.log(`Found channel: ${channelInfo.name}`);
     
-    // Get videos from channel
+    // Get videos from channel with reduced limit
     let videos = await YouTube.search(`${channelInfo.name}`, {
-      limit: 100,
+      limit: 25, // Reduced from 100 to use less memory
       type: 'video',
       channelID: channelInfo.id
     });
@@ -63,12 +65,21 @@ async function sampleYouTubeChannel(channelUrl, count = 5) {
     for (let i = 0; i < count; i++) {
       const randomIndex = Math.floor(Math.random() * videosCopy.length);
       const selectedVideo = videosCopy.splice(randomIndex, 1)[0];
+      
+      // Only keep the essential information
       sampledVideos.push({
         id: selectedVideo.id,
         title: selectedVideo.title,
         url: `https://www.youtube.com/watch?v=${selectedVideo.id}`,
-        duration: selectedVideo.duration || 60 // fallback duration if not provided
       });
+    }
+    
+    // Free up memory
+    videos = null;
+    videosCopy.length = 0;
+    
+    if (global.gc) {
+      global.gc();
     }
     
     return sampledVideos;
