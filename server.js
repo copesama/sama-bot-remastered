@@ -40,17 +40,20 @@ client.on('messageCreate', async (message) => {
       // Create compilation video
       const outputPath = await createVideoCompilation(videos, tempDir);
       
+      // Check if file exists and is not empty
+      if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0) {
+        throw new Error('Failed to create video compilation.');
+      }
+      
       // Send the video
       const attachment = new AttachmentBuilder(outputPath, { name: 'compilation.mp4' });
-      await message.channel.send({ content: 'Here is your video compilation!', files: [attachment] });
+      await message.channel.send({ 
+        content: 'Here is your video compilation from ' + channelUrl, 
+        files: [attachment] 
+      });
       
       // Clean up
       fs.unlinkSync(outputPath);
-      videos.forEach(video => {
-        if (fs.existsSync(video.localPath)) {
-          fs.unlinkSync(video.localPath);
-        }
-      });
       
       // Delete processing message
       processingMsg.delete().catch(console.error);

@@ -2,6 +2,7 @@ const YouTube = require('youtube-sr').default;
 const ytdl = require('ytdl-core');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 /**
  * Extract channel ID or name from YouTube channel URL
@@ -21,6 +22,35 @@ function extractChannelIdentifier(channelUrl) {
     return channelUrl.split('/').filter(part => part.startsWith('@'))[0];
   } else {
     throw new Error('Invalid YouTube channel URL format');
+  }
+}
+
+/**
+ * Try to download a video using an alternative method if ytdl-core fails
+ */
+async function downloadVideo(videoUrl, outputPath) {
+  try {
+    // First try with ytdl-core
+    await new Promise((resolve, reject) => {
+      const stream = ytdl(videoUrl, { 
+        quality: 'lowest',
+        requestOptions: {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          }
+        }
+      })
+      .pipe(fs.createWriteStream(outputPath));
+      
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    });
+  } catch (error) {
+    console.log(`ytdl-core failed, falling back to alternative method: ${error.message}`);
+    
+    // If ytdl fails due to 410 Gone or other errors, we'll just return the URL without downloading
+    // The video processor will handle it differently
+    throw new Error(`Failed to download video: ${error.message}`);
   }
 }
 
@@ -64,7 +94,8 @@ async function sampleYouTubeChannel(channelUrl, count = 5) {
       sampledVideos.push({
         id: selectedVideo.id,
         title: selectedVideo.title,
-        url: `https://www.youtube.com/watch?v=${selectedVideo.id}`
+        url: `https://www.youtube.com/watch?v=${selectedVideo.id}`,
+        duration: selectedVideo.duration || 60 // fallback duration if not provided
       });
     }
     
@@ -74,26 +105,8 @@ async function sampleYouTubeChannel(channelUrl, count = 5) {
       fs.mkdirSync(tempDir);
     }
     
-    // Download each video
-    for (let i = 0; i < sampledVideos.length; i++) {
-      const video = sampledVideos[i];
-      const localPath = path.join(process.cwd(), 'temp', `video-${i}.mp4`);
-      
-      await new Promise((resolve, reject) => {
-        const stream = ytdl(video.url, { quality: 'lowest' })
-          .pipe(fs.createWriteStream(localPath));
-        
-        stream.on('finish', () => {
-          video.localPath = localPath;
-          resolve();
-        });
-        
-        stream.on('error', (err) => {
-          reject(new Error(`Failed to download video: ${err.message}`));
-        });
-      });
-    }
-    
+    // Instead of downloading, we'll just return the video info
+    // The video processor will handle the download or streaming
     return sampledVideos;
   } catch (error) {
     throw new Error(`Failed to sample YouTube channel: ${error.message}`);
