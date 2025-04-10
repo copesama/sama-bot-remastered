@@ -31,18 +31,23 @@ async function sampleYouTubeChannel(channelUrl, count = 5) {
   try {
     const channelIdentifier = extractChannelIdentifier(channelUrl);
     
-    // Get channel by ID or name
-    const channelInfo = await YouTube.getChannel(channelIdentifier);
+    // Search for the channel first
+    const searchResults = await YouTube.search(channelIdentifier, {
+      type: 'channel',
+      limit: 1
+    });
     
-    if (!channelInfo) {
+    if (!searchResults || searchResults.length === 0) {
       throw new Error('Channel not found');
     }
     
+    const channelInfo = searchResults[0];
+    
     // Get videos from channel
-    let videos = await YouTube.search(channelInfo.name, {
+    let videos = await YouTube.search(`${channelInfo.name}`, {
       limit: 100,
       type: 'video',
-      channelId: channelInfo.id
+      channelID: channelInfo.id
     });
     
     if (videos.length < count) {
@@ -61,6 +66,12 @@ async function sampleYouTubeChannel(channelUrl, count = 5) {
         title: selectedVideo.title,
         url: `https://www.youtube.com/watch?v=${selectedVideo.id}`
       });
+    }
+    
+    // Create temp directory if it doesn't exist
+    const tempDir = path.join(process.cwd(), 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir);
     }
     
     // Download each video
