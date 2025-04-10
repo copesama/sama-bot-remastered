@@ -39,78 +39,49 @@ if (!fs.existsSync(tempDir)) {
   clearDirectory(tempDir);
 }
 
-// Implement a queue system to avoid processing multiple requests at once
-const queue = [];
-let isProcessing = false;
-
-// Process the next item in the queue
-async function processQueue() {
-  if (isProcessing || queue.length === 0) return;
-  
-  isProcessing = true;
-  const task = queue.shift();
-  
-  try {
-    await task();
-  } catch (error) {
-    console.error('Error processing queue task:', error);
-  }
-  
-  // Clean up and reset
-  clearDirectory(tempDir);
-  isProcessing = false;
-  forceGC();
-  
-  // Delay the next task to let memory settle
-  setTimeout(processQueue, 2000);
-}
-
-// Handler for !oot command
+// Handler for !oot command - direct implementation without queue
 async function handleOotCommand(message, channelUrl) {
   let processingMsg = null;
   
   try {
     // Send initial processing message
-    processingMsg = await message.channel.send('Processing your request, this might take a while...');
+    processingMsg = await message.channel.send('Processing your request...');
     
-    // Reduce to only 2 videos to save memory
-    const videos = await sampleYouTubeChannel(channelUrl, 2);
+    // Get a single random video from the channel
+    const videos = await sampleYouTubeChannel(channelUrl);
     
-    if (videos.length < 2) {
-      await processingMsg.edit('Could not find enough videos on that channel.');
+    if (!videos || videos.length === 0) {
+      await processingMsg.edit('Could not find any videos on that channel.');
       return;
     }
     
-    await processingMsg.edit('Found videos, now creating compilation...');
+    await processingMsg.edit('Found video, creating clip...');
     forceGC();
     
-    // Create compilation video
+    // Create a simple video representation
     const outputPath = await createVideoCompilation(videos, tempDir);
-    forceGC();
     
-    // Check if file exists and is not empty
-    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 100) {
-      await processingMsg.edit('Failed to create video compilation. The server might be under high load.');
+    // Check if file exists
+    if (!fs.existsSync(outputPath)) {
+      await processingMsg.edit('Failed to create video. Please try again later.');
       return;
     }
-    
-    await processingMsg.edit('Compilation created, uploading now...');
     
     try {
       // Send the video
-      const attachment = new AttachmentBuilder(outputPath, { name: 'compilation.mp4' });
+      const attachment = new AttachmentBuilder(outputPath, { name: 'channel_preview.mp4' });
       await message.channel.send({ 
-        content: `Here's a video compilation representing ${channelUrl}`, 
+        content: `Here's a preview for ${channelUrl} featuring "${videos[0].title}"`, 
         files: [attachment] 
       });
       
-      // Delete processing message only after successful upload
+      // Delete processing message
       await processingMsg.delete().catch(console.error);
     } catch (uploadError) {
       console.error('Upload error:', uploadError);
-      await processingMsg.edit(`Error uploading video: ${uploadError.message}`);
+      await processingMsg.edit(`Error uploading video: File may be too large or invalid`);
     } finally {
-      // Always clean up the file
+      // Always clean up
       if (fs.existsSync(outputPath)) {
         fs.unlinkSync(outputPath);
       }
@@ -119,54 +90,59 @@ async function handleOotCommand(message, channelUrl) {
     console.error('Error processing !oot command:', error);
     
     if (processingMsg) {
-      await processingMsg.edit(`Error creating compilation: ${error.message}`);
+      await processingMsg.edit(`Error: ${error.message}`);
     } else {
-      await message.channel.send(`Error creating compilation: ${error.message}`);
+      await message.channel.send(`Error: ${error.message}`);
     }
     
     // Clean up temporary directory on error
     clearDirectory(tempDir);
   }
+  
+  forceGC();
 }
 
 client.once('ready', () => {
   console.log('Bot is ready!');
   
-  // Every hour, force garbage collection and clear temp directory
+  // Every 15 minutes, force cleanup to prevent memory leaks
   setInterval(() => {
     console.log('Performing scheduled cleanup...');
     clearDirectory(tempDir);
     forceGC();
-  }, 60 * 60 * 1000);
+  }, 15 * 60 * 1000); // 15 minutes
 });
 
 client.on('messageCreate', async (message) => {
   if (message.content === '!hello') {
     message.channel.send('Hello!');
+    return;
   }
   
   if (message.content.startsWith('!oot ')) {
     const channelUrl = message.content.substring(5).trim();
     
-    // Add to processing queue
-    queue.push(() => handleOotCommand(message, channelUrl));
-    
-    // Start processing if not already
-    if (!isProcessing) {
-      processQueue();
-    } else {
-      message.channel.send('Your request has been queued. Currently processing another request...');
+    // Process directly instead of using a queue
+    try {
+      await handleOotCommand(message, channelUrl);
+    } catch (error) {
+      console.error('Unhandled error in command:', error);
+      message.channel.send('An unexpected error occurred. Please try again later.');
     }
+    
+    // Force cleanup after processing
+    clearDirectory(tempDir);
+    forceGC();
   }
 });
 
-// Error handling for the process
+// Error handling
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  console.error('Unhandled rejection:', reason);
 });
 
 // Handle termination signals

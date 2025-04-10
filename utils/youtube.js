@@ -24,15 +24,15 @@ function extractChannelIdentifier(channelUrl) {
 }
 
 /**
- * Sample random videos from a YouTube channel
+ * Sample a single random video from a YouTube channel
  */
-async function sampleYouTubeChannel(channelUrl, count = 2) {
+async function sampleYouTubeChannel(channelUrl, count = 1) {
   try {
     const channelIdentifier = extractChannelIdentifier(channelUrl);
     
     console.log(`Searching for channel: ${channelIdentifier}`);
     
-    // Search for the channel first with reduced limit
+    // Search for the channel first
     const searchResults = await YouTube.search(channelIdentifier, {
       type: 'channel',
       limit: 1
@@ -45,44 +45,29 @@ async function sampleYouTubeChannel(channelUrl, count = 2) {
     const channelInfo = searchResults[0];
     console.log(`Found channel: ${channelInfo.name}`);
     
-    // Get videos from channel with reduced limit
+    // Get limited number of videos from channel
     let videos = await YouTube.search(`${channelInfo.name}`, {
-      limit: 25, // Reduced from 100 to use less memory
+      limit: 10, // Very small limit to conserve memory
       type: 'video',
       channelID: channelInfo.id
     });
     
     console.log(`Found ${videos.length} videos in channel`);
     
-    if (videos.length < count) {
-      throw new Error(`Channel only has ${videos.length} videos, needed ${count}`);
+    if (videos.length === 0) {
+      throw new Error('No videos found in channel');
     }
     
-    // Randomly sample videos
-    const sampledVideos = [];
-    const videosCopy = [...videos];
+    // Get a single random video
+    const randomIndex = Math.floor(Math.random() * videos.length);
+    const selectedVideo = videos[randomIndex];
     
-    for (let i = 0; i < count; i++) {
-      const randomIndex = Math.floor(Math.random() * videosCopy.length);
-      const selectedVideo = videosCopy.splice(randomIndex, 1)[0];
-      
-      // Only keep the essential information
-      sampledVideos.push({
-        id: selectedVideo.id,
-        title: selectedVideo.title,
-        url: `https://www.youtube.com/watch?v=${selectedVideo.id}`,
-      });
-    }
-    
-    // Free up memory
-    videos = null;
-    videosCopy.length = 0;
-    
-    if (global.gc) {
-      global.gc();
-    }
-    
-    return sampledVideos;
+    // Return as an array with one item
+    return [{
+      id: selectedVideo.id,
+      title: selectedVideo.title,
+      url: `https://www.youtube.com/watch?v=${selectedVideo.id}`,
+    }];
   } catch (error) {
     throw new Error(`Failed to sample YouTube channel: ${error.message}`);
   }
