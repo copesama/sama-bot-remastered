@@ -1,161 +1,167 @@
-const { Client, GatewayIntentBits, AttachmentBuilder } = require('discord.js');
-const { sampleYouTubeChannel } = require('./utils/youtube');
-const { createVideoCompilation } = require('./utils/videoProcessor');
-const fs = require('fs');
-const path = require('path');
 require('dotenv').config();
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const axios = require('axios');
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const shortid = require('shortid');
 
-// Garbage collection helper
-function forceGC() {
-  if (global.gc) {
-    global.gc();
-    console.log('Forced garbage collection');
-  }
-}
-
-// Clear files in a directory
-function clearDirectory(directory) {
-  if (fs.existsSync(directory)) {
-    const files = fs.readdirSync(directory);
-    for (const file of files) {
-      try {
-        fs.unlinkSync(path.join(directory, file));
-      } catch (err) {
-        console.error(`Failed to delete ${file}: ${err.message}`);
-      }
-    }
-  }
-}
-
+// Initialize Discord client
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMessages]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ]
 });
 
-// Create temp directory if it doesn't exist
-const tempDir = path.join(__dirname, 'temp');
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir);
-} else {
-  clearDirectory(tempDir);
+// Initialize Express app for serving games
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Create games directory if it doesn't exist
+const GAMES_DIR = path.join(__dirname, 'games');
+if (!fs.existsSync(GAMES_DIR)) {
+  fs.mkdirSync(GAMES_DIR);
 }
 
-// Handler for !oot command - direct implementation without queue
-async function handleOotCommand(message, channelUrl) {
-  let processingMsg = null;
+// Serve static game files
+app.use('/games', express.static(GAMES_DIR));
+
+// Game generation endpoint
+app.get('/game/:gameId', (req, res) => {
+  const gameId = req.params.gameId;
+  const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
   
+  if (fs.existsSync(gamePath)) {
+    res.sendFile(gamePath);
+  } else {
+    res.status(404).send('Game not found');
+  }
+});
+
+// Generate game using OpenRouter API
+async function generateGame(prompt) {
   try {
-    // Send initial processing message
-    processingMsg = await message.channel.send('Processing your request...');
-    
-    // Get a single random video from the channel
-    const videos = await sampleYouTubeChannel(channelUrl);
-    
-    if (!videos || videos.length === 0) {
-      await processingMsg.edit('Could not find any videos on that channel.');
-      return;
-    }
-    
-    await processingMsg.edit('Found video, creating clip...');
-    forceGC();
-    
-    // Create a simple video representation
-    const outputPath = await createVideoCompilation(videos, tempDir);
-    
-    // Check if file exists
-    if (!fs.existsSync(outputPath)) {
-      await processingMsg.edit('Failed to create video. Please try again later.');
-      return;
-    }
-    
-    try {
-      // Send the video
-      const attachment = new AttachmentBuilder(outputPath, { name: 'channel_preview.mp4' });
-      await message.channel.send({ 
-        content: `Here's a preview for ${channelUrl} featuring "${videos[0].title}"`, 
-        files: [attachment] 
-      });
-      
-      // Delete processing message
-      await processingMsg.delete().catch(console.error);
-    } catch (uploadError) {
-      console.error('Upload error:', uploadError);
-      await processingMsg.edit(`Error uploading video: File may be too large or invalid`);
-    } finally {
-      // Always clean up
-      if (fs.existsSync(outputPath)) {
-        fs.unlinkSync(outputPath);
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'meta-llama/llama-4-maverick:free',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert game developer. Create a complete, playable HTML game based on the user prompt. The game should be entirely self-contained in a single HTML file with embedded JavaScript and CSS. Make sure the game is fun, interactive, and follows best practices.'
+          },
+          {
+            role: 'user',
+            content: `Create a browser game based on this prompt: ${prompt}. The game should be fully playable and complete, contained in a single HTML file.`
+          }
+        ],
+        temperature: 0.7
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
       }
-    }
+    );
+
+    // Extract HTML game code from response
+    const gameCode = response.data.choices[0].message.content;
+    const htmlGame = extractHtmlFromResponse(gameCode);
+    
+    // Generate unique ID for the game
+    const gameId = shortid.generate();
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+    
+    // Save the game HTML to file
+    fs.writeFileSync(gamePath, htmlGame);
+    
+    return gameId;
   } catch (error) {
-    console.error('Error processing !oot command:', error);
-    
-    if (processingMsg) {
-      await processingMsg.edit(`Error: ${error.message}`);
-    } else {
-      await message.channel.send(`Error: ${error.message}`);
-    }
-    
-    // Clean up temporary directory on error
-    clearDirectory(tempDir);
+    console.error('Error generating game:', error);
+    throw error;
+  }
+}
+
+// Helper function to extract HTML from API response
+function extractHtmlFromResponse(response) {
+  // Try to extract HTML from code blocks if present
+  const htmlMatch = response.match(/```html\n([\s\S]*?)```/) || 
+                    response.match(/```\n([\s\S]*?)```/) ||
+                    response.match(/<html[\s\S]*?<\/html>/i);
+  
+  if (htmlMatch && htmlMatch[1]) {
+    return htmlMatch[1];
   }
   
-  forceGC();
+  // If no HTML tags or code blocks found, assume the entire response is HTML
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Generated Game</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  ${response}
+</body>
+</html>`;
 }
 
+// Discord bot event handlers
 client.once('ready', () => {
-  console.log('Bot is ready!');
-  
-  // Every 15 minutes, force cleanup to prevent memory leaks
-  setInterval(() => {
-    console.log('Performing scheduled cleanup...');
-    clearDirectory(tempDir);
-    forceGC();
-  }, 15 * 60 * 1000); // 15 minutes
+  console.log(`Logged in as ${client.user.tag}`);
 });
 
 client.on('messageCreate', async (message) => {
-  if (message.content === '!hello') {
-    message.channel.send('Hello!');
-    return;
-  }
-  
-  if (message.content.startsWith('!oot ')) {
-    const channelUrl = message.content.substring(5).trim();
+  // Ignore messages from bots
+  if (message.author.bot) return;
+
+  // Check for !creategame command
+  if (message.content.startsWith('!creategame')) {
+    const prompt = message.content.slice('!creategame'.length).trim();
     
-    // Process directly instead of using a queue
-    try {
-      await handleOotCommand(message, channelUrl);
-    } catch (error) {
-      console.error('Unhandled error in command:', error);
-      message.channel.send('An unexpected error occurred. Please try again later.');
+    if (!prompt) {
+      message.reply('Please provide a prompt for the game. Example: `!creategame space shooter with aliens`');
+      return;
     }
     
-    // Force cleanup after processing
-    clearDirectory(tempDir);
-    forceGC();
+    // Send initial response
+    const loadingMessage = await message.reply('🎮 Generating your custom game... This might take a minute!');
+    
+    try {
+      // Generate the game
+      const gameId = await generateGame(prompt);
+      
+      // Get the server URL from environment variables or default to localhost during development
+      const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
+      const gameUrl = `${serverUrl}/game/${gameId}`;
+      
+      // Create an embed with the game information
+      const gameEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setTitle('🎮 Your Custom Game is Ready!')
+        .setDescription(`**Game prompt:** ${prompt}`)
+        .addFields(
+          { name: 'Play your game', value: `[Click here to play](${gameUrl})` }
+        )
+        .setFooter({ text: 'Generated using AI' })
+        .setTimestamp();
+      
+      // Edit the loading message with the game link
+      await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
+    } catch (error) {
+      console.error('Error:', error);
+      await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
+    }
   }
 });
 
-// Error handling
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+// Start the Express server and Discord bot
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection:', reason);
-});
-
-// Handle termination signals
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, cleaning up...');
-  clearDirectory(tempDir);
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, cleaning up...');
-  clearDirectory(tempDir);
-  process.exit(0);
-});
-
+// Login to Discord with your app's token
 client.login(process.env.DISCORD_BOT_TOKEN);
