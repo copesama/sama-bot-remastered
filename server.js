@@ -136,8 +136,10 @@ client.on('messageCreate', async (message) => {
       
       // Get the server URL from environment variables or default to localhost during development
       const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
-      const gameUrl = `${serverUrl}/game/${gameId}`;
-      
+  
+      // Ensure there are no double slashes in the URL
+      const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+      const gameUrl = `${baseUrl}/game/${gameId}`;
       // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
         .setColor('#0099ff')
