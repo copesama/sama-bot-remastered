@@ -145,17 +145,6 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Handle chat messages
-  socket.on('chatMessage', (message) => {
-    if (gameId) {
-      io.to(gameId).emit('chatMessage', {
-        userId,
-        userData,
-        message
-      });
-    }
-  });
-  
   // Handle disconnection
   socket.on('disconnect', () => {
     if (gameId && userId && gameRooms[gameId]) {
@@ -186,7 +175,7 @@ async function generateGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'deepseek/deepseek-chat-v3-0324:free',
+        model: 'google/gemini-2.5-pro-exp-03-25:free',
         messages: [
           {
             role: 'system',
@@ -248,16 +237,6 @@ async function generateGame(prompt) {
                  // Update local game state with server's state
                });
                
-            5. CHAT FEATURE:
-               // Send chat message
-               socket.emit('chatMessage', message);
-               
-               // Receive chat messages
-               socket.on('chatMessage', function(data) {
-                 // Display message from data.userData.username
-                 // data.message contains the message text
-               });
-               
             Include comprehensive error handling and clear user feedback.
             The final game MUST be completely playable with working multiplayer.`
           },
@@ -277,9 +256,8 @@ async function generateGame(prompt) {
             GAME FEATURES TO INCLUDE:
             1. Clear visual indication of each player (show usernames) using userData.username and userData.avatar
             2. Simple UI showing connected players and basic instructions
-            3. Game chat interface in a corner of the screen
-            4. Basic sound effects (optional)
-            5. Win/lose conditions where appropriate
+            3. Basic sound effects (optional)
+            4. Win/lose conditions where appropriate
             
             CODE STRUCTURE:
             1. Initialize game variables and Socket.IO first
