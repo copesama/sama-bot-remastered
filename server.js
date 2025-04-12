@@ -186,7 +186,7 @@ async function generateGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'google/gemini-2.5-pro-exp-03-25:free',
+        model: 'nvidia/llama-3.1-nemotron-ultra-253b-v1:free',
         messages: [
           {
             role: 'system',
