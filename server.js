@@ -592,10 +592,11 @@ client.on('messageCreate', async (message) => {
       const gameEmbed = new EmbedBuilder()
         .setColor('#0099ff')
         .setTitle('🎮 Your Custom Multiplayer Game is Ready!')
-        .setDescription(`**Game prompt:** ${prompt}`)
+        .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
           { name: 'Invite Friends', value: 'Share this message with friends so they can join your game with their Discord profiles!' },
+          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame${gameId}\`` },
           { name: 'Features', value: '• Real-time multiplayer\n• In-game chat\n• Discord profiles integration' }
         )
         .setFooter({ text: 'Generated using AI • Players will see your Discord name and avatar' })
@@ -644,10 +645,11 @@ client.on('messageCreate', async (message) => {
       const gameEmbed = new EmbedBuilder()
         .setColor('#00cc99')
         .setTitle('🎮 Your Custom Single-Player Game is Ready!')
-        .setDescription(`**Game prompt:** ${prompt}`)
+        .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
           { name: 'Share Your Game', value: 'Share this message with friends so they can try your game!' },
+          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame${gameId}\`` },
           { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
         )
         .setFooter({ text: 'Generated using AI • Game will display your Discord name and avatar' })
