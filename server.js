@@ -405,6 +405,62 @@ function extractHtmlFromResponse(response) {
 </html>`;
 }
 
+// Track users who are in "edit mode"
+const usersInEditMode = new Map();
+
+// Function to edit an existing game
+async function editGame(gameId, editPrompt, originalHtml) {
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'openrouter/optimus-alpha',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert game developer. A user has provided an HTML game and wants to modify it according to their edit prompt.
+            
+            CRITICAL REQUIREMENTS:
+            1. Preserve the existing game structure and multiplayer functionality
+            2. Make changes according to the edit prompt
+            3. Ensure the game remains fully functional and error-free
+            4. Return the complete HTML file with your modifications
+            
+            DO NOT remove any Socket.IO implementation or any existing multiplayer code.
+            DO NOT break the game's core functionality.
+            
+            Make targeted modifications to fulfill the edit request while maintaining all existing functionality.`
+          },
+          {
+            role: 'user',
+            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}`
+          }
+        ],
+        temperature: 0.7
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Extract HTML game code from response
+    const gameCode = response.data.choices[0].message.content;
+    const editedHtml = extractHtmlFromResponse(gameCode);
+    
+    // Save the edited game HTML to file
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+    fs.writeFileSync(gamePath, editedHtml);
+    
+    return gameId;
+  } catch (error) {
+    console.error('Error editing game:', error);
+    throw error;
+  }
+}
+
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -413,6 +469,93 @@ client.once('ready', () => {
 client.on('messageCreate', async (message) => {
   // Ignore messages from bots
   if (message.author.bot) return;
+
+  // Check if the user is in edit mode and waiting for an edit prompt
+  if (usersInEditMode.has(message.author.id)) {
+    const { gameId, loadingMessage } = usersInEditMode.get(message.author.id);
+    const editPrompt = message.content;
+    
+    // Clear edit mode for this user
+    usersInEditMode.delete(message.author.id);
+    
+    // Update the loading message to indicate editing has started
+    await loadingMessage.edit('🔄 Editing your game... This might take a minute!');
+    
+    try {
+      // Read the original game file
+      const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+      if (!fs.existsSync(gamePath)) {
+        await loadingMessage.edit(`Error: Game with ID ${gameId} not found.`);
+        return;
+      }
+      
+      const originalHtml = fs.readFileSync(gamePath, 'utf8');
+      
+      // Edit the game
+      await editGame(gameId, editPrompt, originalHtml);
+      
+      // Get the server URL from environment variables or default to localhost during development
+      const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
+      const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+      
+      // Create user token with Discord info
+      const userToken = jwt.sign({
+        id: message.author.id,
+        username: message.author.username,
+        avatar: message.author.displayAvatarURL({ format: 'png' })
+      }, JWT_SECRET);
+      
+      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      
+      // Create an embed with the game information
+      const gameEmbed = new EmbedBuilder()
+        .setColor('#9933cc')
+        .setTitle('🎮 Your Game Has Been Updated!')
+        .setDescription(`**Edit request:** ${editPrompt}`)
+        .addFields(
+          { name: 'Play your updated game', value: `[Click here to play](${gameUrl})` },
+          { name: 'Share Your Game', value: 'Share this message with friends so they can try your updated game!' }
+        )
+        .setFooter({ text: 'Edited using AI • Game will display your Discord name and avatar' })
+        .setTimestamp();
+      
+      // Edit the loading message with the game link
+      await loadingMessage.edit({ content: 'Game updated successfully!', embeds: [gameEmbed] });
+      
+      // Delete the user's edit prompt message to keep the channel clean
+      try {
+        await message.delete();
+      } catch (error) {
+        console.error('Error deleting message:', error);
+      }
+      
+    } catch (error) {
+      console.error('Error:', error);
+      await loadingMessage.edit('Sorry, there was an error editing your game. Please try again later.');
+    }
+    
+    return;
+  }
+
+  // Check for !editgame command
+  const editGameMatch = message.content.match(/^!editgame([a-zA-Z0-9_-]+)$/);
+  if (editGameMatch) {
+    const gameId = editGameMatch[1];
+    
+    // Check if the game exists
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+    if (!fs.existsSync(gamePath)) {
+      message.reply(`Error: Game with ID ${gameId} not found.`);
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply(`Game ${gameId} found. Please send your edit request in the next message.`);
+    
+    // Put the user in edit mode
+    usersInEditMode.set(message.author.id, { gameId, loadingMessage });
+    return;
+  }
 
   // Check for !multigame command (renamed from !creategame)
   if (message.content.startsWith('!multigame')) {
