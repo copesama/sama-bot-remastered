@@ -170,7 +170,7 @@ io.on('connection', (socket) => {
 });
 
 // Generate game using OpenRouter API
-async function generateGame(prompt) {
+async function generateMultiplayerGame(prompt) {
   try {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -299,6 +299,88 @@ async function generateGame(prompt) {
   }
 }
 
+// Generate a single-player game using OpenRouter API
+async function generateSinglePlayerGame(prompt) {
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'openrouter/optimus-alpha',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert game developer. Create a complete, playable HTML game based on the user prompt. 
+            The game should be entirely self-contained in a single HTML file with embedded JavaScript and CSS.
+            
+            CRITICAL REQUIREMENTS:
+            1. The game MUST be fully functional and error-free
+            2. Use simple graphics and mechanics that work reliably in browsers
+            3. Test all game logic in your response
+            
+            USER DATA IMPLEMENTATION:
+            - Extract user data from cookie:
+              const userData = JSON.parse(decodeURIComponent(document.cookie.split('; ').find(row => row.startsWith('gameUserData=')).split('=')[1]));
+            - Use userData.username and userData.avatar where appropriate
+            
+            Include comprehensive error handling and clear user feedback.
+            The final game MUST be completely playable as a single-player experience.`
+          },
+          {
+            role: 'user',
+            content: `Create a browser game based on this prompt: ${prompt}. 
+            
+            TECHNICAL IMPLEMENTATION GUIDELINES:
+            1. Focus on a SIMPLE game concept optimized for single-player
+            2. Create clean HTML structure with clear element IDs
+            3. Use requestAnimationFrame for smooth animation
+            4. Implement basic physics if needed (keep it simple)
+            5. Ensure the game initializes properly
+            6. Use inlined CSS and JS for a single file solution
+            
+            GAME FEATURES TO INCLUDE:
+            1. Clear visual representation of the player
+            2. Simple UI showing score/progress and basic instructions
+            3. Basic sound effects (optional)
+            4. Win/lose conditions where appropriate
+            
+            CODE STRUCTURE:
+            1. Initialize game variables first
+            2. Set up event listeners for inputs
+            3. Implement game loop and rendering functions
+            4. Create distinct functions for each game mechanic
+            5. Add thorough comments explaining critical sections
+            
+            TEST THE GAME LOGIC IN YOUR MIND STEP BY STEP BEFORE GENERATING THE CODE.`
+          }
+        ],
+        temperature: 0.7
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Extract HTML game code from response
+    const gameCode = response.data.choices[0].message.content;
+    const htmlGame = extractHtmlFromResponse(gameCode);
+    
+    // Generate unique ID for the game
+    const gameId = shortid.generate();
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+    
+    // Save the game HTML to file
+    fs.writeFileSync(gamePath, htmlGame);
+    
+    return gameId;
+  } catch (error) {
+    console.error('Error generating single player game:', error);
+    throw error;
+  }
+}
+
 // Helper function to extract HTML from API response
 function extractHtmlFromResponse(response) {
   // Try to extract HTML from code blocks if present
@@ -332,12 +414,12 @@ client.on('messageCreate', async (message) => {
   // Ignore messages from bots
   if (message.author.bot) return;
 
-  // Check for !creategame command
-  if (message.content.startsWith('!creategame')) {
-    const prompt = message.content.slice('!creategame'.length).trim();
+  // Check for !multigame command (renamed from !creategame)
+  if (message.content.startsWith('!multigame')) {
+    const prompt = message.content.slice('!multigame'.length).trim();
     
     if (!prompt) {
-      message.reply('Please provide a prompt for the game. Example: `!creategame space shooter with aliens`');
+      message.reply('Please provide a prompt for the game. Example: `!multigame space shooter with aliens`');
       return;
     }
     
@@ -346,7 +428,7 @@ client.on('messageCreate', async (message) => {
     
     try {
       // Generate the game
-      const gameId = await generateGame(prompt);
+      const gameId = await generateMultiplayerGame(prompt);
       
       // Get the server URL from environment variables or default to localhost during development
       const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
@@ -374,6 +456,58 @@ client.on('messageCreate', async (message) => {
           { name: 'Features', value: '• Real-time multiplayer\n• In-game chat\n• Discord profiles integration' }
         )
         .setFooter({ text: 'Generated using AI • Players will see your Discord name and avatar' })
+        .setTimestamp();
+      
+      // Edit the loading message with the game link
+      await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
+    } catch (error) {
+      console.error('Error:', error);
+      await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
+    }
+  }
+  
+  // Check for !singlegame command
+  if (message.content.startsWith('!singlegame')) {
+    const prompt = message.content.slice('!singlegame'.length).trim();
+    
+    if (!prompt) {
+      message.reply('Please provide a prompt for the game. Example: `!singlegame platform adventure with collectibles`');
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply('🎮 Generating your custom single-player game... This might take a minute!');
+    
+    try {
+      // Generate the single-player game
+      const gameId = await generateSinglePlayerGame(prompt);
+      
+      // Get the server URL from environment variables or default to localhost during development
+      const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
+  
+      // Ensure there are no double slashes in the URL
+      const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+
+      // Create user token with Discord info for authentication
+      const userToken = jwt.sign({
+        id: message.author.id,
+        username: message.author.username,
+        avatar: message.author.displayAvatarURL({ format: 'png' })
+      }, JWT_SECRET);
+      
+      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      
+      // Create an embed with the game information
+      const gameEmbed = new EmbedBuilder()
+        .setColor('#00cc99')
+        .setTitle('🎮 Your Custom Single-Player Game is Ready!')
+        .setDescription(`**Game prompt:** ${prompt}`)
+        .addFields(
+          { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
+          { name: 'Share Your Game', value: 'Share this message with friends so they can try your game!' },
+          { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
+        )
+        .setFooter({ text: 'Generated using AI • Game will display your Discord name and avatar' })
         .setTimestamp();
       
       // Edit the loading message with the game link
