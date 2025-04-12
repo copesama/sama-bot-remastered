@@ -175,7 +175,7 @@ async function generateGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'open-r1/olympiccoder-32b:free',
+        model: 'openrouter/optimus-alpha',
         messages: [
           {
             role: 'system',
