@@ -538,7 +538,7 @@ client.on('messageCreate', async (message) => {
   }
 
   // Check for !editgame command
-  const editGameMatch = message.content.match(/^!editgame([a-zA-Z0-9_-]+)$/);
+  const editGameMatch = message.content.match(/^!editgame\s+([a-zA-Z0-9_-]+)$/);
   if (editGameMatch) {
     const gameId = editGameMatch[1];
     
@@ -596,7 +596,7 @@ client.on('messageCreate', async (message) => {
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
           { name: 'Invite Friends', value: 'Share this message with friends so they can join your game with their Discord profiles!' },
-          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame${gameId}\`` },
+          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
           { name: 'Features', value: '• Real-time multiplayer\n• In-game chat\n• Discord profiles integration' }
         )
         .setFooter({ text: 'Generated using AI • Players will see your Discord name and avatar' })
@@ -649,7 +649,7 @@ client.on('messageCreate', async (message) => {
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
           { name: 'Share Your Game', value: 'Share this message with friends so they can try your game!' },
-          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame${gameId}\`` },
+          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
           { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
         )
         .setFooter({ text: 'Generated using AI • Game will display your Discord name and avatar' })
