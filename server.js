@@ -9,8 +9,6 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const { writeFileSync } = require('fs');
 
 // Initialize Discord client
 const client = new Client({
@@ -18,7 +16,6 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates, // Add voice states intent
   ]
 });
 
@@ -39,17 +36,8 @@ if (!fs.existsSync(GAMES_DIR)) {
   fs.mkdirSync(GAMES_DIR);
 }
 
-// Create directory for generated music if it doesn't exist
-const MUSIC_DIR = path.join(__dirname, 'music');
-if (!fs.existsSync(MUSIC_DIR)) {
-  fs.mkdirSync(MUSIC_DIR);
-}
-
 // Track active game rooms and players
 const gameRooms = {};
-
-// Track active music players
-const activeMusicPlayers = new Map();
 
 // Serve static game files
 app.use('/games', express.static(GAMES_DIR));
@@ -180,213 +168,6 @@ io.on('connection', (socket) => {
     }
   });
 });
-
-// Function to generate music using AI/ML API with Stability AI's Stable Audio
-async function generateMusic(prompt) {
-  try {
-    console.log(`Generating music with prompt: ${prompt}`);
-    
-    // Get request body parameters
-    const requestBody = {
-      model: "stable-audio",
-      prompt: prompt,
-      seconds_total: 30,
-      output_format: "mp3"
-    };
-    
-    console.log('Sending request with params:', JSON.stringify(requestBody));
-    
-    // Initial request to start generation
-    const response = await axios({
-      method: 'post',
-      url: 'https://api.aimlapi.com/v2/generate/audio',
-      headers: {
-        'Authorization': `Bearer ${process.env.AIML_API_KEY}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      data: requestBody
-    });
-    
-    console.log('API Response status:', response.status);
-    console.log('Initial response data:', response.data);
-    
-    // Check if generation is queued
-    if (response.data && response.data.status === 'queued' && response.data.id) {
-      console.log(`Generation job queued with ID: ${response.data.id}`);
-      
-      // Poll for completion
-      const generationId = response.data.id;
-      const audioData = await pollGenerationStatus(generationId);
-      
-      // Create unique filename for the generated music
-      const musicId = shortid.generate();
-      const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
-      
-      // Save the audio data to a file
-      writeFileSync(filePath, Buffer.from(audioData, 'base64'));
-      
-      return { musicId, filePath };
-    }
-    // Handle immediate response with audio URL
-    else if (response.data && response.data.audio_url) {
-      console.log('Received audio URL:', response.data.audio_url);
-      
-      // Download the audio file from the provided URL
-      const audioResponse = await axios({
-        method: 'get',
-        url: response.data.audio_url,
-        responseType: 'arraybuffer'
-      });
-      
-      // Create unique filename for the generated music
-      const musicId = shortid.generate();
-      const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
-      
-      // Save the binary data to a file
-      writeFileSync(filePath, Buffer.from(audioResponse.data));
-      
-      return { musicId, filePath };
-    }
-    // Handle immediate response with output data
-    else if (response.data && response.data.output) {
-      console.log('Received direct audio output');
-      
-      const musicId = shortid.generate();
-      const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
-      
-      // Save the binary data to a file
-      writeFileSync(filePath, Buffer.from(response.data.output, 'base64'));
-      
-      return { musicId, filePath };
-    }
-    else {
-      console.error('Unexpected API response format:', response.data);
-      throw new Error('API did not return audio data or a valid queued status');
-    }
-  } catch (error) {
-    console.error('Error generating music:', error);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      console.error('Response headers:', error.response.headers);
-    }
-    throw error;
-  }
-}
-
-// Function to poll for generation status until complete
-async function pollGenerationStatus(generationId) {
-  console.log(`Starting to poll for generation status of ID: ${generationId}`);
-  
-  // Maximum wait time: 2 minutes (24 attempts * 5 seconds)
-  const maxAttempts = 24;
-  let attempts = 0;
-  
-  while (attempts < maxAttempts) {
-    attempts++;
-    
-    try {
-      console.log(`Polling attempt ${attempts}/${maxAttempts} for generation ID: ${generationId}`);
-      
-      const statusResponse = await axios({
-        method: 'get',
-        url: `https://api.aimlapi.com/v2/generations/${generationId}`,
-        headers: {
-          'Authorization': `Bearer ${process.env.AIML_API_KEY}`,
-          'Accept': 'application/json'
-        }
-      });
-      
-      console.log('Status response:', statusResponse.data);
-      
-      // Check if the generation is complete
-      if (statusResponse.data.status === 'completed') {
-        console.log('Generation completed successfully!');
-        
-        // If there's an audio_url, download and return that
-        if (statusResponse.data.audio_url) {
-          console.log('Downloading audio from URL:', statusResponse.data.audio_url);
-          const audioResponse = await axios({
-            method: 'get',
-            url: statusResponse.data.audio_url,
-            responseType: 'arraybuffer'
-          });
-          return audioResponse.data;
-        }
-        // If there's output data, return that
-        else if (statusResponse.data.output) {
-          console.log('Received output data directly');
-          return statusResponse.data.output;
-        }
-        else {
-          throw new Error('No audio data found in completed generation');
-        }
-      }
-      else if (statusResponse.data.status === 'failed') {
-        console.error('Generation failed:', statusResponse.data.error || 'Unknown error');
-        throw new Error(`Generation failed: ${statusResponse.data.error || 'Unknown error'}`);
-      }
-      
-      // If not complete, wait and try again
-      console.log(`Generation status: ${statusResponse.data.status}, waiting 5 seconds...`);
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-    } catch (error) {
-      console.error(`Error polling generation status (attempt ${attempts}):`, error);
-      
-      // If this is the last attempt, throw the error
-      if (attempts >= maxAttempts) {
-        throw error;
-      }
-      
-      // Otherwise, wait and try again
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-    }
-  }
-  
-  throw new Error(`Generation timed out after ${attempts} attempts`);
-}
-
-// Function to play music in a voice channel
-async function playMusicInChannel(message, filePath) {
-  try {
-    // Check if user is in a voice channel
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel) {
-      return message.reply('You need to be in a voice channel to play music!');
-    }
-    
-    // Create connection to voice channel
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-    });
-    
-    // Create audio player and resource
-    const player = createAudioPlayer();
-    const resource = createAudioResource(filePath);
-    
-    // Play the audio
-    player.play(resource);
-    connection.subscribe(player);
-    
-    // Store the player and connection for cleanup
-    activeMusicPlayers.set(message.guild.id, { player, connection });
-    
-    // Handle player state changes
-    player.on(AudioPlayerStatus.Idle, () => {
-      // Music ended - clean up
-      connection.destroy();
-      activeMusicPlayers.delete(message.guild.id);
-    });
-    
-    return true;
-  } catch (error) {
-    console.error('Error playing music:', error);
-    return false;
-  }
-}
 
 // Generate game using OpenRouter API
 async function generateMultiplayerGame(prompt) {
@@ -776,57 +557,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !createmusic command
-  if (message.content.startsWith('!createmusic')) {
-    const prompt = message.content.slice('!createmusic'.length).trim();
-    
-    if (!prompt) {
-      message.reply('Please provide a prompt for the music. Example: `!createmusic upbeat jazz with piano solo`');
-      return;
-    }
-    
-    // Send initial response
-    const loadingMessage = await message.reply('🎵 Generating your custom music using Stability AI\'s Stable Audio... This might take a minute!');
-    
-    try {
-      // Check if the user is in a voice channel
-      if (!message.member.voice.channel) {
-        await loadingMessage.edit('You need to be in a voice channel to use this command!');
-        return;
-      }
-      
-      // Generate music
-      const { musicId, filePath } = await generateMusic(prompt);
-      
-      // Play the generated music in the user's voice channel
-      const playSuccess = await playMusicInChannel(message, filePath);
-      
-      if (playSuccess) {
-        // Create an embed with music information
-        const musicEmbed = new EmbedBuilder()
-          .setColor('#9900ff')
-          .setTitle('🎵 Your Custom Music is Ready!')
-          .setDescription(`**Music prompt:** ${prompt}\n**Music ID:** \`${musicId}\``)
-          .addFields(
-            { name: 'Now Playing', value: 'Your AI-generated music is now playing in your voice channel!' },
-            { name: 'Model', value: 'Stability AI\'s Stable Audio' },
-            { name: 'Duration', value: 'Approximately 30 seconds' }
-          )
-          .setFooter({ text: 'Generated using Stability AI\'s Stable Audio • AI/ML API' })
-          .setTimestamp();
-        
-        // Edit the loading message with the music info
-        await loadingMessage.edit({ content: 'Music created successfully!', embeds: [musicEmbed] });
-      } else {
-        await loadingMessage.edit('There was an error playing your music. Please try again later.');
-      }
-    } catch (error) {
-      console.error('Error in music generation flow:', error);
-      await loadingMessage.edit(`Sorry, there was an error generating your music: ${error.message}. Please try again later.`);
-    }
-  }
-
-  // Check for !multigame command
+  // Check for !multigame command (renamed from !creategame)
   if (message.content.startsWith('!multigame')) {
     const prompt = message.content.slice('!multigame'.length).trim();
     
