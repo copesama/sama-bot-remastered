@@ -485,41 +485,59 @@ async function generateMusic(prompt, style = 'Electronic') {
         prompt: prompt,
         style: style,
         title: title,
-        customMode: false,
+        customMode: true,
         instrumental: true,
         model: 'V3_5',
-        callBackUrl: "https://api.example.com/callback",
         negativeTags: ''
       }
     };
 
+    console.log('Sending music generation request:', JSON.stringify(options.data));
     const response = await axios.request(options);
     
+    // Log the complete response structure for debugging
+    console.log('API Response structure:', JSON.stringify(response.data));
+    
+    // Check various possible paths where the URL might be located
+    let musicUrl = null;
+    
     if (response.data && response.data.data && response.data.data.url) {
-      // Download the generated MP3
-      const musicUrl = response.data.data.url;
-      const musicId = shortid.generate();
-      const musicPath = path.join(MUSIC_DIR, `${musicId}.mp3`);
-      
-      const fileResponse = await axios({
-        method: 'GET',
-        url: musicUrl,
-        responseType: 'stream'
-      });
-      
-      // Save the file to disk
-      const writer = fs.createWriteStream(musicPath);
-      fileResponse.data.pipe(writer);
-      
-      return new Promise((resolve, reject) => {
-        writer.on('finish', () => resolve({ musicId, musicPath }));
-        writer.on('error', reject);
-      });
-    } else {
-      throw new Error('No music URL in response');
+      musicUrl = response.data.data.url;
+    } else if (response.data && response.data.url) {
+      musicUrl = response.data.url;
+    } else if (response.data && response.data.result && response.data.result.url) {
+      musicUrl = response.data.result.url;
+    } else if (response.data && response.data.results && response.data.results[0]) {
+      musicUrl = response.data.results[0].url || response.data.results[0].audio_url;
     }
+    
+    if (!musicUrl) {
+      throw new Error(`No music URL found in response: ${JSON.stringify(response.data)}`);
+    }
+    
+    console.log('Found music URL:', musicUrl);
+    
+    // Download the generated MP3
+    const musicId = shortid.generate();
+    const musicPath = path.join(MUSIC_DIR, `${musicId}.mp3`);
+    
+    const fileResponse = await axios({
+      method: 'GET',
+      url: musicUrl,
+      responseType: 'stream'
+    });
+    
+    // Save the file to disk
+    const writer = fs.createWriteStream(musicPath);
+    fileResponse.data.pipe(writer);
+    
+    return new Promise((resolve, reject) => {
+      writer.on('finish', () => resolve({ musicId, musicPath }));
+      writer.on('error', reject);
+    });
   } catch (error) {
     console.error('Error generating music:', error);
+    console.error('API response (if available):', error.response?.data);
     throw error;
   }
 }
