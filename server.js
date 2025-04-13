@@ -9,6 +9,8 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+const { writeFileSync } = require('fs');
 
 // Initialize Discord client
 const client = new Client({
@@ -16,6 +18,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates, // Add voice states intent
   ]
 });
 
@@ -36,8 +39,17 @@ if (!fs.existsSync(GAMES_DIR)) {
   fs.mkdirSync(GAMES_DIR);
 }
 
+// Create directory for generated music if it doesn't exist
+const MUSIC_DIR = path.join(__dirname, 'music');
+if (!fs.existsSync(MUSIC_DIR)) {
+  fs.mkdirSync(MUSIC_DIR);
+}
+
 // Track active game rooms and players
 const gameRooms = {};
+
+// Track active music players
+const activeMusicPlayers = new Map();
 
 // Serve static game files
 app.use('/games', express.static(GAMES_DIR));
@@ -168,6 +180,82 @@ io.on('connection', (socket) => {
     }
   });
 });
+
+// Function to generate music using AI/ML API
+async function generateMusic(prompt) {
+  try {
+    console.log(`Generating music with prompt: ${prompt}`);
+    
+    const response = await axios({
+      method: 'post',
+      url: 'https://api.aimlapi.com/api/music',
+      headers: {
+        'Authorization': `Bearer ${process.env.AIML_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        prompt: prompt,
+        model: 'music-gen', // Use appropriate model from the API
+        duration: 30, // Generate 30 seconds of music
+        output_format: 'mp3'
+      },
+      responseType: 'arraybuffer' // Important for binary data
+    });
+    
+    // Create unique filename for the generated music
+    const musicId = shortid.generate();
+    const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
+    
+    // Save the binary data to a file
+    writeFileSync(filePath, Buffer.from(response.data));
+    
+    return { musicId, filePath };
+  } catch (error) {
+    console.error('Error generating music:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Function to play music in a voice channel
+async function playMusicInChannel(message, filePath) {
+  try {
+    // Check if user is in a voice channel
+    const voiceChannel = message.member.voice.channel;
+    if (!voiceChannel) {
+      return message.reply('You need to be in a voice channel to play music!');
+    }
+    
+    // Create connection to voice channel
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: voiceChannel.guild.id,
+      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+    });
+    
+    // Create audio player and resource
+    const player = createAudioPlayer();
+    const resource = createAudioResource(filePath);
+    
+    // Play the audio
+    player.play(resource);
+    connection.subscribe(player);
+    
+    // Store the player and connection for cleanup
+    activeMusicPlayers.set(message.guild.id, { player, connection });
+    
+    // Handle player state changes
+    player.on(AudioPlayerStatus.Idle, () => {
+      // Music ended - clean up
+      connection.destroy();
+      activeMusicPlayers.delete(message.guild.id);
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Error playing music:', error);
+    return false;
+  }
+}
 
 // Generate game using OpenRouter API
 async function generateMultiplayerGame(prompt) {
@@ -557,7 +645,56 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !multigame command (renamed from !creategame)
+  // Check for !createmusic command
+  if (message.content.startsWith('!createmusic')) {
+    const prompt = message.content.slice('!createmusic'.length).trim();
+    
+    if (!prompt) {
+      message.reply('Please provide a prompt for the music. Example: `!createmusic upbeat jazz with piano solo`');
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply('🎵 Generating your custom music... This might take a minute!');
+    
+    try {
+      // Check if the user is in a voice channel
+      if (!message.member.voice.channel) {
+        await loadingMessage.edit('You need to be in a voice channel to use this command!');
+        return;
+      }
+      
+      // Generate music
+      const { musicId, filePath } = await generateMusic(prompt);
+      
+      // Play the generated music in the user's voice channel
+      const playSuccess = await playMusicInChannel(message, filePath);
+      
+      if (playSuccess) {
+        // Create an embed with music information
+        const musicEmbed = new EmbedBuilder()
+          .setColor('#9900ff')
+          .setTitle('🎵 Your Custom Music is Ready!')
+          .setDescription(`**Music prompt:** ${prompt}\n**Music ID:** \`${musicId}\``)
+          .addFields(
+            { name: 'Now Playing', value: 'Your AI-generated music is now playing in your voice channel!' },
+            { name: 'Duration', value: 'Approximately 30 seconds' }
+          )
+          .setFooter({ text: 'Generated using AI/ML API' })
+          .setTimestamp();
+        
+        // Edit the loading message with the music info
+        await loadingMessage.edit({ content: 'Music created successfully!', embeds: [musicEmbed] });
+      } else {
+        await loadingMessage.edit('There was an error playing your music. Please try again later.');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      await loadingMessage.edit('Sorry, there was an error generating your music. Please try again later.');
+    }
+  }
+
+  // Check for !multigame command
   if (message.content.startsWith('!multigame')) {
     const prompt = message.content.slice('!multigame'.length).trim();
     
