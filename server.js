@@ -65,6 +65,7 @@ app.get('/game/:gameId', (req, res) => {
   if (fs.existsSync(gamePath)) {
     // If we have a user token, verify it
     let userData = null;
+    
     if (userToken) {
       try {
         userData = jwt.verify(userToken, JWT_SECRET);
@@ -75,7 +76,20 @@ app.get('/game/:gameId', (req, res) => {
         });
       } catch (err) {
         console.error('Invalid token:', err);
+        // Generate a guest token if the provided token is invalid
+        userData = generateGuestUserData();
+        res.cookie('gameUserData', JSON.stringify(userData), { 
+          maxAge: 3600000, 
+          httpOnly: false 
+        });
       }
+    } else {
+      // If no token provided, create a guest user
+      userData = generateGuestUserData();
+      res.cookie('gameUserData', JSON.stringify(userData), { 
+        maxAge: 3600000, 
+        httpOnly: false 
+      });
     }
     
     // Initialize game room if it doesn't exist
@@ -92,6 +106,17 @@ app.get('/game/:gameId', (req, res) => {
   }
 });
 
+// Helper function to generate random guest user data
+function generateGuestUserData() {
+  const guestId = `guest-${shortid.generate()}`;
+  return {
+    id: guestId,
+    username: `Guest-${guestId.substring(6, 10)}`,
+    avatar: `https://ui-avatars.com/api/?name=G&background=random&size=128`,
+    isGuest: true
+  };
+}
+
 // Socket.IO connection handler
 io.on('connection', (socket) => {
   let userId = null;
@@ -103,6 +128,11 @@ io.on('connection', (socket) => {
     gameId = data.gameId;
     userId = data.userId;
     userData = data.userData;
+    
+    // If user data is missing or incomplete, create guest data
+    if (!userData || !userData.username || !userData.avatar) {
+      userData = generateGuestUserData();
+    }
     
     // Add player to game room
     socket.join(gameId);
@@ -756,11 +786,11 @@ client.on('messageCreate', async (message) => {
         .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Invite Friends', value: 'Share this message with friends so they can join your game with their Discord profiles!' },
+          { name: 'Invite Friends', value: `Share this link with friends so they can join your game: ${baseUrl}/game/${gameId}` },
           { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
           { name: 'Features', value: '• Real-time multiplayer\n• In-game chat\n• Discord profiles integration' }
         )
-        .setFooter({ text: 'Generated using AI • Players will see your Discord name and avatar' })
+        .setFooter({ text: 'Generated using AI • Players will see their own profile in the game' })
         .setTimestamp();
       
       // Edit the loading message with the game link
@@ -809,11 +839,11 @@ client.on('messageCreate', async (message) => {
         .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Share Your Game', value: 'Share this message with friends so they can try your game!' },
+          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${baseUrl}/game/${gameId}` },
           { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
           { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
         )
-        .setFooter({ text: 'Generated using AI • Game will display your Discord name and avatar' })
+        .setFooter({ text: 'Generated using AI • Game will display each player\'s own profile' })
         .setTimestamp();
       
       // Edit the loading message with the game link
