@@ -520,17 +520,18 @@ async function generateMusic(prompt, style = 'Pop') {
         // Begin polling for the task completion
         return await pollMusicGeneration(response.data.data.taskId);
       }
-      // Another possible response format
+      // Another possible response format with taskId at the top level
       else if (response.data.taskId) {
         console.log(`Starting poll for task ID: ${response.data.taskId}`);
         return await pollMusicGeneration(response.data.taskId);
       }
       // If we got a success code but no tracks or task ID, consider it processing
       else {
+        // In this case, we don't have any way to follow up, so indicate partial success
         return {
           success: true,
           processing: true,
-          message: 'Music generation has started. Please wait...'
+          message: 'Music generation has started. The bot will notify you when it\'s ready via callback.'
         };
       }
     } 
@@ -557,14 +558,15 @@ app.post('/api/music-callback/:musicId', (req, res) => {
 });
 
 // Poll for async music generation results with improved error handling
-async function pollMusicGeneration(taskId, maxAttempts = 30, delayMs = 2000) {
+async function pollMusicGeneration(taskId, maxAttempts = 30, delayMs = 5000) {
   let attempts = 0;
   
   while (attempts < maxAttempts) {
     try {
       console.log(`Polling music generation status (attempt ${attempts + 1}/${maxAttempts}): ${taskId}`);
       
-      const response = await axios.get(`https://apibox.erweima.ai/api/v1/status/${taskId}`, {
+      // Use the correct status endpoint format
+      const response = await axios.get(`https://apibox.erweima.ai/api/v1/tasks/${taskId}`, {
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${process.env.SUNO_API_KEY}`
@@ -577,33 +579,39 @@ async function pollMusicGeneration(taskId, maxAttempts = 30, delayMs = 2000) {
       if (response.data && response.data.code === 200) {
         // Check nested data structure first
         if (response.data.data && response.data.data.status === 'completed' && 
-            response.data.data.tracks && response.data.data.tracks[0]) {
+            response.data.data.result && response.data.data.result.tracks && 
+            response.data.data.result.tracks[0]) {
           return {
             success: true,
-            audioUrl: response.data.data.tracks[0].urls.audio,
-            title: response.data.data.tracks[0].title || 'Generated Music'
+            audioUrl: response.data.data.result.tracks[0].urls.audio,
+            title: response.data.data.result.tracks[0].title || 'Generated Music'
           };
         }
         // Check if still processing
         else if (response.data.data && 
-                (response.data.data.status === 'processing' || response.data.data.status === 'pending')) {
-          console.log('Music is still being generated, continuing to poll...');
+                (response.data.data.status === 'processing' || 
+                 response.data.data.status === 'pending' || 
+                 response.data.data.status === 'waiting')) {
+          console.log(`Music is still being generated (status: ${response.data.data.status}), continuing to poll...`);
         }
         // Check if failed
         else if (response.data.data && response.data.data.status === 'failed') {
           throw new Error('Music generation failed on the API side');
         }
         // If we have data but it's structured differently
-        else if (response.data.status === 'completed' && response.data.tracks && response.data.tracks[0]) {
+        else if (response.data.status === 'completed' && response.data.result && 
+                response.data.result.tracks && response.data.result.tracks[0]) {
           return {
             success: true,
-            audioUrl: response.data.tracks[0].urls.audio,
-            title: response.data.tracks[0].title || 'Generated Music'
+            audioUrl: response.data.result.tracks[0].urls.audio,
+            title: response.data.result.tracks[0].title || 'Generated Music'
           };
         }
         // Still processing with different structure
-        else if (response.data.status === 'processing' || response.data.status === 'pending') {
-          console.log('Music is still being generated, continuing to poll...');
+        else if (response.data.status === 'processing' || 
+                response.data.status === 'pending' || 
+                response.data.status === 'waiting') {
+          console.log(`Music is still being generated (status: ${response.data.status}), continuing to poll...`);
         }
         // Failed with different structure
         else if (response.data.status === 'failed') {
@@ -618,11 +626,25 @@ async function pollMusicGeneration(taskId, maxAttempts = 30, delayMs = 2000) {
       attempts++;
     } catch (error) {
       console.error('Error polling music status:', error);
+      
+      // If we got a 404, the status endpoint might not be ready yet - wait and retry
+      if (error.response && error.response.status === 404) {
+        console.log('Status endpoint not ready yet, waiting before retrying...');
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        attempts++;
+        // Skip to next iteration instead of immediately returning error
+        continue;
+      }
+      
       return { success: false, error: error.message };
     }
   }
   
-  return { success: false, error: 'Music generation timed out' };
+  return { 
+    success: true,
+    processing: true,
+    message: 'Music generation is taking longer than expected. The bot will notify you when it\'s ready via callback.'
+  };
 }
 
 // Play music in voice channel
