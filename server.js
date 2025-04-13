@@ -395,7 +395,7 @@ async function generateSinglePlayerGame(prompt) {
 }
 
 // Function to generate music using Segmind API
-async function generateMusic(prompt, duration = 10) {
+async function generateMusic(prompt, duration = 30) {
   try {
     const response = await axios.post(
       'https://api.segmind.com/v1/meta-musicgen-medium',
