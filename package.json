@@ -1,7 +1,7 @@
 {
   "name": "sama-bot-remastered",
   "version": "1.0.0",
-  "description": "Discord bot for games and music generation",
+  "description": "Discord bot that generates games from user prompts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -15,11 +15,7 @@
     "shortid": "^2.2.17",
     "socket.io": "^4.8.1",
     "cookie-parser": "^1.4.7",
-    "jsonwebtoken": "^9.0.2",
-    "@discordjs/voice": "^0.18.0",
-    "ffmpeg-static": "^5.2.0",
-    "sodium-native": "^5.0.1",
-    "libsodium-wrappers": "^0.7.15"
+    "jsonwebtoken": "^9.0.2"
   },
   "engines": {
     "node": ">=16.x"

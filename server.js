@@ -9,8 +9,6 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-// Add voice dependencies
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 
 // Initialize Discord client
 const client = new Client({
@@ -18,13 +16,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates, // Add voice states intent
   ]
 });
-
-// Track active voice connections and audio players
-const voiceConnections = new Map();
-const audioPlayers = new Map();
 
 // Initialize Express app for serving games
 const app = express();
@@ -49,9 +42,6 @@ const gameRooms = {};
 // Serve static game files
 app.use('/games', express.static(GAMES_DIR));
 app.use(cookieParser());
-
-// Add middleware to parse JSON requests for callbacks
-app.use(express.json());
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -471,261 +461,6 @@ async function editGame(gameId, editPrompt, originalHtml) {
   }
 }
 
-// Generate music using Suno API
-async function generateMusic(prompt, style = 'Pop') {
-  try {
-    // Get the server URL from environment variables or default to localhost during development
-    const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
-    const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
-    
-    // Generate unique ID for this music request
-    const musicId = shortid.generate();
-    
-    const options = {
-      method: 'POST',
-      url: 'https://apibox.erweima.ai/api/v1/generate',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${process.env.SUNO_API_KEY}`
-      },
-      data: {
-        prompt: prompt,
-        style: style,
-        title: `Discord Bot Music - ${musicId}`,
-        customMode: true,
-        instrumental: false,
-        model: 'V3_5',
-        callBackUrl: `${baseUrl}/api/music-callback/${musicId}` // Add the required callBackUrl parameter
-      },
-      responseType: 'json'
-    };
-
-    const response = await axios.request(options);
-    console.log('Suno API response:', response.data);
-    
-    // Check if we got a direct success response with tracks
-    if (response.data && response.data.code === 200) {
-      // If tracks are immediately available (rare case)
-      if (response.data.data && response.data.data.tracks && response.data.data.tracks[0]) {
-        return {
-          success: true,
-          audioUrl: response.data.data.tracks[0].urls.audio,
-          title: response.data.data.tracks[0].title || 'Generated Music'
-        };
-      } 
-      // If we have a task ID for polling (common case)
-      else if (response.data.data && response.data.data.taskId) {
-        console.log(`Starting poll for task ID: ${response.data.data.taskId}`);
-        // Begin polling for the task completion
-        return await pollMusicGeneration(response.data.data.taskId);
-      }
-      // Another possible response format with taskId at the top level
-      else if (response.data.taskId) {
-        console.log(`Starting poll for task ID: ${response.data.taskId}`);
-        return await pollMusicGeneration(response.data.taskId);
-      }
-      // If we got a success code but no tracks or task ID, consider it processing
-      else {
-        // In this case, we don't have any way to follow up, so indicate partial success
-        return {
-          success: true,
-          processing: true,
-          message: 'Music generation has started. The bot will notify you when it\'s ready via callback.'
-        };
-      }
-    } 
-    // Alternative response format
-    else if (response.data && response.data.id) {
-      return await pollMusicGeneration(response.data.id);
-    } 
-    else {
-      throw new Error(response.data?.msg || 'Unexpected API response format');
-    }
-  } catch (error) {
-    console.error('Error generating music:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// Add an endpoint to handle the callback from Suno API
-app.post('/api/music-callback/:musicId', (req, res) => {
-  console.log(`Received music callback for ID: ${req.params.musicId}`);
-  console.log('Callback data:', req.body);
-  
-  // Return a 200 status to acknowledge receipt
-  res.status(200).send('OK');
-});
-
-// Poll for async music generation results with improved error handling
-async function pollMusicGeneration(taskId, maxAttempts = 30, delayMs = 5000) {
-  let attempts = 0;
-  
-  while (attempts < maxAttempts) {
-    try {
-      console.log(`Polling music generation status (attempt ${attempts + 1}/${maxAttempts}): ${taskId}`);
-      
-      // Use the correct status endpoint format
-      const response = await axios.get(`https://apibox.erweima.ai/api/v1/tasks/${taskId}`, {
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${process.env.SUNO_API_KEY}`
-        }
-      });
-      
-      console.log(`Poll response:`, response.data);
-      
-      // Check for different response formats
-      if (response.data && response.data.code === 200) {
-        // Check nested data structure first
-        if (response.data.data && response.data.data.status === 'completed' && 
-            response.data.data.result && response.data.data.result.tracks && 
-            response.data.data.result.tracks[0]) {
-          return {
-            success: true,
-            audioUrl: response.data.data.result.tracks[0].urls.audio,
-            title: response.data.data.result.tracks[0].title || 'Generated Music'
-          };
-        }
-        // Check if still processing
-        else if (response.data.data && 
-                (response.data.data.status === 'processing' || 
-                 response.data.data.status === 'pending' || 
-                 response.data.data.status === 'waiting')) {
-          console.log(`Music is still being generated (status: ${response.data.data.status}), continuing to poll...`);
-        }
-        // Check if failed
-        else if (response.data.data && response.data.data.status === 'failed') {
-          throw new Error('Music generation failed on the API side');
-        }
-        // If we have data but it's structured differently
-        else if (response.data.status === 'completed' && response.data.result && 
-                response.data.result.tracks && response.data.result.tracks[0]) {
-          return {
-            success: true,
-            audioUrl: response.data.result.tracks[0].urls.audio,
-            title: response.data.result.tracks[0].title || 'Generated Music'
-          };
-        }
-        // Still processing with different structure
-        else if (response.data.status === 'processing' || 
-                response.data.status === 'pending' || 
-                response.data.status === 'waiting') {
-          console.log(`Music is still being generated (status: ${response.data.status}), continuing to poll...`);
-        }
-        // Failed with different structure
-        else if (response.data.status === 'failed') {
-          throw new Error('Music generation failed on the API side');
-        }
-      } else {
-        console.log('Unexpected response format, continuing to poll...');
-      }
-      
-      // Wait before the next poll
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-      attempts++;
-    } catch (error) {
-      console.error('Error polling music status:', error);
-      
-      // If we got a 404, the status endpoint might not be ready yet - wait and retry
-      if (error.response && error.response.status === 404) {
-        console.log('Status endpoint not ready yet, waiting before retrying...');
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        attempts++;
-        // Skip to next iteration instead of immediately returning error
-        continue;
-      }
-      
-      return { success: false, error: error.message };
-    }
-  }
-  
-  return { 
-    success: true,
-    processing: true,
-    message: 'Music generation is taking longer than expected. The bot will notify you when it\'s ready via callback.'
-  };
-}
-
-// Play music in voice channel
-async function playMusic(voiceChannel, audioUrl, message) {
-  try {
-    // Create a connection to the voice channel
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-    });
-    
-    // Store the connection
-    voiceConnections.set(voiceChannel.guild.id, connection);
-    
-    // Create an audio player
-    const player = createAudioPlayer();
-    audioPlayers.set(voiceChannel.guild.id, player);
-    
-    // Download the audio file temporarily
-    const tempFilePath = path.join(__dirname, 'temp', `${shortid.generate()}.mp3`);
-    const tempDir = path.dirname(tempFilePath);
-    
-    // Create temp directory if it doesn't exist
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
-    // Download the file
-    const writer = fs.createWriteStream(tempFilePath);
-    const response = await axios({
-      url: audioUrl,
-      method: 'GET',
-      responseType: 'stream'
-    });
-    
-    response.data.pipe(writer);
-    
-    return new Promise((resolve, reject) => {
-      writer.on('finish', async () => {
-        try {
-          // Create an audio resource from the downloaded file
-          const resource = createAudioResource(tempFilePath);
-          
-          // Play the audio
-          player.play(resource);
-          connection.subscribe(player);
-          
-          // Send a message that music is playing
-          await message.channel.send('🎵 Now playing your generated music!');
-          
-          // Set up event listeners
-          player.on(AudioPlayerStatus.Idle, () => {
-            // Clean up after playing
-            try {
-              connection.destroy();
-              voiceConnections.delete(voiceChannel.guild.id);
-              audioPlayers.delete(voiceChannel.guild.id);
-              fs.unlinkSync(tempFilePath); // Delete the temporary file
-              message.channel.send('✅ Finished playing the generated music.');
-            } catch (err) {
-              console.error('Error during cleanup:', err);
-            }
-          });
-          
-          resolve({ success: true });
-        } catch (err) {
-          reject(err);
-        }
-      });
-      
-      writer.on('error', (err) => {
-        reject(err);
-      });
-    });
-  } catch (error) {
-    console.error('Error playing music:', error);
-    return { success: false, error: error.message };
-  }
-}
-
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -925,68 +660,6 @@ client.on('messageCreate', async (message) => {
     } catch (error) {
       console.error('Error:', error);
       await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
-    }
-  }
-
-  // Check for !createmusic command
-  if (message.content.startsWith('!createmusic')) {
-    const prompt = message.content.slice('!createmusic'.length).trim();
-    
-    // Check if prompt is provided
-    if (!prompt) {
-      message.reply('Please provide a prompt for the music. Example: `!createmusic A calm and relaxing piano track with soft melodies`');
-      return;
-    }
-    
-    // Check if user is in a voice channel
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel) {
-      message.reply('You need to join a voice channel first!');
-      return;
-    }
-    
-    // Send initial response
-    const loadingMessage = await message.reply('🎵 Generating your custom music... This might take a minute!');
-    
-    try {
-      // Generate music using Suno API
-      const result = await generateMusic(prompt);
-      
-      if (!result || !result.success) {
-        await loadingMessage.edit(`Error generating music: ${result?.error || 'Unknown error'}`);
-        return;
-      }
-      
-      // If music is still being processed
-      if (result.processing) {
-        await loadingMessage.edit('🎵 Your music is being generated. This may take a few minutes... The bot will notify you when it\'s ready.');
-        return;
-      }
-      
-      // Create an embed with the music information
-      const musicEmbed = new EmbedBuilder()
-        .setColor('#FF5500')
-        .setTitle('🎵 Your Custom Music is Ready!')
-        .setDescription(`**Prompt:** ${prompt}`)
-        .addFields(
-          { name: 'Title', value: result.title || 'Generated Music' },
-          { name: 'Status', value: 'Joining your voice channel to play the music...' }
-        )
-        .setFooter({ text: 'Generated using Suno AI' })
-        .setTimestamp();
-      
-      // Update the loading message
-      await loadingMessage.edit({ content: 'Music generated successfully!', embeds: [musicEmbed] });
-      
-      // Play the music in the voice channel
-      const playResult = await playMusic(voiceChannel, result.audioUrl, message);
-      
-      if (!playResult || !playResult.success) {
-        await message.channel.send(`Error playing music: ${playResult?.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error in music command:', error);
-      await loadingMessage.edit('Sorry, there was an error generating or playing your music. Please try again later.');
     }
   }
 });
