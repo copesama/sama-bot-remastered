@@ -9,6 +9,8 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+// Add voice dependencies
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 
 // Initialize Discord client
 const client = new Client({
@@ -16,8 +18,13 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates, // Add voice states intent
   ]
 });
+
+// Track active voice connections and audio players
+const voiceConnections = new Map();
+const audioPlayers = new Map();
 
 // Initialize Express app for serving games
 const app = express();
@@ -461,6 +468,165 @@ async function editGame(gameId, editPrompt, originalHtml) {
   }
 }
 
+// Generate music using Suno API
+async function generateMusic(prompt, style = 'Pop') {
+  try {
+    const options = {
+      method: 'POST',
+      url: 'https://apibox.erweima.ai/api/v1/generate',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${process.env.SUNO_API_KEY}`
+      },
+      data: {
+        prompt: prompt,
+        style: style,
+        title: `Discord Bot Music - ${shortid.generate()}`,
+        customMode: true,
+        instrumental: false,
+        model: 'V3_5'
+      },
+      responseType: 'json'
+    };
+
+    const response = await axios.request(options);
+    console.log('Suno API response:', response.data);
+    
+    // The API response should contain the generated music URL
+    // Response format may vary based on the actual API
+    if (response.data && response.data.tracks && response.data.tracks[0]) {
+      return {
+        success: true,
+        audioUrl: response.data.tracks[0].urls.audio,
+        title: response.data.tracks[0].title || 'Generated Music'
+      };
+    } else if (response.data && response.data.id) {
+      // Poll for the result if it's an async generation
+      return await pollMusicGeneration(response.data.id);
+    } else {
+      throw new Error('Unexpected API response format');
+    }
+  } catch (error) {
+    console.error('Error generating music:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Poll for async music generation results
+async function pollMusicGeneration(generationId, maxAttempts = 30, delayMs = 2000) {
+  let attempts = 0;
+  
+  while (attempts < maxAttempts) {
+    try {
+      const response = await axios.get(`https://apibox.erweima.ai/api/v1/status/${generationId}`, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${process.env.SUNO_API_KEY}`
+        }
+      });
+      
+      if (response.data.status === 'completed' && response.data.tracks && response.data.tracks[0]) {
+        return {
+          success: true,
+          audioUrl: response.data.tracks[0].urls.audio,
+          title: response.data.tracks[0].title || 'Generated Music'
+        };
+      } else if (response.data.status === 'failed') {
+        throw new Error('Music generation failed');
+      }
+      
+      // Wait before the next poll
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      attempts++;
+    } catch (error) {
+      console.error('Error polling music status:', error);
+      return { success: false, error: error.message };
+    }
+  }
+  
+  return { success: false, error: 'Music generation timed out' };
+}
+
+// Play music in voice channel
+async function playMusic(voiceChannel, audioUrl, message) {
+  try {
+    // Create a connection to the voice channel
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: voiceChannel.guild.id,
+      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+    });
+    
+    // Store the connection
+    voiceConnections.set(voiceChannel.guild.id, connection);
+    
+    // Create an audio player
+    const player = createAudioPlayer();
+    audioPlayers.set(voiceChannel.guild.id, player);
+    
+    // Download the audio file temporarily
+    const tempFilePath = path.join(__dirname, 'temp', `${shortid.generate()}.mp3`);
+    const tempDir = path.dirname(tempFilePath);
+    
+    // Create temp directory if it doesn't exist
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    // Download the file
+    const writer = fs.createWriteStream(tempFilePath);
+    const response = await axios({
+      url: audioUrl,
+      method: 'GET',
+      responseType: 'stream'
+    });
+    
+    response.data.pipe(writer);
+    
+    return new Promise((resolve, reject) => {
+      writer.on('finish', async () => {
+        try {
+          // Create an audio resource from the downloaded file
+          const resource = createAudioResource(tempFilePath);
+          
+          // Play the audio
+          player.play(resource);
+          connection.subscribe(player);
+          
+          // Send a message that music is playing
+          await message.channel.send('🎵 Now playing your generated music!');
+          
+          // Set up event listeners
+          player.on(AudioPlayerStatus.Idle, () => {
+            // Clean up after playing
+            try {
+              connection.destroy();
+              voiceConnections.delete(voiceChannel.guild.id);
+              audioPlayers.delete(voiceChannel.guild.id);
+              fs.unlinkSync(tempFilePath); // Delete the temporary file
+              message.channel.send('✅ Finished playing the generated music.');
+            } catch (err) {
+              console.error('Error during cleanup:', err);
+            }
+          });
+          
+          resolve({ success: true });
+        } catch (err) {
+          reject(err);
+        }
+      });
+      
+      writer.on('error', (err) => {
+        reject(err);
+      });
+    });
+  } catch (error) {
+    console.error('Error playing music:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -660,6 +826,62 @@ client.on('messageCreate', async (message) => {
     } catch (error) {
       console.error('Error:', error);
       await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
+    }
+  }
+
+  // Check for !createmusic command
+  if (message.content.startsWith('!createmusic')) {
+    const prompt = message.content.slice('!createmusic'.length).trim();
+    
+    // Check if prompt is provided
+    if (!prompt) {
+      message.reply('Please provide a prompt for the music. Example: `!createmusic A calm and relaxing piano track with soft melodies`');
+      return;
+    }
+    
+    // Check if user is in a voice channel
+    const voiceChannel = message.member.voice.channel;
+    if (!voiceChannel) {
+      message.reply('You need to join a voice channel first!');
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply('🎵 Generating your custom music... This might take a minute!');
+    
+    try {
+      // Generate music using Suno API
+      const result = await generateMusic(prompt);
+      
+      if (!result.success) {
+        await loadingMessage.edit(`Error generating music: ${result.error || 'Unknown error'}`);
+        return;
+      }
+      
+      // Create an embed with the music information
+      const musicEmbed = new EmbedBuilder()
+        .setColor('#FF5500')
+        .setTitle('🎵 Your Custom Music is Ready!')
+        .setDescription(`**Prompt:** ${prompt}`)
+        .addFields(
+          { name: 'Title', value: result.title },
+          { name: 'Status', value: 'Joining your voice channel to play the music...' }
+        )
+        .setFooter({ text: 'Generated using Suno AI' })
+        .setTimestamp();
+      
+      // Update the loading message
+      await loadingMessage.edit({ content: 'Music generated successfully!', embeds: [musicEmbed] });
+      
+      // Play the music in the voice channel
+      const playResult = await playMusic(voiceChannel, result.audioUrl, message);
+      
+      if (!playResult.success) {
+        await message.channel.send(`Error playing music: ${playResult.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error in music command:', error);
+      await loadingMessage.edit('Sorry, there was an error generating or playing your music. Please try again later.');
     }
   }
 });
