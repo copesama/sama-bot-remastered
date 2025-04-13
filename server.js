@@ -36,6 +36,12 @@ if (!fs.existsSync(GAMES_DIR)) {
   fs.mkdirSync(GAMES_DIR);
 }
 
+// Create music directory if it doesn't exist
+const MUSIC_DIR = path.join(__dirname, 'music');
+if (!fs.existsSync(MUSIC_DIR)) {
+  fs.mkdirSync(MUSIC_DIR);
+}
+
 // Track active game rooms and players
 const gameRooms = {};
 
@@ -461,6 +467,63 @@ async function editGame(gameId, editPrompt, originalHtml) {
   }
 }
 
+// Generate music using the APIBox.ai API
+async function generateMusic(prompt, style = 'Electronic') {
+  try {
+    // Generate a short title based on the prompt
+    const title = prompt.split(' ').slice(0, 4).join(' ');
+    
+    const options = {
+      method: 'POST',
+      url: 'https://apibox.erweima.ai/api/v1/generate',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${process.env.APIBOX_API_KEY}`
+      },
+      data: {
+        prompt: prompt,
+        style: style,
+        title: title,
+        customMode: false,
+        instrumental: true,
+        model: 'V3_5',
+        callBackUrl: "https://api.example.com/callback",
+        negativeTags: ''
+      }
+    };
+
+    const response = await axios.request(options);
+    
+    if (response.data && response.data.data && response.data.data.url) {
+      // Download the generated MP3
+      const musicUrl = response.data.data.url;
+      const musicId = shortid.generate();
+      const musicPath = path.join(MUSIC_DIR, `${musicId}.mp3`);
+      
+      const fileResponse = await axios({
+        method: 'GET',
+        url: musicUrl,
+        responseType: 'stream'
+      });
+      
+      // Save the file to disk
+      const writer = fs.createWriteStream(musicPath);
+      fileResponse.data.pipe(writer);
+      
+      return new Promise((resolve, reject) => {
+        writer.on('finish', () => resolve({ musicId, musicPath }));
+        writer.on('error', reject);
+      });
+    } else {
+      throw new Error('No music URL in response');
+    }
+  } catch (error) {
+    console.error('Error generating music:', error);
+    throw error;
+  }
+}
+
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -554,6 +617,54 @@ client.on('messageCreate', async (message) => {
     
     // Put the user in edit mode
     usersInEditMode.set(message.author.id, { gameId, loadingMessage });
+    return;
+  }
+
+  // Check for !createmusic command
+  if (message.content.startsWith('!createmusic')) {
+    const prompt = message.content.slice('!createmusic'.length).trim();
+    
+    if (!prompt) {
+      message.reply('Please provide a prompt for the music. Example: `!createmusic A calm and relaxing piano track with soft melodies`');
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply('🎵 Generating your custom music... This might take up to a minute!');
+    
+    try {
+      // Generate the music
+      const { musicId, musicPath } = await generateMusic(prompt);
+      
+      // Create an embed with the music information
+      const musicEmbed = new EmbedBuilder()
+        .setColor('#9933cc')
+        .setTitle('🎵 Your Custom Music is Ready!')
+        .setDescription(`**Prompt:** ${prompt}`)
+        .setFooter({ text: 'Generated using AI' })
+        .setTimestamp();
+      
+      // Send the music file and update the loading message
+      await message.channel.send({
+        embeds: [musicEmbed],
+        files: [{
+          attachment: musicPath,
+          name: `${prompt.slice(0, 30).replace(/[^a-z0-9]/gi, '_')}.mp3`
+        }]
+      });
+      
+      await loadingMessage.delete();
+      
+      // Clean up the file after sending
+      fs.unlink(musicPath, (err) => {
+        if (err) console.error('Error deleting music file:', err);
+      });
+      
+    } catch (error) {
+      console.error('Error generating music:', error);
+      await loadingMessage.edit('Sorry, there was an error generating your music. Please try again later.');
+    }
+    
     return;
   }
 
