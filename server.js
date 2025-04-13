@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+// Add voice-related imports
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
 const axios = require('axios');
 const express = require('express');
 const path = require('path');
@@ -16,6 +18,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates, // Add voice state intent to track voice channels
   ]
 });
 
@@ -48,6 +51,10 @@ const gameRooms = {};
 // Serve static game files
 app.use('/games', express.static(GAMES_DIR));
 app.use(cookieParser());
+
+// Keep track of active voice connections and players
+const voiceConnections = new Map();
+const audioPlayers = new Map();
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -605,6 +612,13 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
+    // Check if user is in a voice channel
+    const voiceChannel = message.member?.voice?.channel;
+    if (!voiceChannel) {
+      message.reply('You need to join a voice channel first!');
+      return;
+    }
+    
     // Send initial response
     const loadingMessage = await message.reply('🎵 Generating your custom music track... This might take a minute!');
     
@@ -617,25 +631,89 @@ client.on('messageCreate', async (message) => {
         .setColor('#9966ff')
         .setTitle('🎵 Your Custom Music Track is Ready!')
         .setDescription(`**Music prompt:** ${prompt}`)
-        .setFooter({ text: 'Generated using AI' })
+        .setFooter({ text: 'Generated using AI • Now playing in your voice channel' })
         .setTimestamp();
       
       // Edit the loading message and attach the music file
       await loadingMessage.edit({ content: 'Music created successfully!', embeds: [musicEmbed], files: [musicPath] });
       
-      // Optionally clean up the file after sending to save space (especially important for Heroku)
-      // Give some time for Discord to process the file before deleting
-      setTimeout(() => {
-        try {
-          fs.unlinkSync(musicPath);
-          console.log(`Deleted music file: ${musicPath}`);
-        } catch (err) {
-          console.error(`Error deleting music file: ${err}`);
-        }
-      }, 10000); // 10 seconds delay
+      // Join the voice channel and play the music
+      try {
+        // Create a voice connection
+        const connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: voiceChannel.guild.id,
+          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        });
+        
+        // Create an audio player
+        const player = createAudioPlayer({
+          behaviors: {
+            noSubscriber: NoSubscriberBehavior.Pause,
+          },
+        });
+        
+        // Create an audio resource from the generated file
+        const resource = createAudioResource(musicPath);
+        
+        // Play the audio
+        player.play(resource);
+        connection.subscribe(player);
+        
+        // Store the connection and player for cleanup later
+        voiceConnections.set(voiceChannel.guild.id, connection);
+        audioPlayers.set(voiceChannel.guild.id, player);
+        
+        // Handle when audio finishes playing
+        player.on(AudioPlayerStatus.Idle, () => {
+          // Disconnect after playing
+          connection.destroy();
+          voiceConnections.delete(voiceChannel.guild.id);
+          audioPlayers.delete(voiceChannel.guild.id);
+          
+          // Clean up the file
+          try {
+            fs.unlinkSync(musicPath);
+            console.log(`Deleted music file: ${musicPath}`);
+          } catch (err) {
+            console.error(`Error deleting music file: ${err}`);
+          }
+        });
+        
+        // Add error handling for player errors
+        player.on('error', error => {
+          console.error(`Error playing audio: ${error.message}`);
+          connection.destroy();
+          voiceConnections.delete(voiceChannel.guild.id);
+          audioPlayers.delete(voiceChannel.guild.id);
+          message.channel.send('Error playing the generated music in the voice channel.');
+          
+          // Clean up the file
+          try {
+            fs.unlinkSync(musicPath);
+            console.log(`Deleted music file (after error): ${musicPath}`);
+          } catch (err) {
+            console.error(`Error deleting music file: ${err}`);
+          }
+        });
+        
+      } catch (voiceError) {
+        console.error('Error connecting to voice channel:', voiceError);
+        message.channel.send('Failed to join your voice channel. Please check permissions or try again later.');
+        
+        // Clean up the file if voice connection fails
+        setTimeout(() => {
+          try {
+            fs.unlinkSync(musicPath);
+            console.log(`Deleted music file (voice error): ${musicPath}`);
+          } catch (err) {
+            console.error(`Error deleting music file: ${err}`);
+          }
+        }, 10000); // 10 seconds delay
+      }
       
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error generating music:', error);
       await loadingMessage.edit('Sorry, there was an error generating your music. Please try again later.');
     }
   }
@@ -745,6 +823,21 @@ client.on('messageCreate', async (message) => {
       await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
     }
   }
+});
+
+// Add a function to handle cleaning up voice connections when the bot is stopped
+process.on('SIGINT', () => {
+  voiceConnections.forEach(connection => {
+    connection.destroy();
+  });
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  voiceConnections.forEach(connection => {
+    connection.destroy();
+  });
+  process.exit(0);
 });
 
 // Start the Express server and Discord bot
