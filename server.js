@@ -50,6 +50,9 @@ const gameRooms = {};
 app.use('/games', express.static(GAMES_DIR));
 app.use(cookieParser());
 
+// Add middleware to parse JSON requests for callbacks
+app.use(express.json());
+
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
   const gameId = req.params.gameId;
@@ -471,6 +474,13 @@ async function editGame(gameId, editPrompt, originalHtml) {
 // Generate music using Suno API
 async function generateMusic(prompt, style = 'Pop') {
   try {
+    // Get the server URL from environment variables or default to localhost during development
+    const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
+    const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+    
+    // Generate unique ID for this music request
+    const musicId = shortid.generate();
+    
     const options = {
       method: 'POST',
       url: 'https://apibox.erweima.ai/api/v1/generate',
@@ -482,10 +492,11 @@ async function generateMusic(prompt, style = 'Pop') {
       data: {
         prompt: prompt,
         style: style,
-        title: `Discord Bot Music - ${shortid.generate()}`,
+        title: `Discord Bot Music - ${musicId}`,
         customMode: true,
         instrumental: false,
-        model: 'V3_5'
+        model: 'V3_5',
+        callBackUrl: `${baseUrl}/api/music-callback/${musicId}` // Add the required callBackUrl parameter
       },
       responseType: 'json'
     };
@@ -493,19 +504,26 @@ async function generateMusic(prompt, style = 'Pop') {
     const response = await axios.request(options);
     console.log('Suno API response:', response.data);
     
-    // The API response should contain the generated music URL
-    // Response format may vary based on the actual API
-    if (response.data && response.data.tracks && response.data.tracks[0]) {
-      return {
-        success: true,
-        audioUrl: response.data.tracks[0].urls.audio,
-        title: response.data.tracks[0].title || 'Generated Music'
-      };
-    } else if (response.data && response.data.id) {
-      // Poll for the result if it's an async generation
+    // Check if we got a direct success response
+    if (response.data && response.data.code === 200) {
+      if (response.data.data && response.data.data.tracks && response.data.data.tracks[0]) {
+        return {
+          success: true,
+          audioUrl: response.data.data.tracks[0].urls.audio,
+          title: response.data.data.tracks[0].title || 'Generated Music'
+        };
+      } 
+      // Check if we got a generation ID for polling
+      else if (response.data.data && response.data.data.id) {
+        return await pollMusicGeneration(response.data.data.id);
+      }
+    } 
+    // Alternative response format
+    else if (response.data && response.data.id) {
       return await pollMusicGeneration(response.data.id);
-    } else {
-      throw new Error('Unexpected API response format');
+    } 
+    else {
+      throw new Error(response.data?.msg || 'Unexpected API response format');
     }
   } catch (error) {
     console.error('Error generating music:', error);
@@ -513,12 +531,23 @@ async function generateMusic(prompt, style = 'Pop') {
   }
 }
 
-// Poll for async music generation results
+// Add an endpoint to handle the callback from Suno API
+app.post('/api/music-callback/:musicId', (req, res) => {
+  console.log(`Received music callback for ID: ${req.params.musicId}`);
+  console.log('Callback data:', req.body);
+  
+  // Return a 200 status to acknowledge receipt
+  res.status(200).send('OK');
+});
+
+// Poll for async music generation results with improved error handling
 async function pollMusicGeneration(generationId, maxAttempts = 30, delayMs = 2000) {
   let attempts = 0;
   
   while (attempts < maxAttempts) {
     try {
+      console.log(`Polling music generation status (attempt ${attempts + 1}/${maxAttempts}): ${generationId}`);
+      
       const response = await axios.get(`https://apibox.erweima.ai/api/v1/status/${generationId}`, {
         headers: {
           Accept: 'application/json',
@@ -526,14 +555,33 @@ async function pollMusicGeneration(generationId, maxAttempts = 30, delayMs = 200
         }
       });
       
+      console.log(`Poll response:`, response.data);
+      
+      // Handle different possible response formats
       if (response.data.status === 'completed' && response.data.tracks && response.data.tracks[0]) {
         return {
           success: true,
           audioUrl: response.data.tracks[0].urls.audio,
           title: response.data.tracks[0].title || 'Generated Music'
         };
-      } else if (response.data.status === 'failed') {
-        throw new Error('Music generation failed');
+      } 
+      // Check for nested data structure
+      else if (response.data.data && response.data.data.status === 'completed' && 
+               response.data.data.tracks && response.data.data.tracks[0]) {
+        return {
+          success: true,
+          audioUrl: response.data.data.tracks[0].urls.audio,
+          title: response.data.data.tracks[0].title || 'Generated Music'
+        };
+      } 
+      // Check for error status
+      else if (response.data.status === 'failed' || (response.data.data && response.data.data.status === 'failed')) {
+        throw new Error('Music generation failed on the API side');
+      }
+      // If still processing, continue polling
+      else if (response.data.status === 'processing' || 
+              (response.data.data && response.data.data.status === 'processing')) {
+        console.log('Music is still being generated, continuing to poll...');
       }
       
       // Wait before the next poll
