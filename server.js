@@ -196,6 +196,7 @@ async function generateMusic(prompt) {
     
     console.log('Sending request with params:', JSON.stringify(requestBody));
     
+    // Initial request to start generation
     const response = await axios({
       method: 'post',
       url: 'https://api.aimlapi.com/v2/generate/audio',
@@ -208,9 +209,27 @@ async function generateMusic(prompt) {
     });
     
     console.log('API Response status:', response.status);
+    console.log('Initial response data:', response.data);
     
-    // Check if the response contains a URL to download the audio
-    if (response.data && response.data.audio_url) {
+    // Check if generation is queued
+    if (response.data && response.data.status === 'queued' && response.data.id) {
+      console.log(`Generation job queued with ID: ${response.data.id}`);
+      
+      // Poll for completion
+      const generationId = response.data.id;
+      const audioData = await pollGenerationStatus(generationId);
+      
+      // Create unique filename for the generated music
+      const musicId = shortid.generate();
+      const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
+      
+      // Save the audio data to a file
+      writeFileSync(filePath, Buffer.from(audioData, 'base64'));
+      
+      return { musicId, filePath };
+    }
+    // Handle immediate response with audio URL
+    else if (response.data && response.data.audio_url) {
       console.log('Received audio URL:', response.data.audio_url);
       
       // Download the audio file from the provided URL
@@ -228,8 +247,9 @@ async function generateMusic(prompt) {
       writeFileSync(filePath, Buffer.from(audioResponse.data));
       
       return { musicId, filePath };
-    } else if (response.data && response.data.output) {
-      // Direct binary output if provided
+    }
+    // Handle immediate response with output data
+    else if (response.data && response.data.output) {
       console.log('Received direct audio output');
       
       const musicId = shortid.generate();
@@ -239,9 +259,10 @@ async function generateMusic(prompt) {
       writeFileSync(filePath, Buffer.from(response.data.output, 'base64'));
       
       return { musicId, filePath };
-    } else {
+    }
+    else {
       console.error('Unexpected API response format:', response.data);
-      throw new Error('API did not return audio data or URL');
+      throw new Error('API did not return audio data or a valid queued status');
     }
   } catch (error) {
     console.error('Error generating music:', error);
@@ -252,6 +273,78 @@ async function generateMusic(prompt) {
     }
     throw error;
   }
+}
+
+// Function to poll for generation status until complete
+async function pollGenerationStatus(generationId) {
+  console.log(`Starting to poll for generation status of ID: ${generationId}`);
+  
+  // Maximum wait time: 2 minutes (24 attempts * 5 seconds)
+  const maxAttempts = 24;
+  let attempts = 0;
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    try {
+      console.log(`Polling attempt ${attempts}/${maxAttempts} for generation ID: ${generationId}`);
+      
+      const statusResponse = await axios({
+        method: 'get',
+        url: `https://api.aimlapi.com/v2/generations/${generationId}`,
+        headers: {
+          'Authorization': `Bearer ${process.env.AIML_API_KEY}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      console.log('Status response:', statusResponse.data);
+      
+      // Check if the generation is complete
+      if (statusResponse.data.status === 'completed') {
+        console.log('Generation completed successfully!');
+        
+        // If there's an audio_url, download and return that
+        if (statusResponse.data.audio_url) {
+          console.log('Downloading audio from URL:', statusResponse.data.audio_url);
+          const audioResponse = await axios({
+            method: 'get',
+            url: statusResponse.data.audio_url,
+            responseType: 'arraybuffer'
+          });
+          return audioResponse.data;
+        }
+        // If there's output data, return that
+        else if (statusResponse.data.output) {
+          console.log('Received output data directly');
+          return statusResponse.data.output;
+        }
+        else {
+          throw new Error('No audio data found in completed generation');
+        }
+      }
+      else if (statusResponse.data.status === 'failed') {
+        console.error('Generation failed:', statusResponse.data.error || 'Unknown error');
+        throw new Error(`Generation failed: ${statusResponse.data.error || 'Unknown error'}`);
+      }
+      
+      // If not complete, wait and try again
+      console.log(`Generation status: ${statusResponse.data.status}, waiting 5 seconds...`);
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+    } catch (error) {
+      console.error(`Error polling generation status (attempt ${attempts}):`, error);
+      
+      // If this is the last attempt, throw the error
+      if (attempts >= maxAttempts) {
+        throw error;
+      }
+      
+      // Otherwise, wait and try again
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+    }
+  }
+  
+  throw new Error(`Generation timed out after ${attempts} attempts`);
 }
 
 // Function to play music in a voice channel
