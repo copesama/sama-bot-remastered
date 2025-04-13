@@ -36,18 +36,18 @@ if (!fs.existsSync(GAMES_DIR)) {
   fs.mkdirSync(GAMES_DIR);
 }
 
-// Create music directory if it doesn't exist
-const MUSIC_DIR = path.join(__dirname, 'music');
-if (!fs.existsSync(MUSIC_DIR)) {
-  fs.mkdirSync(MUSIC_DIR);
-}
-
 // Track active game rooms and players
 const gameRooms = {};
 
 // Serve static game files
 app.use('/games', express.static(GAMES_DIR));
 app.use(cookieParser());
+
+// Track users who are in "edit mode"
+const usersInEditMode = new Map();
+
+// Track music generation requests
+const musicGenerationRequests = new Map();
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -411,9 +411,6 @@ function extractHtmlFromResponse(response) {
 </html>`;
 }
 
-// Track users who are in "edit mode"
-const usersInEditMode = new Map();
-
 // Function to edit an existing game
 async function editGame(gameId, editPrompt, originalHtml) {
   try {
@@ -467,11 +464,18 @@ async function editGame(gameId, editPrompt, originalHtml) {
   }
 }
 
-// Generate music using the APIBox.ai API
-async function generateMusic(prompt, style = 'Electronic') {
+// Function to generate music using the API
+async function generateMusic(prompt, userId) {
   try {
-    // Generate a short title based on the prompt
-    const title = prompt.split(' ').slice(0, 4).join(' ');
+    // Create a unique title based on the prompt
+    const title = prompt.split(' ').slice(0, 5).join(' ');
+    
+    // Determine style based on prompt keywords (simple implementation)
+    let style = 'Classical';
+    if (prompt.match(/rock|guitar|band|electric/i)) style = 'Rock';
+    if (prompt.match(/jazz|blues|saxophone|trumpet/i)) style = 'Jazz';
+    if (prompt.match(/electronic|edm|dance|beat/i)) style = 'Electronic';
+    if (prompt.match(/hip hop|rap|trap/i)) style = 'Hip Hop';
     
     const options = {
       method: 'POST',
@@ -479,7 +483,7 @@ async function generateMusic(prompt, style = 'Electronic') {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        Authorization: `Bearer ${process.env.APIBOX_API_KEY}`
+        Authorization: `Bearer ${process.env.MUSIC_API_KEY}`
       },
       data: {
         prompt: prompt,
@@ -488,59 +492,90 @@ async function generateMusic(prompt, style = 'Electronic') {
         customMode: true,
         instrumental: true,
         model: 'V3_5',
+        callBackUrl: process.env.SERVER_URL ? `${process.env.SERVER_URL}/music-callback/${userId}` : null,
         negativeTags: ''
       }
     };
 
-    console.log('Sending music generation request:', JSON.stringify(options.data));
-    const response = await axios.request(options);
-    
-    // Log the complete response structure for debugging
-    console.log('API Response structure:', JSON.stringify(response.data));
-    
-    // Check various possible paths where the URL might be located
-    let musicUrl = null;
-    
-    if (response.data && response.data.data && response.data.data.url) {
-      musicUrl = response.data.data.url;
-    } else if (response.data && response.data.url) {
-      musicUrl = response.data.url;
-    } else if (response.data && response.data.result && response.data.result.url) {
-      musicUrl = response.data.result.url;
-    } else if (response.data && response.data.results && response.data.results[0]) {
-      musicUrl = response.data.results[0].url || response.data.results[0].audio_url;
-    }
-    
-    if (!musicUrl) {
-      throw new Error(`No music URL found in response: ${JSON.stringify(response.data)}`);
-    }
-    
-    console.log('Found music URL:', musicUrl);
-    
-    // Download the generated MP3
-    const musicId = shortid.generate();
-    const musicPath = path.join(MUSIC_DIR, `${musicId}.mp3`);
-    
-    const fileResponse = await axios({
-      method: 'GET',
-      url: musicUrl,
-      responseType: 'stream'
-    });
-    
-    // Save the file to disk
-    const writer = fs.createWriteStream(musicPath);
-    fileResponse.data.pipe(writer);
-    
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve({ musicId, musicPath }));
-      writer.on('error', reject);
-    });
+    const { data } = await axios.request(options);
+    return data;
   } catch (error) {
     console.error('Error generating music:', error);
-    console.error('API response (if available):', error.response?.data);
     throw error;
   }
 }
+
+// Function to check music generation status
+async function checkMusicStatus(taskId) {
+  try {
+    const options = {
+      method: 'GET',
+      url: `https://apibox.erweima.ai/api/v1/tasks/${taskId}`,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${process.env.MUSIC_API_KEY}`
+      }
+    };
+
+    const { data } = await axios.request(options);
+    return data;
+  } catch (error) {
+    console.error('Error checking music status:', error);
+    throw error;
+  }
+}
+
+// Function to download music file
+async function downloadMusic(url) {
+  try {
+    const response = await axios({
+      method: 'GET',
+      url: url,
+      responseType: 'arraybuffer'
+    });
+    
+    // Create a buffer from the response data
+    return Buffer.from(response.data);
+  } catch (error) {
+    console.error('Error downloading music:', error);
+    throw error;
+  }
+}
+
+// Setup a route for music generation callback
+app.post('/music-callback/:userId', express.json(), async (req, res) => {
+  const { userId } = req.params;
+  const { taskId, status, url } = req.body;
+  
+  try {
+    if (status === 'completed' && url && musicGenerationRequests.has(userId)) {
+      const { channelId } = musicGenerationRequests.get(userId);
+      const channel = await client.channels.fetch(channelId);
+      
+      if (channel) {
+        // Download the music file
+        const musicBuffer = await downloadMusic(url);
+        
+        // Send the completed music to the channel
+        await channel.send({
+          content: `🎵 Your music is ready!`,
+          files: [{
+            attachment: musicBuffer,
+            name: 'generated-music.mp3'
+          }]
+        });
+      }
+      
+      // Remove the request from tracking
+      musicGenerationRequests.delete(userId);
+    }
+    
+    res.status(200).send('Callback received');
+  } catch (error) {
+    console.error('Error processing music callback:', error);
+    res.status(500).send('Error processing callback');
+  }
+});
 
 // Discord bot event handlers
 client.once('ready', () => {
@@ -643,50 +678,108 @@ client.on('messageCreate', async (message) => {
     const prompt = message.content.slice('!createmusic'.length).trim();
     
     if (!prompt) {
-      message.reply('Please provide a prompt for the music. Example: `!createmusic A calm and relaxing piano track with soft melodies`');
+      message.reply('Please provide a prompt for the music. Example: `!createmusic upbeat jazz with piano solo`');
       return;
     }
     
     // Send initial response
-    const loadingMessage = await message.reply('🎵 Generating your custom music... This might take up to a minute!');
+    const loadingMessage = await message.reply('🎵 Generating your custom music... This might take a few minutes!');
     
     try {
       // Generate the music
-      const { musicId, musicPath } = await generateMusic(prompt);
+      const response = await generateMusic(prompt, message.author.id);
+      const taskId = response.taskId;
       
-      // Create an embed with the music information
+      if (!taskId) {
+        await loadingMessage.edit('Sorry, there was an error starting music generation. Please try again later.');
+        return;
+      }
+      
+      // Store the request details for tracking
+      musicGenerationRequests.set(message.author.id, {
+        taskId,
+        prompt,
+        channelId: message.channel.id,
+        loadingMessage
+      });
+      
+      // Create an embed with information about the music generation
       const musicEmbed = new EmbedBuilder()
-        .setColor('#9933cc')
-        .setTitle('🎵 Your Custom Music is Ready!')
+        .setColor('#9933ff')
+        .setTitle('🎵 Music Generation Started!')
         .setDescription(`**Prompt:** ${prompt}`)
-        .setFooter({ text: 'Generated using AI' })
+        .addFields(
+          { name: 'Status', value: 'Your music is being generated. This typically takes 3-5 minutes.' },
+          { name: 'Task ID', value: `\`${taskId}\`` }
+        )
+        .setFooter({ text: 'Music will be posted in this channel when ready' })
         .setTimestamp();
       
-      // Send the music file and update the loading message
-      await message.channel.send({
-        embeds: [musicEmbed],
-        files: [{
-          attachment: musicPath,
-          name: `${prompt.slice(0, 30).replace(/[^a-z0-9]/gi, '_')}.mp3`
-        }]
-      });
+      // Update the loading message
+      await loadingMessage.edit({ content: 'Music generation in progress...', embeds: [musicEmbed] });
       
-      await loadingMessage.delete();
-      
-      // Clean up the file after sending
-      fs.unlink(musicPath, (err) => {
-        if (err) console.error('Error deleting music file:', err);
-      });
-      
+      // If we don't have a callback URL set up (e.g., in development), poll for status
+      if (!process.env.SERVER_URL) {
+        let status = 'pending';
+        let retries = 0;
+        const maxRetries = 30; // 5 minutes maximum wait time
+        
+        // Poll for status every 10 seconds
+        const statusInterval = setInterval(async () => {
+          try {
+            const statusResponse = await checkMusicStatus(taskId);
+            status = statusResponse.status;
+            
+            if (status === 'completed' && statusResponse.url) {
+              clearInterval(statusInterval);
+              
+              // Download and send the music file
+              const musicBuffer = await downloadMusic(statusResponse.url);
+              
+              // Send the completed music to the channel
+              await message.channel.send({
+                content: `🎵 <@${message.author.id}>, your music is ready!`,
+                files: [{
+                  attachment: musicBuffer,
+                  name: 'generated-music.mp3'
+                }]
+              });
+              
+              // Update the loading message
+              const completedEmbed = new EmbedBuilder()
+                .setColor('#33cc66')
+                .setTitle('🎵 Music Generation Complete!')
+                .setDescription(`**Prompt:** ${prompt}`)
+                .setFooter({ text: 'Enjoy your custom music!' })
+                .setTimestamp();
+              
+              await loadingMessage.edit({ content: 'Music generated successfully!', embeds: [completedEmbed] });
+              
+              // Remove the request from tracking
+              musicGenerationRequests.delete(message.author.id);
+            } else if (status === 'failed') {
+              clearInterval(statusInterval);
+              await loadingMessage.edit('Sorry, music generation failed. Please try again with a different prompt.');
+              musicGenerationRequests.delete(message.author.id);
+            }
+            
+            retries++;
+            if (retries >= maxRetries) {
+              clearInterval(statusInterval);
+              await loadingMessage.edit('Music generation is taking longer than expected. It may still complete, but we\'ll stop checking.');
+            }
+          } catch (error) {
+            console.error('Error checking music status:', error);
+          }
+        }, 10000); // Check every 10 seconds
+      }
     } catch (error) {
-      console.error('Error generating music:', error);
+      console.error('Error:', error);
       await loadingMessage.edit('Sorry, there was an error generating your music. Please try again later.');
     }
-    
-    return;
   }
 
-  // Check for !multigame command (renamed from !creategame)
+  // Check for !multigame command
   if (message.content.startsWith('!multigame')) {
     const prompt = message.content.slice('!multigame'.length).trim();
     
