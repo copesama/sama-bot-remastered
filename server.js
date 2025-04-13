@@ -186,34 +186,70 @@ async function generateMusic(prompt) {
   try {
     console.log(`Generating music with prompt: ${prompt}`);
     
+    // Get request body parameters
+    const requestBody = {
+      model: "stable-audio",
+      prompt: prompt,
+      seconds_total: 30,
+      output_format: "mp3"
+    };
+    
+    console.log('Sending request with params:', JSON.stringify(requestBody));
+    
     const response = await axios({
       method: 'post',
       url: 'https://api.aimlapi.com/v2/generate/audio',
       headers: {
         'Authorization': `Bearer ${process.env.AIML_API_KEY}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
-      data: {
-        model: "stable-audio",
-        prompt: prompt,
-        seconds_start: 0,
-        seconds_total: 30,
-        steps: 50,
-        output_format: 'mp3'
-      },
-      responseType: 'arraybuffer' // Important for binary data
+      data: requestBody
     });
     
-    // Create unique filename for the generated music
-    const musicId = shortid.generate();
-    const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
+    console.log('API Response status:', response.status);
     
-    // Save the binary data to a file
-    writeFileSync(filePath, Buffer.from(response.data));
-    
-    return { musicId, filePath };
+    // Check if the response contains a URL to download the audio
+    if (response.data && response.data.audio_url) {
+      console.log('Received audio URL:', response.data.audio_url);
+      
+      // Download the audio file from the provided URL
+      const audioResponse = await axios({
+        method: 'get',
+        url: response.data.audio_url,
+        responseType: 'arraybuffer'
+      });
+      
+      // Create unique filename for the generated music
+      const musicId = shortid.generate();
+      const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
+      
+      // Save the binary data to a file
+      writeFileSync(filePath, Buffer.from(audioResponse.data));
+      
+      return { musicId, filePath };
+    } else if (response.data && response.data.output) {
+      // Direct binary output if provided
+      console.log('Received direct audio output');
+      
+      const musicId = shortid.generate();
+      const filePath = path.join(MUSIC_DIR, `${musicId}.mp3`);
+      
+      // Save the binary data to a file
+      writeFileSync(filePath, Buffer.from(response.data.output, 'base64'));
+      
+      return { musicId, filePath };
+    } else {
+      console.error('Unexpected API response format:', response.data);
+      throw new Error('API did not return audio data or URL');
+    }
   } catch (error) {
-    console.error('Error generating music:', error.response?.data || error.message);
+    console.error('Error generating music:', error);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+      console.error('Response headers:', error.response.headers);
+    }
     throw error;
   }
 }
@@ -692,8 +728,8 @@ client.on('messageCreate', async (message) => {
         await loadingMessage.edit('There was an error playing your music. Please try again later.');
       }
     } catch (error) {
-      console.error('Error:', error);
-      await loadingMessage.edit('Sorry, there was an error generating your music. Please try again later.');
+      console.error('Error in music generation flow:', error);
+      await loadingMessage.edit(`Sorry, there was an error generating your music: ${error.message}. Please try again later.`);
     }
   }
 
