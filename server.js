@@ -181,22 +181,24 @@ io.on('connection', (socket) => {
   });
 });
 
-// Function to generate music using AI/ML API
+// Function to generate music using AI/ML API with Stability AI's Stable Audio
 async function generateMusic(prompt) {
   try {
     console.log(`Generating music with prompt: ${prompt}`);
     
     const response = await axios({
       method: 'post',
-      url: 'https://api.aimlapi.com/api/music',
+      url: 'https://api.aimlapi.com/v2/generate/audio',
       headers: {
         'Authorization': `Bearer ${process.env.AIML_API_KEY}`,
         'Content-Type': 'application/json'
       },
       data: {
+        model: "stable-audio",
         prompt: prompt,
-        model: 'music-gen', // Use appropriate model from the API
-        duration: 30, // Generate 30 seconds of music
+        seconds_start: 0,
+        seconds_total: 30,
+        steps: 50,
         output_format: 'mp3'
       },
       responseType: 'arraybuffer' // Important for binary data
@@ -655,7 +657,7 @@ client.on('messageCreate', async (message) => {
     }
     
     // Send initial response
-    const loadingMessage = await message.reply('🎵 Generating your custom music... This might take a minute!');
+    const loadingMessage = await message.reply('🎵 Generating your custom music using Stability AI\'s Stable Audio... This might take a minute!');
     
     try {
       // Check if the user is in a voice channel
@@ -678,9 +680,10 @@ client.on('messageCreate', async (message) => {
           .setDescription(`**Music prompt:** ${prompt}\n**Music ID:** \`${musicId}\``)
           .addFields(
             { name: 'Now Playing', value: 'Your AI-generated music is now playing in your voice channel!' },
+            { name: 'Model', value: 'Stability AI\'s Stable Audio' },
             { name: 'Duration', value: 'Approximately 30 seconds' }
           )
-          .setFooter({ text: 'Generated using AI/ML API' })
+          .setFooter({ text: 'Generated using Stability AI\'s Stable Audio • AI/ML API' })
           .setTimestamp();
         
         // Edit the loading message with the music info
