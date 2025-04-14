@@ -823,7 +823,7 @@ client.on('messageCreate', async (message) => {
       // Ensure there are no double slashes in the URL
       const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
 
-      // Do NOT generate a user token here; let the game page handle user info
+      // Generate the game URL without a token so that the clicking user’s profile is used.
       const gameUrl = `${baseUrl}/game/${gameId}`;
       
       // Create an embed with the game information
@@ -833,11 +833,11 @@ client.on('messageCreate', async (message) => {
         .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${gameUrl}` },
+          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${baseUrl}/game/${gameId}` },
           { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
           { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
         )
-        .setFooter({ text: 'Generated using AI • Game will prompt each player for their profile' })
+        .setFooter({ text: 'Generated using AI • Game will display each player\'s own profile' })
         .setTimestamp();
       
       // Edit the loading message with the game link
