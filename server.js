@@ -218,7 +218,7 @@ async function generateMultiplayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'openrouter/optimus-alpha',
+        model: 'agentica-org/deepcoder-14b-preview:free',
         messages: [
           {
             role: 'system',
@@ -348,7 +348,7 @@ async function generateSinglePlayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'openrouter/optimus-alpha',
+        model: 'agentica-org/deepcoder-14b-preview:free',
         messages: [
           {
             role: 'system',
@@ -490,7 +490,7 @@ async function editGame(gameId, editPrompt, originalHtml) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'openrouter/optimus-alpha',
+        model: 'agentica-org/deepcoder-14b-preview:free',
         messages: [
           {
             role: 'system',
