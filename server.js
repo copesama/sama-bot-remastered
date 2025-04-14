@@ -237,6 +237,10 @@ async function generateMultiplayerGame(prompt) {
             - Extract user data from cookie:
               const userData = JSON.parse(decodeURIComponent(document.cookie.split('; ').find(row => row.startsWith('gameUserData=')).split('=')[1]));
             
+            IMPORTANT:
+            - Each player sees their OWN username and avatar in the game (userData.username and userData.avatar)
+            - DO NOT hardcode any specific user information - always use the userData from the cookie
+            
             REQUIRED MULTIPLAYER EVENTS:
             1. JOIN GAME:
                socket.emit('joinGame', {
@@ -363,7 +367,8 @@ async function generateSinglePlayerGame(prompt) {
             USER DATA IMPLEMENTATION:
             - Extract user data from cookie:
               const userData = JSON.parse(decodeURIComponent(document.cookie.split('; ').find(row => row.startsWith('gameUserData=')).split('=')[1]));
-            - Use userData.username and userData.avatar where appropriate
+            - Use userData.username and userData.avatar for the current player
+            - DO NOT hardcode any specific user information - always use the userData from the cookie
             
             Include comprehensive error handling and clear user feedback.
             The final game MUST be completely playable as a single-player experience.`
@@ -381,7 +386,7 @@ async function generateSinglePlayerGame(prompt) {
             6. Use inlined CSS and JS for a single file solution
             
             GAME FEATURES TO INCLUDE:
-            1. Clear visual representation of the player
+            1. Clear visual representation of the player using userData.username and userData.avatar
             2. Simple UI showing score/progress and basic instructions
             3. Basic sound effects (optional)
             4. Win/lose conditions where appropriate
@@ -777,7 +782,11 @@ client.on('messageCreate', async (message) => {
         avatar: message.author.displayAvatarURL({ format: 'png' })
       }, JWT_SECRET);
       
-      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      // Creator's personal link includes their token
+      const creatorGameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      
+      // Shareable link doesn't include a token - each player will get their own profile
+      const shareableUrl = `${baseUrl}/game/${gameId}`;
       
       // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
@@ -785,12 +794,12 @@ client.on('messageCreate', async (message) => {
         .setTitle('🎮 Your Custom Multiplayer Game is Ready!')
         .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
-          { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Invite Friends', value: `Share this link with friends so they can join your game: ${baseUrl}/game/${gameId}` },
+          { name: 'Play your game', value: `[Click here to play](${creatorGameUrl})` },
+          { name: 'Invite Friends', value: `Share this link with friends so they can join your game: ${shareableUrl}` },
           { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
-          { name: 'Features', value: '• Real-time multiplayer\n• In-game chat\n• Discord profiles integration' }
+          { name: 'Features', value: '• Real-time multiplayer\n• In-game chat\n• Each player sees their own Discord profile' }
         )
-        .setFooter({ text: 'Generated using AI • Players will see their own profile in the game' })
+        .setFooter({ text: 'Generated using AI • Each player will see their own profile in the game' })
         .setTimestamp();
       
       // Edit the loading message with the game link
@@ -830,7 +839,11 @@ client.on('messageCreate', async (message) => {
         avatar: message.author.displayAvatarURL({ format: 'png' })
       }, JWT_SECRET);
       
-      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      // Creator's personal link includes their token
+      const creatorGameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      
+      // Shareable link doesn't include a token - each player will get their own profile
+      const shareableUrl = `${baseUrl}/game/${gameId}`;
       
       // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
@@ -838,12 +851,12 @@ client.on('messageCreate', async (message) => {
         .setTitle('🎮 Your Custom Single-Player Game is Ready!')
         .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
-          { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${baseUrl}/game/${gameId}` },
+          { name: 'Play your game', value: `[Click here to play](${creatorGameUrl})` },
+          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${shareableUrl}` },
           { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
-          { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
+          { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Each player sees their own Discord profile' }
         )
-        .setFooter({ text: 'Generated using AI • Game will display each player\'s own profile' })
+        .setFooter({ text: 'Generated using AI • Each player will see their own profile' })
         .setTimestamp();
       
       // Edit the loading message with the game link
