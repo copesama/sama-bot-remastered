@@ -750,106 +750,106 @@ client.on('messageCreate', async (message) => {
   
   // Check for !multigame command (renamed from !creategame)
   if (message.content.startsWith('!multigame')) {
-    const prompt = message.content.slice('!multigame'.length).trim();
-    
+    // Extract prompt from command
+    const prompt = message.content.substring('!multigame'.length).trim();
     if (!prompt) {
-      message.reply('Please provide a prompt for the game. Example: `!multigame space shooter with aliens`');
-      return;
+      return message.reply('Please provide a prompt for your game, e.g., `!multigame a multiplayer racing game`');
     }
-    
-    // Send initial response
-    const loadingMessage = await message.reply('🎮 Generating your custom multiplayer game... This might take a minute!');
-    
+
+    // Send initial response while generating
+    const loadingMessage = await message.reply('Generating your multiplayer game, this might take a minute...');
+
     try {
-      // Generate the game
       const gameId = await generateMultiplayerGame(prompt);
       
-      // Get the server URL from environment variables or default to localhost during development
-      const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
-  
-      // Ensure there are no double slashes in the URL
-      const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
-
-      // Create user token with Discord info for authentication
-      const userToken = jwt.sign({
+      // Generate authentication token for the creator
+      const userData = {
         id: message.author.id,
         username: message.author.username,
-        avatar: message.author.displayAvatarURL({ format: 'png' })
-      }, JWT_SECRET);
+        avatar: message.author.displayAvatarURL({ format: 'png', size: 128 }),
+        isCreator: true
+      };
       
-      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      const userToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '7d' });
       
-      // Create an embed with the game information
+      // Base URL for the game (using server port)
+      const baseUrl = `http://localhost:${PORT}`;
+      
+      // Create a play link with creator token for the author
+      const creatorPlayUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      
+      // Create a shareable link WITHOUT the token for other users
+      const shareableUrl = `${baseUrl}/game/${gameId}`;
+      
+      // Create and send embed with game information
       const gameEmbed = new EmbedBuilder()
-        .setColor('#0099ff')
-        .setTitle('🎮 Your Custom Multiplayer Game is Ready!')
-        .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
+        .setTitle('Your Multiplayer Game is Ready!')
+        .setDescription(`**Game Prompt:** ${prompt}`)
+        .setColor('#0099FF')
         .addFields(
-          { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Invite Friends', value: `Share this link with friends so they can join your game: ${baseUrl}/game/${gameId}` },
-          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
-          { name: 'Features', value: '• Real-time multiplayer\n• In-game chat\n• Discord profiles integration' }
+          { name: 'Play Your Game (Creator)', value: `[Click to Play](${creatorPlayUrl})`, inline: false },
+          { name: 'Share This Link', value: `[Share with Friends](${shareableUrl})`, inline: false },
+          { name: 'Game ID', value: gameId, inline: false }
         )
-        .setFooter({ text: 'Generated using AI • Players will see their own profile in the game' })
-        .setTimestamp();
+        .setFooter({ text: 'Players will see their own profile or join as guests' });
       
-      // Edit the loading message with the game link
-      await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
+      // Edit the loading message with the embed
+      await loadingMessage.edit({ content: null, embeds: [gameEmbed] });
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error generating game:', error);
       await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
     }
   }
   
   // Check for !singlegame command
   if (message.content.startsWith('!singlegame')) {
-    const prompt = message.content.slice('!singlegame'.length).trim();
-    
+    // Extract prompt from command
+    const prompt = message.content.substring('!singlegame'.length).trim();
     if (!prompt) {
-      message.reply('Please provide a prompt for the game. Example: `!singlegame platform adventure with collectibles`');
-      return;
+      return message.reply('Please provide a prompt for your game, e.g., `!singlegame a platformer game with jumping mechanics`');
     }
-    
-    // Send initial response
-    const loadingMessage = await message.reply('🎮 Generating your custom single-player game... This might take a minute!');
-    
+
+    // Send initial response while generating
+    const loadingMessage = await message.reply('Generating your game, this might take a minute...');
+
     try {
-      // Generate the single-player game
       const gameId = await generateSinglePlayerGame(prompt);
       
-      // Get the server URL from environment variables or default to localhost during development
-      const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
-  
-      // Ensure there are no double slashes in the URL
-      const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
-
-      // Create user token with Discord info for authentication
-      const userToken = jwt.sign({
+      // Generate authentication token for the creator
+      const userData = {
         id: message.author.id,
         username: message.author.username,
-        avatar: message.author.displayAvatarURL({ format: 'png' })
-      }, JWT_SECRET);
+        avatar: message.author.displayAvatarURL({ format: 'png', size: 128 }),
+        isCreator: true
+      };
       
-      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      const userToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '7d' });
       
-      // Create an embed with the game information
+      // Base URL for the game (using server port)
+      const baseUrl = `http://localhost:${PORT}`;
+      
+      // Create a play link with creator token for the author
+      const creatorPlayUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      
+      // Create a shareable link WITHOUT the token for other users
+      const shareableUrl = `${baseUrl}/game/${gameId}`;
+      
+      // Create and send embed with game information
       const gameEmbed = new EmbedBuilder()
-        .setColor('#00cc99')
-        .setTitle('🎮 Your Custom Single-Player Game is Ready!')
-        .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
+        .setTitle('Your Single-Player Game is Ready!')
+        .setDescription(`**Game Prompt:** ${prompt}`)
+        .setColor('#00FF00')
         .addFields(
-          { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${baseUrl}/game/${gameId}` },
-          { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
-          { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
+          { name: 'Play Your Game (Creator)', value: `[Click to Play](${creatorPlayUrl})`, inline: false },
+          { name: 'Share This Link', value: `[Share with Others](${shareableUrl})`, inline: false },
+          { name: 'Game ID', value: gameId, inline: false }
         )
-        .setFooter({ text: 'Generated using AI • Game will display each player\'s own profile' })
-        .setTimestamp();
+        .setFooter({ text: 'Others who play will see their own profile or join as guests' });
       
-      // Edit the loading message with the game link
-      await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
+      // Edit the loading message with the embed
+      await loadingMessage.edit({ content: null, embeds: [gameEmbed] });
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error generating single-player game:', error);
       await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
     }
   }
