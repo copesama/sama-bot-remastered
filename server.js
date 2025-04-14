@@ -823,8 +823,14 @@ client.on('messageCreate', async (message) => {
       // Ensure there are no double slashes in the URL
       const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
 
-      // Create the game URL without a token so each player will use their own profile
-      const gameUrl = `${baseUrl}/game/${gameId}`;
+      // Create user token with Discord info for authentication
+      const userToken = jwt.sign({
+        id: message.author.id,
+        username: message.author.username,
+        avatar: message.author.displayAvatarURL({ format: 'png' })
+      }, JWT_SECRET);
+      
+      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
       
       // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
@@ -833,9 +839,9 @@ client.on('messageCreate', async (message) => {
         .setDescription(`**Game prompt:** ${prompt}\n**Game ID:** \`${gameId}\``)
         .addFields(
           { name: 'Play your game', value: `[Click here to play](${gameUrl})` },
-          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${gameUrl}` },
+          { name: 'Share Your Game', value: `Share this link with friends so they can try your game: ${baseUrl}/game/${gameId}` },
           { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
-          { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Each player uses their own profile' }
+          { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
         )
         .setFooter({ text: 'Generated using AI • Game will display each player\'s own profile' })
         .setTimestamp();
