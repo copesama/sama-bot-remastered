@@ -11,8 +11,8 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-// Add new imports for !outofcontext command
-const { DisTube } = require('distube');
+// Add new imports for YouTube functionality
+const { Player } = require('discord-player');
 const YoutubeSr = require('youtube-sr').default;
 
 // Initialize Discord client
@@ -24,9 +24,6 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates, // Add voice state intent to track voice channels
   ]
 });
-
-// Setup DisTube for handling YouTube playback
-const distube = new DisTube(client)
 
 // Initialize Express app for serving games
 const app = express();
@@ -62,8 +59,163 @@ app.use(cookieParser());
 const voiceConnections = new Map();
 const audioPlayers = new Map();
 
-// Keep track of out-of-context play sessions
-const outOfContextSessions = new Map();
+// Initialize discord-player
+const player = new Player(client);
+
+// Function to get YouTube channel videos
+async function getChannelVideos(channelUrl) {
+  try {
+    // Extract channel ID or handle from URL
+    let channelId = '';
+    
+    if (channelUrl.includes('/channel/')) {
+      channelId = channelUrl.split('/channel/')[1].split('/')[0];
+    } else if (channelUrl.includes('/c/') || channelUrl.includes('/@')) {
+      // Get channel info by handle or custom URL
+      const channelName = channelUrl.includes('/c/') 
+        ? channelUrl.split('/c/')[1].split('/')[0]
+        : channelUrl.split('/@')[1].split('/')[0];
+        
+      const channel = await YoutubeSr.getChannel(channelName);
+      if (channel) channelId = channel.id;
+    } else if (channelUrl.includes('/user/')) {
+      const username = channelUrl.split('/user/')[1].split('/')[0];
+      const channel = await YoutubeSr.getChannel(username);
+      if (channel) channelId = channel.id;
+    }
+    
+    if (!channelId) {
+      throw new Error('Could not extract valid channel ID from URL');
+    }
+    
+    // Get videos from channel
+    const videos = await YoutubeSr.search(channelId, {
+      type: 'video',
+      limit: 50 // Fetch a reasonable amount to select random ones from
+    });
+    
+    if (!videos || videos.length === 0) {
+      throw new Error('No videos found for this channel');
+    }
+    
+    // Select 5 random videos
+    const randomVideos = [];
+    const videoCount = Math.min(videos.length, 5);
+    
+    for (let i = 0; i < videoCount; i++) {
+      const randomIndex = Math.floor(Math.random() * videos.length);
+      randomVideos.push(videos[randomIndex]);
+      // Remove the selected video to avoid duplicates
+      videos.splice(randomIndex, 1);
+    }
+    
+    return randomVideos;
+  } catch (error) {
+    console.error('Error fetching YouTube channel videos:', error);
+    throw error;
+  }
+}
+
+// Function to play short clips from videos
+async function playShortClips(videos, voiceChannel, message) {
+  try {
+    if (!videos || videos.length === 0) {
+      message.channel.send('No videos found to play.');
+      return;
+    }
+    
+    // Join the voice channel
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: voiceChannel.guild.id,
+      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+    });
+    
+    // Create a queue using discord-player
+    const queue = player.createQueue(voiceChannel.guild, {
+      metadata: {
+        channel: message.channel
+      }
+    });
+    
+    try {
+      // Connect to the voice channel
+      if (!queue.connection) {
+        await queue.connect(voiceChannel);
+      }
+    } catch (error) {
+      queue.destroy();
+      message.channel.send('Could not join your voice channel!');
+      console.error('Error connecting to voice channel:', error);
+      return;
+    }
+    
+    // Create an embed to display the playlist
+    const playlistEmbed = new EmbedBuilder()
+      .setColor('#FF0000')
+      .setTitle('🎬 Playing Out of Context Clips')
+      .setDescription('Playing 5-second clips from these videos:')
+      .setFooter({ text: 'Each clip will play for 5 seconds' });
+    
+    // Add video details to the embed
+    videos.forEach((video, index) => {
+      playlistEmbed.addFields({
+        name: `Video ${index + 1}`,
+        value: `[${video.title}](https://www.youtube.com/watch?v=${video.id})`
+      });
+    });
+    
+    await message.channel.send({ embeds: [playlistEmbed] });
+    
+    // Set up to play each video for 5 seconds
+    let index = 0;
+    
+    // Function to play the next video
+    const playNextVideo = async () => {
+      if (index >= videos.length) {
+        // All videos played, destroy the queue
+        queue.destroy();
+        return;
+      }
+      
+      const video = videos[index];
+      index++;
+      
+      try {
+        await queue.play(`https://www.youtube.com/watch?v=${video.id}`);
+        
+        // Set a timeout to skip to the next video after 5 seconds
+        setTimeout(() => {
+          if (queue.playing) {
+            queue.skip();
+          }
+        }, 5000);
+        
+        // Set up listener for the song end
+        const nowPlaying = queue.nowPlaying();
+        if (nowPlaying) {
+          queue.once('trackEnd', () => {
+            if (index < videos.length) {
+              setTimeout(playNextVideo, 500); // Small delay between videos
+            } else {
+              queue.destroy();
+            }
+          });
+        }
+      } catch (error) {
+        console.error(`Error playing video ${video.id}:`, error);
+        playNextVideo(); // Try the next video if there's an error
+      }
+    };
+    
+    // Start playing videos
+    playNextVideo();
+    
+  } catch (error) {
+    console.error('Error playing short clips:', error);
+    message.channel.send('There was an error playing the videos. Please try again later.');
+  }
+}
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -238,256 +390,6 @@ io.on('connection', (socket) => {
     }
   });
 });
-
-// Function to get random videos from a YouTube channel
-async function getRandomVideosFromChannel(channelUrl, count = 5) {
-  try {
-    // Extract channel identifiers from URL
-    let channelId = null;
-    let channelName = null;
-    
-    try {
-      const urlObj = new URL(channelUrl);
-      // Handle different YouTube channel URL formats
-      if (urlObj.hostname.includes('youtube.com')) {
-        const pathname = urlObj.pathname;
-        // Format: youtube.com/channel/CHANNEL_ID
-        if (pathname.startsWith('/channel/')) {
-          channelId = pathname.split('/channel/')[1];
-        }
-        // Format: youtube.com/c/CHANNEL_NAME or youtube.com/user/USERNAME
-        else if (pathname.startsWith('/c/') || pathname.startsWith('/user/')) {
-          channelName = pathname.split('/')[2];
-        }
-        // Format: youtube.com/@USERNAME
-        else if (pathname.startsWith('/@')) {
-          channelName = pathname.substring(2);
-        }
-      }
-    } catch (err) {
-      console.error('Error parsing YouTube URL:', err);
-      return null;
-    }
-    
-    if (!channelId && !channelName) {
-      console.error('Could not extract channel ID or name from URL:', channelUrl);
-      return null;
-    }
-    
-    console.log(`Searching for channel - ID: ${channelId || 'N/A'}, Name: ${channelName || 'N/A'}`);
-    
-    // First try to search for the channel to get its info
-    let channelInfo;
-    
-    if (channelId) {
-      // Search by channel ID
-      console.log('Searching by channel ID');
-      const channelSearch = await YoutubeSr.search(channelId, {
-        type: 'channel',
-        limit: 1
-      }).catch(err => {
-        console.log('Error searching by channel ID:', err.message);
-        return [];
-      });
-      
-      if (channelSearch && channelSearch.length > 0) {
-        channelInfo = channelSearch[0];
-      }
-    }
-    
-    // If channel ID search failed, try by name
-    if (!channelInfo && channelName) {
-      console.log('Searching by channel name');
-      const channelSearch = await YoutubeSr.search(channelName, {
-        type: 'channel',
-        limit: 1
-      }).catch(err => {
-        console.log('Error searching by channel name:', err.message);
-        return [];
-      });
-      
-      if (channelSearch && channelSearch.length > 0) {
-        channelInfo = channelSearch[0];
-      }
-    }
-    
-    // If both methods failed, try a direct search with the whole URL
-    if (!channelInfo) {
-      console.log('Trying direct URL search');
-      const channelSearch = await YoutubeSr.search(channelUrl, {
-        type: 'channel',
-        limit: 1
-      }).catch(err => {
-        console.log('Error with direct URL search:', err.message);
-        return [];
-      });
-      
-      if (channelSearch && channelSearch.length > 0) {
-        channelInfo = channelSearch[0];
-      }
-    }
-    
-    if (!channelInfo) {
-      console.error('Could not find channel information');
-      return null;
-    }
-    
-    console.log('Found channel:', channelInfo.name || channelInfo.title);
-    
-    // Get videos from the channel (up to 50)
-    console.log('Fetching videos from channel');
-    const queryText = (channelInfo.name || channelInfo.title) + ' channel:' + (channelId || channelName);
-    const videos = await YoutubeSr.search(queryText, { 
-      limit: 50, 
-      type: 'video'
-    }).catch(err => {
-      console.log('Error searching videos:', err.message);
-      return [];
-    });
-
-    if (!videos || videos.length === 0) {
-      console.error('No videos found for channel');
-      return null;
-    }
-
-    console.log(`Found ${videos.length} videos from channel`);
-    
-    // Select random videos
-    const selectedVideos = [];
-    const totalVideos = videos.length;
-    const sampleSize = Math.min(count, totalVideos);
-    
-    // Get random indices without duplicates
-    const indices = new Set();
-    while (indices.size < sampleSize) {
-      indices.add(Math.floor(Math.random() * totalVideos));
-    }
-    
-    // Add selected videos to the result
-    indices.forEach(index => {
-      selectedVideos.push(videos[index]);
-    });
-    
-    return {
-      channelName: channelInfo.name || channelInfo.title || 'YouTube Channel',
-      videos: selectedVideos
-    };
-  } catch (error) {
-    console.error('Error getting videos from channel:', error);
-    return null;
-  }
-}
-
-// Function to play out-of-context clips
-async function playOutOfContextClips(message, voiceChannel, videos, channelName) {
-  try {
-    // Create unique session ID for this playback
-    const sessionId = message.guild.id;
-    
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-    });
-    
-    // Save session info
-    outOfContextSessions.set(sessionId, {
-      currentIndex: 0,
-      videos: videos,
-      channelName: channelName,
-      message: message,
-      connection: connection
-    });
-    
-    // Start playing the first clip
-    await playNextClip(sessionId);
-    
-  } catch (error) {
-    console.error('Error playing out-of-context clips:', error);
-    message.channel.send('❌ There was an error playing out-of-context clips. Please try again later.');
-  }
-}
-
-// Function to play the next clip in sequence
-async function playNextClip(sessionId) {
-  const session = outOfContextSessions.get(sessionId);
-  if (!session) return;
-  
-  const { currentIndex, videos, channelName, message, connection } = session;
-  
-  // If all videos have been played, clean up and exit
-  if (currentIndex >= videos.length) {
-    outOfContextSessions.delete(sessionId);
-    connection.destroy();
-    message.channel.send(`✅ Finished playing out-of-context clips from **${channelName}**!`);
-    return;
-  }
-  
-  const video = videos[currentIndex];
-  
-  try {
-    // Update message to show progress
-    message.channel.send(`🎬 Playing clip ${currentIndex + 1}/${videos.length}: **${video.title}**`);
-    
-    try {
-      // Play the video for 5 seconds
-      const queue = distube.createQueue(message.guild, {
-        metadata: { 
-          channel: message.channel 
-        }
-      });
-      
-      await queue.join(message.member.voice.channel);
-      
-      const randomPosition = video.duration > 10 ? 
-        Math.floor(Math.random() * (video.duration - 10)) : 0;
-      
-      // Play video
-      await queue.play(video.url, {
-        member: message.member,
-        textChannel: message.channel,
-        skip: false,
-        position: randomPosition
-      });
-      
-      // Set a timeout to stop after 5 seconds and play the next clip
-      setTimeout(async () => {
-        try {
-          await queue.stop();
-          
-          // Update session for next video
-          outOfContextSessions.set(sessionId, {
-            ...session,
-            currentIndex: currentIndex + 1
-          });
-          
-          // Wait a moment before playing the next clip
-          setTimeout(() => playNextClip(sessionId), 1000);
-        } catch (err) {
-          console.error('Error stopping playback:', err);
-          advanceToNextClip();
-        }
-      }, 5000); // Play for 5 seconds
-    } catch (playbackError) {
-      console.error('Error starting playback:', playbackError);
-      advanceToNextClip();
-    }
-  } catch (error) {
-    console.error(`Error playing clip ${currentIndex + 1}:`, error);
-    advanceToNextClip();
-  }
-  
-  // Helper function to advance to next clip on error
-  function advanceToNextClip() {
-    outOfContextSessions.set(sessionId, {
-      ...session,
-      currentIndex: currentIndex + 1
-    });
-    
-    // Try to play the next clip
-    setTimeout(() => playNextClip(sessionId), 1000);
-  }
-}
 
 // Generate game using OpenRouter API
 async function generateMultiplayerGame(prompt) {
@@ -1342,13 +1244,7 @@ client.on('messageCreate', async (message) => {
     const channelUrl = message.content.slice('!outofcontext'.length).trim();
     
     if (!channelUrl) {
-      message.reply('Please provide a YouTube channel URL. Example: `!outofcontext https://www.youtube.com/@channelname`');
-      return;
-    }
-    
-    // Check if URL is valid
-    if (!channelUrl.includes('youtube.com') && !channelUrl.includes('youtu.be')) {
-      message.reply('Please provide a valid YouTube channel URL.');
+      message.reply('Please provide a YouTube channel URL. Example: `!outofcontext https://www.youtube.com/channel/UC5CwaMl1eIgY8h02uZw7u8A`');
       return;
     }
     
@@ -1359,57 +1255,33 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
-    // Check if there's already an active session in this guild
-    if (outOfContextSessions.has(message.guild.id)) {
-      message.reply('There is already an out-of-context session playing in this server. Please wait for it to finish.');
-      return;
-    }
-    
     // Send initial response
-    const loadingMessage = await message.reply('🔍 Fetching random videos from the channel... This might take a moment!');
+    const loadingMessage = await message.reply('🎬 Fetching random videos from this channel... This might take a moment!');
     
     try {
       // Get random videos from the channel
-      const result = await getRandomVideosFromChannel(channelUrl);
+      const videos = await getChannelVideos(channelUrl);
       
-      if (!result || !result.videos || result.videos.length === 0) {
-        await loadingMessage.edit('❌ Could not find any videos from this channel. Please check the URL and try again.');
-        return;
-      }
+      // Update loading message
+      await loadingMessage.edit('🎬 Found videos! Preparing to play 5-second clips...');
       
-      // Create an embed with the channel information
-      const videosEmbed = new EmbedBuilder()
-        .setColor('#FF0000')
-        .setTitle(`🎬 Out of Context: ${result.channelName}`)
-        .setDescription(`Playing 5 second clips from 5 random videos!`)
-        .addFields(
-          result.videos.map((video, index) => ({
-            name: `Clip ${index + 1}`,
-            value: `[${video.title}](${video.url})`
-          }))
-        )
-        .setFooter({ text: 'Out of Context Clips • Videos selected randomly' })
-        .setTimestamp();
-      
-      // Update the loading message
-      await loadingMessage.edit({ content: '✅ Videos found! Starting playback...', embeds: [videosEmbed] });
-      
-      // Start playing the clips
-      await playOutOfContextClips(message, voiceChannel, result.videos, result.channelName);
+      // Play short clips from the videos
+      await playShortClips(videos, voiceChannel, message);
       
     } catch (error) {
-      console.error('Error processing out-of-context command:', error);
-      await loadingMessage.edit('❌ There was an error processing your request. Please try again later.');
+      console.error('Error with !outofcontext command:', error);
+      await loadingMessage.edit('Sorry, there was an error fetching videos from this channel. Please check the URL and try again.');
     }
-    
-    return;
   }
 });
 
-// Add DisTube event handlers
-distube.on('error', (channel, error) => {
-  if (channel) channel.send(`❌ An error occurred: ${error.message}`);
-  console.error('DisTube error:', error);
+// Initialize discord-player error handling
+player.on('error', (queue, error) => {
+  console.error(`[Discord Player] Error in queue ${queue.guild.name}: ${error.message}`);
+});
+
+player.on('connectionError', (queue, error) => {
+  console.error(`[Discord Player] Error in connection: ${error.message}`);
 });
 
 // Add a function to handle cleaning up voice connections when the bot is stopped
