@@ -19,11 +19,7 @@
     "@discordjs/voice": "^0.18.0",
     "ffmpeg-static":"^5.2.0",
     "libsodium-wrappers":"^0.7.15",
-    "youtube-sr":"^4.3.11",
-    "@discord-player/extractor": "^7.1.0",
-    "play-dl": "^1.9.7",
-    "discord-player": "^7.1.0",
-    "@discordjs/opus": "^0.10.0"
+    "form-data":"4.0.2"
 
   },
   "engines": {

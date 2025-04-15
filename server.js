@@ -11,10 +11,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-// Update discord-player imports to include the DefaultExtractors
-const { Player, QueryType, useQueue } = require('discord-player');
-const { DefaultExtractors } = require('@discord-player/extractor');
-const YoutubeSr = require('youtube-sr').default;
+const FormData = require('form-data');
 
 // Initialize Discord client
 const client = new Client({
@@ -59,213 +56,6 @@ app.use(cookieParser());
 // Keep track of active voice connections and players
 const voiceConnections = new Map();
 const audioPlayers = new Map();
-
-// Initialize discord-player with proper configuration
-const player = new Player(client, {
-  ytdlOptions: {
-    quality: 'highestaudio',
-    highWaterMark: 1 << 25
-  }
-});
-
-// Wait for player to be ready before accepting commands
-let playerReady = false;
-player.events.on('ready', () => {
-  console.log('Discord Player is ready!');
-  playerReady = true;
-});
-
-// Make sure to initialize the player properly
-(async () => {
-  try {
-    // Use loadMulti instead of loadDefault as per error message
-    await player.extractors.loadMulti(DefaultExtractors);
-    console.log('Discord Player extractors loaded');
-  } catch (error) {
-    console.error('Error initializing discord-player:', error);
-  }
-})();
-
-// Function to get YouTube channel videos
-async function getChannelVideos(channelUrl) {
-  try {
-    // Extract channel ID or handle from URL
-    let channelId = '';
-    
-    if (channelUrl.includes('/channel/')) {
-      channelId = channelUrl.split('/channel/')[1].split('/')[0];
-    } else if (channelUrl.includes('/c/') || channelUrl.includes('/@')) {
-      // Get channel info by handle or custom URL
-      const channelName = channelUrl.includes('/c/') 
-        ? channelUrl.split('/c/')[1].split('/')[0]
-        : channelUrl.split('/@')[1].split('/')[0];
-        
-      const channel = await YoutubeSr.getChannel(channelName);
-      if (channel) channelId = channel.id;
-    } else if (channelUrl.includes('/user/')) {
-      const username = channelUrl.split('/user/')[1].split('/')[0];
-      const channel = await YoutubeSr.getChannel(username);
-      if (channel) channelId = channel.id;
-    }
-    
-    if (!channelId) {
-      throw new Error('Could not extract valid channel ID from URL');
-    }
-    
-    // Get videos from channel
-    const videos = await YoutubeSr.search(channelId, {
-      type: 'video',
-      limit: 50 // Fetch a reasonable amount to select random ones from
-    });
-    
-    if (!videos || videos.length === 0) {
-      throw new Error('No videos found for this channel');
-    }
-    
-    // Select 5 random videos
-    const randomVideos = [];
-    const videoCount = Math.min(videos.length, 5);
-    
-    for (let i = 0; i < videoCount; i++) {
-      const randomIndex = Math.floor(Math.random() * videos.length);
-      randomVideos.push(videos[randomIndex]);
-      // Remove the selected video to avoid duplicates
-      videos.splice(randomIndex, 1);
-    }
-    
-    return randomVideos;
-  } catch (error) {
-    console.error('Error fetching YouTube channel videos:', error);
-    throw error;
-  }
-}
-
-// Function to play short clips from videos - update to use modern discord-player API
-async function playShortClips(videos, voiceChannel, message) {
-  try {
-    if (!videos || videos.length === 0) {
-      message.channel.send('No videos found to play.');
-      return;
-    }
-    
-    if (!playerReady) {
-      message.channel.send('Discord player is not ready yet. Please try again in a moment.');
-      return;
-    }
-    
-    // Create an embed to display the playlist
-    const playlistEmbed = new EmbedBuilder()
-      .setColor('#FF0000')
-      .setTitle('🎬 Playing Out of Context Clips')
-      .setDescription('Playing 5-second clips from these videos:')
-      .setFooter({ text: 'Each clip will play for 5 seconds' });
-    
-    // Add video details to the embed
-    videos.forEach((video, index) => {
-      playlistEmbed.addFields({
-        name: `Video ${index + 1}`,
-        value: `[${video.title}](https://www.youtube.com/watch?v=${video.id})`
-      });
-    });
-    
-    await message.channel.send({ embeds: [playlistEmbed] });
-    
-    // Instead of manually joining, let discord-player handle it
-    try {
-      // Play the first video
-      const firstVideoUrl = `https://www.youtube.com/watch?v=${videos[0].id}`;
-      
-      await player.play(voiceChannel, firstVideoUrl, {
-        nodeOptions: {
-          metadata: {
-            channel: message.channel,
-            requestedBy: message.author
-          },
-          volume: 80,
-          leaveOnEnd: false, // We'll handle this ourselves
-          leaveOnStop: false,
-          leaveOnEmpty: true,
-          leaveOnEmptyCooldown: 5000
-        }
-      });
-      
-      // Get the queue for managing playback
-      const queue = useQueue(voiceChannel.guild.id);
-      if (!queue) {
-        throw new Error('Failed to create player queue');
-      }
-      
-      // Set up video index
-      let currentIndex = 0;
-      
-      // Track function to handle video changes
-      const playNextVideo = async () => {
-        currentIndex++;
-        
-        if (currentIndex >= videos.length) {
-          // All videos played, destroy the queue
-          queue.delete();
-          return;
-        }
-        
-        // Small delay before playing next video
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const nextVideoUrl = `https://www.youtube.com/watch?v=${videos[currentIndex].id}`;
-        try {
-          await player.play(voiceChannel, nextVideoUrl, {
-            nodeOptions: {
-              metadata: {
-                channel: message.channel,
-                requestedBy: message.author
-              },
-              volume: 80,
-              leaveOnEnd: false,
-              leaveOnStop: false,
-              leaveOnEmpty: true,
-              leaveOnEmptyCooldown: 5000
-            }
-          });
-        } catch (error) {
-          console.error(`Error playing video ${currentIndex}:`, error);
-          playNextVideo(); // Skip to next video on error
-        }
-      };
-      
-      // Listen for track end event to manage 5-second limit and play next video
-      queue.dispatcher.on('streamEnd', () => {
-        if (currentIndex < videos.length - 1) {
-          playNextVideo();
-        } else {
-          // Last video finished, clean up
-          queue.delete();
-        }
-      });
-      
-      // Set 5-second limit for each video
-      for (let i = 0; i < videos.length; i++) {
-        setTimeout(() => {
-          if (queue && !queue.deleted && queue.isPlaying) {
-            if (i < videos.length - 1) {
-              // Skip to next video after 5 seconds if not the last video
-              queue.node.skip();
-            } else {
-              // Last video, stop after 5 seconds
-              queue.delete();
-            }
-          }
-        }, 5000 * (i + 1) + 500 * i); // 5 seconds per video + 500ms delay between videos
-      }
-      
-    } catch (error) {
-      console.error('Error setting up queue:', error);
-      message.channel.send('There was an error playing the videos. Please try again later.');
-    }
-  } catch (error) {
-    console.error('Error playing short clips:', error);
-    message.channel.send('There was an error playing the videos. Please try again later.');
-  }
-}
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -543,7 +333,7 @@ async function generateMultiplayerGame(prompt) {
             7. Use inlined CSS and JS for a single file solution
             
             GAME FEATURES TO INCLUDE:
-            1. A clear visual indication of each player (show usernames) using userData.username and userData.avatar
+            1. Clear visual indication of each player (show usernames) using userData.username and userData.avatar
             2. Simple UI showing connected players and basic instructions
             3. Basic sound effects (optional)
             4. Win/lose conditions where appropriate
@@ -762,10 +552,11 @@ function validateAndFixMultiplayerGame(html) {
           playerList.innerHTML = '';
           connectedPlayers.forEach((playerData, pid) => {
             const playerEntry = document.createElement('div');
-            playerEntry.textContent = playerData.username + ' (' + pid.substring(0, 5) + '...)';
-            playerList.appendChild(playerEntry);
-          });
-        }
+              playerEntry.textContent = playerData.username + ' (' + pid.substring(0, 5) + '...)';
+              playerList.appendChild(playerEntry);
+            });
+          }
+        });
       });
     </script>
     `;
@@ -858,19 +649,38 @@ async function generateSinglePlayerGame(prompt) {
 }
 
 // Function to generate music using Segmind API
-async function generateMusic(prompt, duration = 30) {
+async function generateMusic(prompt, lyrics = null) {
   try {
+    const formData = new FormData();
+    
+    // Check if the prompt contains lyrics or if separate lyrics were provided
+    const extractedLyrics = lyrics || prompt.includes('[verse]') ? prompt : null;
+    const musicPrompt = extractedLyrics ? "Generate music for these lyrics" : prompt;
+    
+    // Set up form data for the request
+    if (extractedLyrics) {
+      formData.append('lyrics', extractedLyrics);
+    } else {
+      // Use a template for lyrics based on the prompt
+      formData.append('lyrics', `[verse]\n${prompt}\n[chorus]\nInspired by your imagination\nCreated just for you`);
+    }
+    
+    // Add required parameters
+    formData.append('bitrate', 256000);
+    formData.append('voice_id', null);
+    formData.append('song_file', null);
+    formData.append('voice_file', null);
+    formData.append('sample_rate', 44100);
+    formData.append('instrumental_id', null);
+    formData.append('instrumental_file', null);
+
     const response = await axios.post(
-      'https://api.segmind.com/v1/meta-musicgen-medium',
-      {
-        prompt: prompt,
-        duration: duration,
-        seed: Math.floor(Math.random() * 1000) // Random seed for variety
-      },
+      'https://api.segmind.com/v1/minimax-music-01',
+      formData,
       {
         headers: {
           'x-api-key': process.env.SEGMIND_API_KEY,
-          'Content-Type': 'application/json'
+          ...formData.getHeaders()
         },
         responseType: 'arraybuffer' // Important for receiving binary audio data
       }
@@ -1098,10 +908,25 @@ client.on('messageCreate', async (message) => {
 
   // Check for !createmusic command
   if (message.content.startsWith('!createmusic')) {
-    const prompt = message.content.slice('!createmusic'.length).trim();
+    const fullContent = message.content.slice('!createmusic'.length).trim();
+    
+    // Check if there are lyrics in the format "[lyrics] ... [/lyrics]"
+    let prompt, lyrics;
+    const lyricsMatch = fullContent.match(/\[lyrics\]([\s\S]*?)\[\/lyrics\]/);
+    
+    if (lyricsMatch) {
+      // Extract lyrics from the special format
+      lyrics = lyricsMatch[1].trim();
+      // Get the remaining text as the prompt
+      prompt = fullContent.replace(/\[lyrics\][\s\S]*?\[\/lyrics\]/, '').trim();
+      if (!prompt) prompt = "Generate music for these lyrics";
+    } else {
+      prompt = fullContent;
+      lyrics = null;
+    }
     
     if (!prompt) {
-      message.reply('Please provide a prompt for the music. Example: `!createmusic upbeat jazz with piano solo`');
+      message.reply('Please provide a prompt for the music. Examples:\n- `!createmusic upbeat jazz with piano solo`\n- `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics] soft piano ballad`');
       return;
     }
     
@@ -1113,17 +938,17 @@ client.on('messageCreate', async (message) => {
     }
     
     // Send initial response
-    const loadingMessage = await message.reply('🎵 Generating your custom music track... This might take a minute!');
+    const loadingMessage = await message.reply('🎵 Generating your custom music track... This might take a minute or two!');
     
     try {
       // Generate the music
-      const { musicId, musicPath } = await generateMusic(prompt);
+      const { musicId, musicPath } = await generateMusic(prompt, lyrics);
       
       // Create an embed with the music information
       const musicEmbed = new EmbedBuilder()
         .setColor('#9966ff')
         .setTitle('🎵 Your Custom Music Track is Ready!')
-        .setDescription(`**Music prompt:** ${prompt}`)
+        .setDescription(`**Music prompt:** ${prompt}${lyrics ? '\n\n**With custom lyrics**' : ''}`)
         .setFooter({ text: 'Generated using AI • Now playing in your voice channel' })
         .setTimestamp();
       
@@ -1288,55 +1113,6 @@ client.on('messageCreate', async (message) => {
       await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
     }
   }
-
-  // Check for !outofcontext command
-  if (message.content.startsWith('!outofcontext')) {
-    const channelUrl = message.content.slice('!outofcontext'.length).trim();
-    
-    if (!channelUrl) {
-      message.reply('Please provide a YouTube channel URL. Example: `!outofcontext https://www.youtube.com/channel/UC5CwaMl1eIgY8h02uZw7u8A`');
-      return;
-    }
-    
-    // Check if user is in a voice channel
-    const voiceChannel = message.member?.voice?.channel;
-    if (!voiceChannel) {
-      message.reply('You need to join a voice channel first!');
-      return;
-    }
-    
-    // Send initial response
-    const loadingMessage = await message.reply('🎬 Fetching random videos from this channel... This might take a moment!');
-    
-    try {
-      // Get random videos from the channel
-      const videos = await getChannelVideos(channelUrl);
-      
-      // Update loading message
-      await loadingMessage.edit('🎬 Found videos! Preparing to play 5-second clips...');
-      
-      // Play short clips from the videos
-      await playShortClips(videos, voiceChannel, message);
-      
-    } catch (error) {
-      console.error('Error with !outofcontext command:', error);
-      await loadingMessage.edit('Sorry, there was an error fetching videos from this channel. Please check the URL and try again.');
-    }
-  }
-});
-
-// Initialize discord-player error handling
-player.events.on('error', (queue, error) => {
-  console.error(`[Discord Player] Error in queue ${queue.guild.name}: ${error.message}`);
-});
-
-player.events.on('playerError', (queue, error) => {
-  console.error(`[Discord Player] Player error: ${error.message}`);
-});
-
-player.events.on('debug', (message) => {
-  // Uncomment for debugging
-  // console.log(`[Discord Player Debug] ${message}`);
 });
 
 // Add a function to handle cleaning up voice connections when the bot is stopped
