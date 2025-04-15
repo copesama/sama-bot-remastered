@@ -20,8 +20,7 @@
     "ffmpeg-static":"^5.2.0",
     "libsodium-wrappers":"^0.7.15",
     "youtube-sr": "^4.3.11",
-    "distube": "^5.0.7",
-    "@distube/yt-dlp": "^2.0.1"
+    "distube": "^5.0.7"
 
   },
   "engines": {

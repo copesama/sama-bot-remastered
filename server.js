@@ -13,7 +13,6 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 // Add DisTube and YouTube-related imports (replace ytsr with youtube-sr)
 const { DisTube } = require('distube');
-const { YtDlpPlugin } = require('@distube/yt-dlp');
 const YouTube = require('youtube-sr').default;
 
 // Initialize Discord client
@@ -26,10 +25,8 @@ const client = new Client({
   ]
 });
 
-// Initialize DisTube client
-const distube = new DisTube(client, {
-  plugins: [new YtDlpPlugin()]
-});
+// Initialize DisTube client without YtDlp plugin
+const distube = new DisTube(client);
 
 // Initialize Express app for serving games
 const app = express();
@@ -1362,32 +1359,50 @@ async function playOutOfContextVideos(message, videos, index) {
     // Play the current video
     message.channel.send(`▶️ Clip ${index + 1}/${videos.length}: "${video.title}"`);
     
-    // Now play the video
-    await distube.play(voiceChannel, video.url, {
-      message,
-      member: message.member,
-      textChannel: message.channel,
-      skip: false
-    });
+    // Get the direct YouTube URL for playback
+    const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+    console.log('Playing URL:', videoUrl);
     
-    // Set a timeout to play the next video after 5 seconds
-    const timeout = setTimeout(() => {
-      // Stop current playback and move to next video
-      distube.stop(message.guild.id);
+    try {
+      // Play the video directly without YtDlp
+      await distube.play(voiceChannel, videoUrl, {
+        message,
+        member: message.member,
+        textChannel: message.channel,
+        skip: false
+      });
+    
+      // Set a timeout to play the next video after 5 seconds
+      const timeout = setTimeout(() => {
+        // Stop current playback and move to next video
+        try {
+          distube.stop(message.guild.id);
+        } catch (stopError) {
+          console.error('Error stopping playback:', stopError);
+        }
+        
+        // Small delay before playing the next video
+        setTimeout(() => {
+          playOutOfContextVideos(message, videos, index + 1);
+        }, 500);
+        
+      }, 5000); // 5 seconds per clip
       
-      // Small delay before playing the next video
+      // Store the session information
+      outOfContextSessions.set(message.guild.id, {
+        videos,
+        currentIndex: index,
+        timeout
+      });
+    } catch (playError) {
+      console.error(`Error during direct playback of video ${index}:`, playError);
+      message.channel.send(`Couldn't play clip ${index + 1}. Skipping to next...`);
+      
+      // Move to the next video
       setTimeout(() => {
         playOutOfContextVideos(message, videos, index + 1);
-      }, 500);
-      
-    }, 5000); // 5 seconds per clip
-    
-    // Store the session information
-    outOfContextSessions.set(message.guild.id, {
-      videos,
-      currentIndex: index,
-      timeout
-    });
+      }, 1000);
+    }
     
   } catch (error) {
     console.error(`Error playing video at index ${index}:`, error);
