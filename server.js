@@ -153,17 +153,8 @@ io.on('connection', (socket) => {
     // Send current game state to the joining player
     socket.emit('gameState', gameRooms[gameId].gameState);
     
-    // Send the full player list to the joining player
-    socket.emit('playerList', {
-      playerCount: Object.keys(gameRooms[gameId].players).length,
-      players: Object.entries(gameRooms[gameId].players).map(([id, player]) => ({
-        id,
-        userData: player.userData
-      }))
-    });
-    
-    // Notify all other players in the room about the new player
-    socket.to(gameId).emit('playerJoined', {
+    // Notify all players in the room about the new player
+    io.to(gameId).emit('playerJoined', {
       userId,
       userData,
       playerCount: Object.keys(gameRooms[gameId].players).length,
@@ -172,9 +163,6 @@ io.on('connection', (socket) => {
         userData: player.userData
       }))
     });
-    
-    // Optional: Debug logging
-    // console.log(`[JOIN] ${userId} joined game ${gameId}. Players: ${Object.keys(gameRooms[gameId].players).length}`);
   });
   
   // Handle game actions
@@ -234,66 +222,83 @@ async function generateMultiplayerGame(prompt) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert game developer. Create a complete, playable HTML game based on the user prompt. 
+            content: `You are an expert game developer. Create a complete, playable HTML multiplayer game based on the user prompt. 
             The game should be entirely self-contained in a single HTML file with embedded JavaScript and CSS.
             
             CRITICAL REQUIREMENTS:
             1. The game MUST be fully functional and error-free
             2. Use simple graphics and mechanics that work reliably in browsers
-            3. Test all game logic and multiplayer functionality in your response
+            3. Test all game logic and multiplayer functionality thoroughly in your response
+            4. PROPERLY IMPLEMENT all Socket.IO events for multiplayer functionality
+            5. ENSURE the game correctly detects when other players join and leave
             
-            SOCKET.IO IMPLEMENTATION:
+            SOCKET.IO IMPLEMENTATION (MUST BE IMPLEMENTED EXACTLY AS FOLLOWS):
             - Include Socket.IO properly: <script src="/socket.io/socket.io.js"></script>
             - Initialize connection: const socket = io();
             - Extract game ID from URL: const gameId = window.location.pathname.split('/').pop();
             - Extract user data from cookie:
               const userData = JSON.parse(decodeURIComponent(document.cookie.split('; ').find(row => row.startsWith('gameUserData=')).split('=')[1]));
             
-            REQUIRED MULTIPLAYER EVENTS:
-            1. JOIN GAME:
+            REQUIRED MULTIPLAYER EVENTS (DO NOT MODIFY THESE EXACT EVENT NAMES AND PARAMETERS):
+            1. JOIN GAME (MUST BE CALLED IMMEDIATELY AFTER PAGE LOADS):
                socket.emit('joinGame', {
                  gameId: gameId,
                  userId: userData.id,
                  userData: userData
                });
                
-            2. HANDLE OTHER PLAYERS:
+            2. HANDLE OTHER PLAYERS (THESE EVENT HANDLERS MUST BE PROPERLY IMPLEMENTED):
                socket.on('playerJoined', function(data) {
                  // Add new player to game with their userData.username and userData.avatar
+                 console.log('Player joined:', data.userData.username);
                  // data.players contains all current players
+                 // YOU MUST implement visual feedback showing the new player has joined
                });
                
                socket.on('playerLeft', function(data) {
                  // Remove player from game
+                 console.log('Player left:', data.userId);
                  // data.userId is the leaving player's ID
+                 // YOU MUST implement code to remove the player from the game
                });
                
-            3. SYNC GAME ACTIONS:
+            3. SYNC GAME ACTIONS (MUST USE THESE EXACT EVENT NAMES):
                // Send player actions
                socket.emit('gameAction', {
-                 action: 'move', 
-                 data: {x: playerX, y: playerY} // example data
+                 action: 'actionName', // e.g., 'move', 'shoot', 'jump'
+                 data: actionData // data specific to the action
                });
                
                // Receive others' actions
                socket.on('gameAction', function(data) {
+                 console.log('Game action received:', data.action, 'from', data.userId);
                  // Apply other player's action to their character
                  // data.userId is the player who performed the action
                  // data.action is the action type
-                 // data.data contains action details
+                 // data.userData contains the player's info
+                 // YOU MUST implement code to apply the action to the correct player
                });
                
-            4. SYNC GAME STATE:
+            4. SYNC GAME STATE (MUST BE IMPLEMENTED FOR CONSISTENCY):
                // Send game state updates periodically
                socket.emit('updateGameState', gameState);
                
                // Receive game state updates
                socket.on('gameState', function(state) {
+                 console.log('Game state update received');
                  // Update local game state with server's state
+                 // YOU MUST implement code to apply the state update
                });
                
-            Include comprehensive error handling and clear user feedback.
-            The final game MUST be completely playable with working multiplayer.`
+            YOUR GAME MUST INCLUDE:
+            1. A clear visual representation of each player with their username displayed
+            2. A way to distinguish between different players (different colors, avatars, etc.)
+            3. Debug output in the console for Socket.IO events
+            4. Visual confirmation when players join or leave
+            5. Properly synchronized game mechanics between all players
+            
+            Test each event thoroughly to ensure proper multiplayer functionality. 
+            The final game MUST work correctly with multiple players.`
           },
           {
             role: 'user',
@@ -304,7 +309,7 @@ async function generateMultiplayerGame(prompt) {
             2. Create clean HTML structure with clear element IDs
             3. Use requestAnimationFrame for smooth animation
             4. Implement basic physics if needed (keep it simple)
-            5. Test all Socket.IO events thoroughly
+            5. THOROUGHLY implement ALL Socket.IO events exactly as described
             6. Ensure the game initializes properly and handles player connections/disconnections
             7. Use inlined CSS and JS for a single file solution
             
@@ -315,12 +320,21 @@ async function generateMultiplayerGame(prompt) {
             4. Win/lose conditions where appropriate
             
             CODE STRUCTURE:
-            1. Initialize game variables and Socket.IO first
-            2. Set up event listeners for inputs
-            3. Implement game loop and rendering functions
-            4. Create distinct functions for each game mechanic
-            5. Socket.IO event handlers properly separated and organized
-            6. Add thorough comments explaining critical sections
+            1. Initialize game variables and Socket.IO connection FIRST
+            2. IMMEDIATELY emit the joinGame event after initialization
+            3. Set up event listeners for inputs
+            4. Implement game loop and rendering functions
+            5. Create distinct functions for each game mechanic
+            6. Socket.IO event handlers properly separated and organized
+            7. Add thorough comments explaining critical sections
+            8. VERIFY all multiplayer events are properly implemented
+            
+            IMPLEMENTATION VERIFICATION (do this before finalizing):
+            1. Confirm joinGame event is emitted immediately after page load
+            2. Verify playerJoined handler adds new players visually
+            3. Verify playerLeft handler removes departed players
+            4. Ensure game actions synchronize between players
+            5. Test that game state updates apply correctly
             
             TEST THE GAME LOGIC IN YOUR MIND STEP BY STEP BEFORE GENERATING THE CODE.
             ENSURE ALL MULTIPLAYER FUNCTIONALITY WORKS AS EXPECTED.`
@@ -340,12 +354,15 @@ async function generateMultiplayerGame(prompt) {
     const gameCode = response.data.choices[0].message.content;
     const htmlGame = extractHtmlFromResponse(gameCode);
     
+    // Validate the multiplayer implementation
+    const validatedHtml = validateAndFixMultiplayerGame(htmlGame);
+    
     // Generate unique ID for the game
     const gameId = shortid.generate();
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     
     // Save the game HTML to file
-    fs.writeFileSync(gamePath, htmlGame);
+    fs.writeFileSync(gamePath, validatedHtml);
     
     return gameId;
   } catch (error) {
@@ -354,7 +371,149 @@ async function generateMultiplayerGame(prompt) {
   }
 }
 
-// Generate a single-player game using OpenRouter API
+// Function to validate and fix multiplayer game implementation
+function validateAndFixMultiplayerGame(html) {
+  // Check if the essential Socket.IO functionality is included
+  const missingFeatures = [];
+  
+  if (!html.includes('socket.emit(\'joinGame\'')) {
+    missingFeatures.push('joinGame event emission');
+  }
+  
+  if (!html.includes('socket.on(\'playerJoined\'')) {
+    missingFeatures.push('playerJoined event handler');
+  }
+  
+  if (!html.includes('socket.on(\'playerLeft\'')) {
+    missingFeatures.push('playerLeft event handler');
+  }
+  
+  if (!html.includes('socket.on(\'gameAction\'')) {
+    missingFeatures.push('gameAction event handler');
+  }
+  
+  // Add essential debugging to help track multiplayer issues
+  let enhancedHtml = html;
+  
+  if (missingFeatures.length > 0) {
+    console.warn('Generated game is missing essential multiplayer features:', missingFeatures.join(', '));
+    
+    // Inject Socket.IO initialization if it's missing
+    if (!html.includes('const socket = io()')) {
+      const scriptTag = '<script src="/socket.io/socket.io.js"></script>';
+      enhancedHtml = enhancedHtml.replace('</head>', `${scriptTag}\n</head>`);
+      
+      const socketInit = `
+      <script>
+        // Automatically added Socket.IO initialization
+        const socket = io();
+        const gameId = window.location.pathname.split('/').pop();
+        let userData;
+        try {
+          const userDataCookie = document.cookie.split('; ').find(row => row.startsWith('gameUserData='));
+          userData = userDataCookie ? JSON.parse(decodeURIComponent(userDataCookie.split('=')[1])) : {id: 'guest-'+Math.random().toString(36).substring(2,9), username: 'Guest'};
+        } catch (e) {
+          console.error('Error parsing user data:', e);
+          userData = {id: 'guest-'+Math.random().toString(36).substring(2,9), username: 'Guest'};
+        }
+        
+        // Debug console logs for Socket.IO
+        console.log('Socket.IO initialized', {gameId, userData});
+        
+        // Auto-join game room
+        socket.emit('joinGame', {
+          gameId: gameId,
+          userId: userData.id,
+          userData: userData
+        });
+        console.log('Emitted joinGame event');
+        
+        // Essential event handlers
+        socket.on('playerJoined', function(data) {
+          console.log('Player joined event:', data);
+          alert('Player joined: ' + data.userData.username);
+          // Implementation should be improved by the game
+        });
+        
+        socket.on('playerLeft', function(data) {
+          console.log('Player left event:', data);
+          alert('Player left the game');
+          // Implementation should be improved by the game
+        });
+        
+        socket.on('gameAction', function(data) {
+          console.log('Game action received:', data);
+          // Implementation should be improved by the game
+        });
+        
+        socket.on('gameState', function(state) {
+          console.log('Game state update received:', state);
+          // Implementation should be improved by the game
+        });
+      </script>
+      `;
+      enhancedHtml = enhancedHtml.replace('</body>', `${socketInit}\n</body>`);
+    }
+    
+    // Add debugging div
+    const debugDiv = `
+    <div id="multiplayer-debug" style="position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; border-radius: 5px; font-size: 12px; max-width: 300px; max-height: 200px; overflow: auto; z-index: 9999;">
+      <h3>Multiplayer Debug</h3>
+      <p>Your ID: <span id="debug-user-id"></span></p>
+      <p>Players: <span id="debug-players">0</span></p>
+      <div id="debug-log" style="font-family: monospace; font-size: 10px;"></div>
+    </div>
+    <script>
+      // Update debug info
+      const debugLog = document.getElementById('debug-log');
+      const debugUserId = document.getElementById('debug-user-id');
+      const debugPlayers = document.getElementById('debug-players');
+      
+      if (userData && debugUserId) {
+        debugUserId.textContent = userData.id;
+      }
+      
+      function logDebug(message) {
+        if (debugLog) {
+          const entry = document.createElement('div');
+          entry.textContent = new Date().toLocaleTimeString() + ': ' + message;
+          debugLog.appendChild(entry);
+          if (debugLog.children.length > 20) {
+            debugLog.removeChild(debugLog.firstChild);
+          }
+        }
+        console.log(message);
+      }
+      
+      // Hook into Socket.IO events for debugging
+      const originalEmit = socket.emit;
+      socket.emit = function() {
+        logDebug('EMIT: ' + arguments[0]);
+        return originalEmit.apply(this, arguments);
+      };
+      
+      socket.on('playerJoined', function(data) {
+        logDebug('JOIN: ' + data.userData.username);
+        if (debugPlayers) {
+          debugPlayers.textContent = data.playerCount || data.players?.length || '?';
+        }
+      });
+      
+      socket.on('playerLeft', function(data) {
+        logDebug('LEFT: Player ' + data.userId);
+        if (debugPlayers) {
+          debugPlayers.textContent = data.playerCount || data.players?.length || '?';
+        }
+      });
+    </script>
+    `;
+    enhancedHtml = enhancedHtml.replace('</body>', `${debugDiv}\n</body>`);
+  }
+  
+  return enhancedHtml;
+}
+
+// Function to generate a single-player game using OpenRouter API
 async function generateSinglePlayerGame(prompt) {
   try {
     const response = await axios.post(
