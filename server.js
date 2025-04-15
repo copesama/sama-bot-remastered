@@ -28,8 +28,6 @@ const client = new Client({
 
 // Initialize DisTube client
 const distube = new DisTube(client, {
-  searchSongs: 0,
-  searchCooldown: 30,
   leaveOnEmpty: true,
   leaveOnFinish: true,
   leaveOnStop: true,
