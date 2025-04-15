@@ -671,32 +671,32 @@ async function generateMusic(prompt, lyrics = null) {
       requestParams.lyrics = defaultLyrics;
     }
     
-    // Add required parameters - Avoid null values by using empty strings or specific default values
+    // Add required parameters with proper values
     formData.append('bitrate', '256000');
     requestParams.bitrate = '256000';
     
     formData.append('sample_rate', '44100');
     requestParams.sample_rate = '44100';
     
-    // For fields that are supposed to be null, either omit them or use empty strings
-    formData.append('voice_id', '');
-    requestParams.voice_id = '';
-    
-    // For song_file, use a default electronic sample
+    // Only include fields that need valid URIs if we have valid values for them
+    // For song_file, use a default electronic sample - this is a valid URI
     const songFileUrl = 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
     formData.append('song_file', songFileUrl);
     requestParams.song_file = songFileUrl;
     
-    formData.append('voice_file', '');
-    requestParams.voice_file = '';
+    // Do not include empty URI fields that would cause validation errors
+    // Instead, completely omit them from the request
+    // formData.append('voice_file', ''); - REMOVED
+    // formData.append('instrumental_file', ''); - REMOVED
     
-    formData.append('instrumental_id', '');
-    requestParams.instrumental_id = '';
+    // Set null explicitly for fields that accept null
+    formData.append('voice_id', 'null');
+    requestParams.voice_id = 'null';
     
-    formData.append('instrumental_file', '');
-    requestParams.instrumental_file = '';
+    formData.append('instrumental_id', 'null');
+    requestParams.instrumental_id = 'null';
 
-    // Log parameters without using formData.get()
+    // Log parameters
     console.log('Sending music generation request with parameters:', requestParams);
 
     const response = await axios.post(
