@@ -21,7 +21,8 @@
     "libsodium-wrappers":"^0.7.15",
     "youtube-sr":"^4.3.11",
     "@discord-player/extractor": "^7.1.0",
-    "play-dl": "^1.9.7"
+    "play-dl": "^1.9.7",
+    "discord-player": "^7.1.0"
 
   },
   "engines": {
