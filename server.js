@@ -153,6 +153,24 @@ io.on('connection', (socket) => {
     // Send current game state to the joining player
     socket.emit('gameState', gameRooms[gameId].gameState);
     
+    // Important fix: Send existing players list to the newly joined player
+    const existingPlayers = Object.entries(gameRooms[gameId].players).map(([id, player]) => ({
+      id,
+      userData: player.userData
+    }));
+    
+    // Send individual playerJoined events for each existing player to the new player
+    existingPlayers.forEach(player => {
+      if (player.id !== userId) { // Don't send the player their own info
+        socket.emit('playerJoined', {
+          userId: player.id,
+          userData: player.userData,
+          playerCount: Object.keys(gameRooms[gameId].players).length,
+          players: existingPlayers
+        });
+      }
+    });
+    
     // Notify all players in the room about the new player
     io.to(gameId).emit('playerJoined', {
       userId,
@@ -461,6 +479,7 @@ function validateAndFixMultiplayerGame(html) {
       <h3>Multiplayer Debug</h3>
       <p>Your ID: <span id="debug-user-id"></span></p>
       <p>Players: <span id="debug-players">0</span></p>
+      <div id="player-list"></div>
       <div id="debug-log" style="font-family: monospace; font-size: 10px;"></div>
     </div>
     <script>
@@ -468,6 +487,7 @@ function validateAndFixMultiplayerGame(html) {
       const debugLog = document.getElementById('debug-log');
       const debugUserId = document.getElementById('debug-user-id');
       const debugPlayers = document.getElementById('debug-players');
+      const playerList = document.getElementById('player-list');
       
       if (userData && debugUserId) {
         debugUserId.textContent = userData.id;
@@ -485,6 +505,9 @@ function validateAndFixMultiplayerGame(html) {
         console.log(message);
       }
       
+      // Track connected players for debugging
+      const connectedPlayers = new Map();
+      
       // Hook into Socket.IO events for debugging
       const originalEmit = socket.emit;
       socket.emit = function() {
@@ -493,9 +516,24 @@ function validateAndFixMultiplayerGame(html) {
       };
       
       socket.on('playerJoined', function(data) {
-        logDebug('JOIN: ' + data.userData.username);
+        logDebug('JOIN: ' + data.userData.username + ' (ID: ' + data.userId + ')');
         if (debugPlayers) {
           debugPlayers.textContent = data.playerCount || data.players?.length || '?';
+        }
+        
+        // Add player to tracking map
+        if (data.userId !== userData.id) {
+          connectedPlayers.set(data.userId, data.userData);
+          
+          // Update player list in debug window
+          if (playerList) {
+            playerList.innerHTML = '';
+            connectedPlayers.forEach((playerData, pid) => {
+              const playerEntry = document.createElement('div');
+              playerEntry.textContent = playerData.username + ' (' + pid.substring(0, 5) + '...)';
+              playerList.appendChild(playerEntry);
+            });
+          }
         }
       });
       
@@ -503,6 +541,19 @@ function validateAndFixMultiplayerGame(html) {
         logDebug('LEFT: Player ' + data.userId);
         if (debugPlayers) {
           debugPlayers.textContent = data.playerCount || data.players?.length || '?';
+        }
+        
+        // Remove player from tracking
+        connectedPlayers.delete(data.userId);
+        
+        // Update player list in debug window
+        if (playerList) {
+          playerList.innerHTML = '';
+          connectedPlayers.forEach((playerData, pid) => {
+            const playerEntry = document.createElement('div');
+            playerEntry.textContent = playerData.username + ' (' + pid.substring(0, 5) + '...)';
+            playerList.appendChild(playerEntry);
+          });
         }
       });
     </script>
