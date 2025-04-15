@@ -12,7 +12,7 @@ const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 // Add new imports for YouTube functionality
-const { Player } = require('discord-player');
+const { Player, QueryType, useQueue } = require('discord-player');
 const YoutubeSr = require('youtube-sr').default;
 
 // Initialize Discord client
@@ -59,8 +59,31 @@ app.use(cookieParser());
 const voiceConnections = new Map();
 const audioPlayers = new Map();
 
-// Initialize discord-player
-const player = new Player(client);
+// Initialize discord-player with proper configuration
+const player = new Player(client, {
+  ytdlOptions: {
+    quality: 'highestaudio',
+    highWaterMark: 1 << 25
+  }
+});
+
+// Wait for player to be ready before accepting commands
+let playerReady = false;
+player.events.on('ready', () => {
+  console.log('Discord Player is ready!');
+  playerReady = true;
+});
+
+// Make sure to initialize the player properly
+(async () => {
+  try {
+    // Register extractor if needed
+    await player.extractors.loadDefault();
+    console.log('Discord Player extractors loaded');
+  } catch (error) {
+    console.error('Error initializing discord-player:', error);
+  }
+})();
 
 // Function to get YouTube channel videos
 async function getChannelVideos(channelUrl) {
@@ -116,7 +139,7 @@ async function getChannelVideos(channelUrl) {
   }
 }
 
-// Function to play short clips from videos
+// Function to play short clips from videos - update to use modern discord-player API
 async function playShortClips(videos, voiceChannel, message) {
   try {
     if (!videos || videos.length === 0) {
@@ -124,29 +147,8 @@ async function playShortClips(videos, voiceChannel, message) {
       return;
     }
     
-    // Join the voice channel
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-    });
-    
-    // Create a queue using discord-player
-    const queue = player.createQueue(voiceChannel.guild, {
-      metadata: {
-        channel: message.channel
-      }
-    });
-    
-    try {
-      // Connect to the voice channel
-      if (!queue.connection) {
-        await queue.connect(voiceChannel);
-      }
-    } catch (error) {
-      queue.destroy();
-      message.channel.send('Could not join your voice channel!');
-      console.error('Error connecting to voice channel:', error);
+    if (!playerReady) {
+      message.channel.send('Discord player is not ready yet. Please try again in a moment.');
       return;
     }
     
@@ -167,50 +169,97 @@ async function playShortClips(videos, voiceChannel, message) {
     
     await message.channel.send({ embeds: [playlistEmbed] });
     
-    // Set up to play each video for 5 seconds
-    let index = 0;
-    
-    // Function to play the next video
-    const playNextVideo = async () => {
-      if (index >= videos.length) {
-        // All videos played, destroy the queue
-        queue.destroy();
-        return;
+    // Instead of manually joining, let discord-player handle it
+    try {
+      // Play the first video
+      const firstVideoUrl = `https://www.youtube.com/watch?v=${videos[0].id}`;
+      
+      await player.play(voiceChannel, firstVideoUrl, {
+        nodeOptions: {
+          metadata: {
+            channel: message.channel,
+            requestedBy: message.author
+          },
+          volume: 80,
+          leaveOnEnd: false, // We'll handle this ourselves
+          leaveOnStop: false,
+          leaveOnEmpty: true,
+          leaveOnEmptyCooldown: 5000
+        }
+      });
+      
+      // Get the queue for managing playback
+      const queue = useQueue(voiceChannel.guild.id);
+      if (!queue) {
+        throw new Error('Failed to create player queue');
       }
       
-      const video = videos[index];
-      index++;
+      // Set up video index
+      let currentIndex = 0;
       
-      try {
-        await queue.play(`https://www.youtube.com/watch?v=${video.id}`);
+      // Track function to handle video changes
+      const playNextVideo = async () => {
+        currentIndex++;
         
-        // Set a timeout to skip to the next video after 5 seconds
-        setTimeout(() => {
-          if (queue.playing) {
-            queue.skip();
-          }
-        }, 5000);
+        if (currentIndex >= videos.length) {
+          // All videos played, destroy the queue
+          queue.delete();
+          return;
+        }
         
-        // Set up listener for the song end
-        const nowPlaying = queue.nowPlaying();
-        if (nowPlaying) {
-          queue.once('trackEnd', () => {
-            if (index < videos.length) {
-              setTimeout(playNextVideo, 500); // Small delay between videos
-            } else {
-              queue.destroy();
+        // Small delay before playing next video
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const nextVideoUrl = `https://www.youtube.com/watch?v=${videos[currentIndex].id}`;
+        try {
+          await player.play(voiceChannel, nextVideoUrl, {
+            nodeOptions: {
+              metadata: {
+                channel: message.channel,
+                requestedBy: message.author
+              },
+              volume: 80,
+              leaveOnEnd: false,
+              leaveOnStop: false,
+              leaveOnEmpty: true,
+              leaveOnEmptyCooldown: 5000
             }
           });
+        } catch (error) {
+          console.error(`Error playing video ${currentIndex}:`, error);
+          playNextVideo(); // Skip to next video on error
         }
-      } catch (error) {
-        console.error(`Error playing video ${video.id}:`, error);
-        playNextVideo(); // Try the next video if there's an error
+      };
+      
+      // Listen for track end event to manage 5-second limit and play next video
+      queue.dispatcher.on('streamEnd', () => {
+        if (currentIndex < videos.length - 1) {
+          playNextVideo();
+        } else {
+          // Last video finished, clean up
+          queue.delete();
+        }
+      });
+      
+      // Set 5-second limit for each video
+      for (let i = 0; i < videos.length; i++) {
+        setTimeout(() => {
+          if (queue && !queue.deleted && queue.isPlaying) {
+            if (i < videos.length - 1) {
+              // Skip to next video after 5 seconds if not the last video
+              queue.node.skip();
+            } else {
+              // Last video, stop after 5 seconds
+              queue.delete();
+            }
+          }
+        }, 5000 * (i + 1) + 500 * i); // 5 seconds per video + 500ms delay between videos
       }
-    };
-    
-    // Start playing videos
-    playNextVideo();
-    
+      
+    } catch (error) {
+      console.error('Error setting up queue:', error);
+      message.channel.send('There was an error playing the videos. Please try again later.');
+    }
   } catch (error) {
     console.error('Error playing short clips:', error);
     message.channel.send('There was an error playing the videos. Please try again later.');
@@ -493,7 +542,7 @@ async function generateMultiplayerGame(prompt) {
             7. Use inlined CSS and JS for a single file solution
             
             GAME FEATURES TO INCLUDE:
-            1. Clear visual indication of each player (show usernames) using userData.username and userData.avatar
+            1. A clear visual indication of each player (show usernames) using userData.username and userData.avatar
             2. Simple UI showing connected players and basic instructions
             3. Basic sound effects (optional)
             4. Win/lose conditions where appropriate
@@ -1276,12 +1325,17 @@ client.on('messageCreate', async (message) => {
 });
 
 // Initialize discord-player error handling
-player.on('error', (queue, error) => {
+player.events.on('error', (queue, error) => {
   console.error(`[Discord Player] Error in queue ${queue.guild.name}: ${error.message}`);
 });
 
-player.on('connectionError', (queue, error) => {
-  console.error(`[Discord Player] Error in connection: ${error.message}`);
+player.events.on('playerError', (queue, error) => {
+  console.error(`[Discord Player] Player error: ${error.message}`);
+});
+
+player.events.on('debug', (message) => {
+  // Uncomment for debugging
+  // console.log(`[Discord Player Debug] ${message}`);
 });
 
 // Add a function to handle cleaning up voice connections when the bot is stopped
