@@ -1154,42 +1154,116 @@ client.on('messageCreate', async (message) => {
 // Function to get random videos from a YouTube channel
 async function getRandomVideosFromChannel(channelUrl, count) {
   try {
-    // Extract channel ID or handle from URL
+    console.log('Processing channel URL:', channelUrl);
+    
+    // Normalize the URL - remove trailing slashes and parameters
+    channelUrl = channelUrl.trim().split('?')[0].replace(/\/$/, '');
+    console.log('Normalized URL:', channelUrl);
+    
+    // Extract channel ID or handle from URL using various possible formats
     let channelId = '';
+    let channelHandle = '';
     
     if (channelUrl.includes('/channel/')) {
-      // Extract channel ID format: /channel/UC...
+      // Format: /channel/UC...
       channelId = channelUrl.split('/channel/')[1].split('/')[0];
+      console.log('Extracted channel ID from URL:', channelId);
+    } else if (channelUrl.includes('/c/')) {
+      // Format: /c/ChannelName
+      channelHandle = channelUrl.split('/c/')[1].split('/')[0];
+      console.log('Extracted custom URL from /c/ format:', channelHandle);
+    } else if (channelUrl.includes('/user/')) {
+      // Format: /user/Username
+      channelHandle = channelUrl.split('/user/')[1].split('/')[0];
+      console.log('Extracted username from /user/ format:', channelHandle);
     } else if (channelUrl.includes('/@')) {
-      // Extract handle format: /@channelname
-      const channelHandle = channelUrl.split('/@')[1].split('/')[0];
-      
-      // Search for the channel by name to get ID
-      const searchResults = await YouTube.search(channelHandle, { type: 'channel', limit: 1 });
-      
-      if (searchResults && searchResults.length > 0) {
-        channelId = searchResults[0].channelID;
-      } else {
-        console.error('Channel not found with handle:', channelHandle);
-        return [];
-      }
+      // Format: /@channelname
+      channelHandle = channelUrl.split('/@')[1].split('/')[0];
+      console.log('Extracted handle from /@ format:', channelHandle);
+    } else if (channelUrl.match(/youtube\.com\/\w+$/)) {
+      // Format: youtube.com/ChannelName (without @ or other prefixes)
+      channelHandle = channelUrl.split('youtube.com/')[1];
+      console.log('Extracted handle from simple format:', channelHandle);
     } else {
-      console.error('Invalid channel URL format');
+      console.error('Unrecognized YouTube channel URL format:', channelUrl);
       return [];
     }
     
+    // If we have a handle but no ID, search for the channel
+    if (!channelId && channelHandle) {
+      console.log('Searching for channel ID using handle:', channelHandle);
+      
+      // Try to find the channel by name/handle
+      try {
+        const searchResults = await YouTube.search(channelHandle, { type: 'channel', limit: 1 });
+        
+        if (searchResults && searchResults.length > 0) {
+          channelId = searchResults[0].channelID;
+          console.log('Found channel ID via search:', channelId);
+        } else {
+          console.error('No channels found for handle:', channelHandle);
+          
+          // Try an alternative approach - get videos from the handle directly
+          try {
+            console.log('Attempting to search for videos by channel name');
+            const videoSearch = await YouTube.search(`${channelHandle} channel`, { limit: 50 });
+            
+            if (videoSearch && videoSearch.length > 0) {
+              // Filter to get videos from what appears to be the same channel
+              const commonChannelId = findMostCommonChannelId(videoSearch);
+              
+              if (commonChannelId) {
+                channelId = commonChannelId;
+                console.log('Found likely channel ID through video search:', channelId);
+              } else {
+                // If we can't determine a common channel, just return some videos
+                console.log('Returning random videos from search results');
+                const shuffled = [...videoSearch].sort(() => 0.5 - Math.random());
+                return shuffled.slice(0, Math.min(count, shuffled.length));
+              }
+            }
+          } catch (searchError) {
+            console.error('Error in fallback video search:', searchError);
+          }
+        }
+      } catch (searchError) {
+        console.error('Error searching for channel:', searchError);
+      }
+    }
+    
     if (!channelId) {
-      console.error('Could not extract channel ID');
+      console.error('Could not determine channel ID from:', channelUrl);
       return [];
     }
     
     // Get videos from the channel
+    console.log('Fetching videos for channel ID:', channelId);
     const channelVideos = await YouTube.channelVideos(channelId, 50);
     
     if (!channelVideos || channelVideos.length === 0) {
-      console.error('No videos found in this channel');
-      return [];
+      console.error('No videos found for channel ID:', channelId);
+      
+      // Try a fallback approach using search
+      try {
+        console.log('Attempting fallback search for channel videos');
+        const fallbackVideos = await YouTube.search(`channel:${channelId}`, { limit: 50 });
+        
+        if (fallbackVideos && fallbackVideos.length > 0) {
+          console.log('Found videos through fallback search');
+          // Shuffle the videos and pick the requested number
+          const shuffled = [...fallbackVideos].sort(() => 0.5 - Math.random());
+          return shuffled.slice(0, Math.min(count, shuffled.length));
+        } else {
+          console.error('Fallback search also yielded no videos');
+          return [];
+        }
+      } catch (fallbackError) {
+        console.error('Error in fallback search:', fallbackError);
+        return [];
+      }
     }
+    
+    console.log(`Found ${channelVideos.length} videos from channel`);
     
     // Shuffle the videos and pick the requested number
     const shuffled = [...channelVideos].sort(() => 0.5 - Math.random());
@@ -1198,6 +1272,32 @@ async function getRandomVideosFromChannel(channelUrl, count) {
     console.error('Error getting videos from channel:', error);
     return [];
   }
+}
+
+// Helper function to find the most common channel ID in a list of videos
+function findMostCommonChannelId(videos) {
+  if (!videos || videos.length === 0) return null;
+  
+  // Count occurrences of each channel ID
+  const channelCounts = {};
+  videos.forEach(video => {
+    if (video.channelID) {
+      channelCounts[video.channelID] = (channelCounts[video.channelID] || 0) + 1;
+    }
+  });
+  
+  // Find the channel ID with the most videos
+  let mostCommonChannelId = null;
+  let maxCount = 0;
+  
+  Object.entries(channelCounts).forEach(([channelId, count]) => {
+    if (count > maxCount) {
+      mostCommonChannelId = channelId;
+      maxCount = count;
+    }
+  });
+  
+  return mostCommonChannelId;
 }
 
 // Function to play out-of-context videos
