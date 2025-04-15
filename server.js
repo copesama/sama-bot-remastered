@@ -657,31 +657,47 @@ async function generateMusic(prompt, lyrics = null) {
     const extractedLyrics = lyrics || prompt.includes('[verse]') ? prompt : null;
     const musicPrompt = extractedLyrics ? "Generate music for these lyrics" : prompt;
     
+    // For logging purposes - store what we're sending to the API
+    const requestParams = {};
+    
     // Set up form data for the request - properly handle null values
     if (extractedLyrics) {
       formData.append('lyrics', extractedLyrics);
+      requestParams.lyrics = extractedLyrics;
     } else {
       // Use a template for lyrics based on the prompt
-      formData.append('lyrics', `[verse]\n${prompt}\n[chorus]\nInspired by your imagination\nCreated just for you`);
+      const defaultLyrics = `[verse]\n${prompt}\n[chorus]\nInspired by your imagination\nCreated just for you`;
+      formData.append('lyrics', defaultLyrics);
+      requestParams.lyrics = defaultLyrics;
     }
     
     // Add required parameters - Avoid null values by using empty strings or specific default values
     formData.append('bitrate', '256000');
+    requestParams.bitrate = '256000';
+    
     formData.append('sample_rate', '44100');
+    requestParams.sample_rate = '44100';
     
     // For fields that are supposed to be null, either omit them or use empty strings
     formData.append('voice_id', '');
-    formData.append('song_file', 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav');
+    requestParams.voice_id = '';
+    
+    // For song_file, use a default electronic sample
+    const songFileUrl = 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
+    formData.append('song_file', songFileUrl);
+    requestParams.song_file = songFileUrl;
+    
     formData.append('voice_file', '');
+    requestParams.voice_file = '';
+    
     formData.append('instrumental_id', '');
+    requestParams.instrumental_id = '';
+    
     formData.append('instrumental_file', '');
+    requestParams.instrumental_file = '';
 
-    console.log('Sending music generation request with parameters:', { 
-      lyrics: formData.get('lyrics'),
-      bitrate: formData.get('bitrate'),
-      sample_rate: formData.get('sample_rate'),
-      song_file: formData.get('song_file')
-    });
+    // Log parameters without using formData.get()
+    console.log('Sending music generation request with parameters:', requestParams);
 
     const response = await axios.post(
       'https://api.segmind.com/v1/minimax-music-01',
