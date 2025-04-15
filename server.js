@@ -678,24 +678,18 @@ async function generateMusic(prompt, lyrics = null) {
     formData.append('sample_rate', '44100');
     requestParams.sample_rate = '44100';
     
-    // Only include fields that need valid URIs if we have valid values for them
     // For song_file, use a default electronic sample - this is a valid URI
     const songFileUrl = 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
     formData.append('song_file', songFileUrl);
     requestParams.song_file = songFileUrl;
     
-    // Do not include empty URI fields that would cause validation errors
-    // Instead, completely omit them from the request
-    // formData.append('voice_file', ''); - REMOVED
-    // formData.append('instrumental_file', ''); - REMOVED
+    // Based on the error, we should NOT include voice_id or instrumental_id at all
+    // DO NOT include any of these fields in the request:
+    // - voice_id 
+    // - instrumental_id
+    // - voice_file
+    // - instrumental_file
     
-    // Set null explicitly for fields that accept null
-    formData.append('voice_id', 'null');
-    requestParams.voice_id = 'null';
-    
-    formData.append('instrumental_id', 'null');
-    requestParams.instrumental_id = 'null';
-
     // Log parameters
     console.log('Sending music generation request with parameters:', requestParams);
 
@@ -708,7 +702,8 @@ async function generateMusic(prompt, lyrics = null) {
           ...formData.getHeaders()
         },
         responseType: 'arraybuffer', // Important for receiving binary audio data
-        validateStatus: false // Allow non-2xx responses for better error handling
+        validateStatus: false, // Allow non-2xx responses for better error handling
+        timeout: 120000 // 2 minute timeout for long music generation
       }
     );
 
@@ -718,6 +713,17 @@ async function generateMusic(prompt, lyrics = null) {
       try {
         errorMessage = Buffer.from(response.data).toString('utf8');
         console.error('Music API error response:', errorMessage);
+        
+        // Try to parse as JSON for better error messaging
+        try {
+          const jsonError = JSON.parse(errorMessage);
+          if (jsonError.error) {
+            errorMessage = jsonError.error;
+          }
+        } catch (e) {
+          // If it's not valid JSON, keep the original error message
+        }
+        
       } catch (e) {
         errorMessage = `HTTP status ${response.status}`;
       }
@@ -744,6 +750,11 @@ async function generateMusic(prompt, lyrics = null) {
       } catch (e) {
         console.error('Could not parse error response data');
       }
+    }
+    
+    // Add more detailed error for timeouts
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Music generation timed out. The server took too long to respond.');
     }
     
     throw error;
@@ -987,8 +998,8 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
-    // Send initial response
-    const loadingMessage = await message.reply('🎵 Generating your custom music track... This might take a minute or two!');
+    // Send initial response with better messaging about timing
+    const loadingMessage = await message.reply('🎵 Generating your custom music track... This might take 1-2 minutes. Please be patient!');
     
     try {
       // Generate the music
@@ -1082,7 +1093,17 @@ client.on('messageCreate', async (message) => {
       
     } catch (error) {
       console.error('Error generating music:', error);
-      await loadingMessage.edit('Sorry, there was an error generating your music. Please try again later.');
+      
+      // Provide more helpful error message to the user
+      let errorMessage = 'Sorry, there was an error generating your music. Please try again later.';
+      
+      if (error.message.includes('timed out')) {
+        errorMessage = 'Sorry, music generation timed out. Please try a simpler prompt or try again later.';
+      } else if (error.message.includes('vocal_id null not found')) {
+        errorMessage = 'Sorry, there was an issue with the music generation service. Please try a different prompt.';
+      }
+      
+      await loadingMessage.edit(errorMessage);
     }
   }
   
