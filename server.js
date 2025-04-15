@@ -222,122 +222,30 @@ async function generateMultiplayerGame(prompt) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert game developer. Create a complete, playable HTML multiplayer game based on the user prompt. 
-            The game should be entirely self-contained in a single HTML file with embedded JavaScript and CSS.
-            
-            CRITICAL REQUIREMENTS:
-            1. The game MUST be fully functional and error-free
-            2. Use simple graphics and mechanics that work reliably in browsers
-            3. Test all game logic and multiplayer functionality thoroughly in your response
-            4. PROPERLY IMPLEMENT all Socket.IO events for multiplayer functionality
-            5. ENSURE the game correctly detects when other players join and leave
-            
-            SOCKET.IO IMPLEMENTATION (MUST BE IMPLEMENTED EXACTLY AS FOLLOWS):
-            - Include Socket.IO properly: <script src="/socket.io/socket.io.js"></script>
-            - Initialize connection: const socket = io();
-            - Extract game ID from URL: const gameId = window.location.pathname.split('/').pop();
-            - Extract user data from cookie:
-              const userData = JSON.parse(decodeURIComponent(document.cookie.split('; ').find(row => row.startsWith('gameUserData=')).split('=')[1]));
-            
-            REQUIRED MULTIPLAYER EVENTS (DO NOT MODIFY THESE EXACT EVENT NAMES AND PARAMETERS):
-            1. JOIN GAME (MUST BE CALLED IMMEDIATELY AFTER PAGE LOADS):
-               socket.emit('joinGame', {
-                 gameId: gameId,
-                 userId: userData.id,
-                 userData: userData
-               });
-               
-            2. HANDLE OTHER PLAYERS (THESE EVENT HANDLERS MUST BE PROPERLY IMPLEMENTED):
-               socket.on('playerJoined', function(data) {
-                 // Add new player to game with their userData.username and userData.avatar
-                 console.log('Player joined:', data.userData.username);
-                 // data.players contains all current players
-                 // YOU MUST implement visual feedback showing the new player has joined
-               });
-               
-               socket.on('playerLeft', function(data) {
-                 // Remove player from game
-                 console.log('Player left:', data.userId);
-                 // data.userId is the leaving player's ID
-                 // YOU MUST implement code to remove the player from the game
-               });
-               
-            3. SYNC GAME ACTIONS (MUST USE THESE EXACT EVENT NAMES):
-               // Send player actions
-               socket.emit('gameAction', {
-                 action: 'actionName', // e.g., 'move', 'shoot', 'jump'
-                 data: actionData // data specific to the action
-               });
-               
-               // Receive others' actions
-               socket.on('gameAction', function(data) {
-                 console.log('Game action received:', data.action, 'from', data.userId);
-                 // Apply other player's action to their character
-                 // data.userId is the player who performed the action
-                 // data.action is the action type
-                 // data.userData contains the player's info
-                 // YOU MUST implement code to apply the action to the correct player
-               });
-               
-            4. SYNC GAME STATE (MUST BE IMPLEMENTED FOR CONSISTENCY):
-               // Send game state updates periodically
-               socket.emit('updateGameState', gameState);
-               
-               // Receive game state updates
-               socket.on('gameState', function(state) {
-                 console.log('Game state update received');
-                 // Update local game state with server's state
-                 // YOU MUST implement code to apply the state update
-               });
-               
-            YOUR GAME MUST INCLUDE:
-            1. A clear visual representation of each player with their username displayed
-            2. A way to distinguish between different players (different colors, avatars, etc.)
-            3. Debug output in the console for Socket.IO events
-            4. Visual confirmation when players join or leave
-            5. Properly synchronized game mechanics between all players
-            
-            Test each event thoroughly to ensure proper multiplayer functionality. 
-            The final game MUST work correctly with multiple players.`
+            content: `Create a multiplayer HTML game with Socket.IO integration.
+
+CRITICAL SOCKET.IO REQUIREMENTS:
+1. Initialize: const socket = io();
+2. Extract gameId from URL: const gameId = window.location.pathname.split('/').pop();
+3. Extract userData from cookie for player identification
+4. IMMEDIATELY emit 'joinGame' event with gameId, userId, and userData
+5. Handle 'playerJoined', 'playerLeft', 'gameAction', and 'gameState' events
+6. Visually display all connected players with their usernames
+7. Keep player movements/actions synchronized across all clients`
           },
           {
             role: 'user',
-            content: `Create a browser game based on this prompt: ${prompt}. 
-            
-            TECHNICAL IMPLEMENTATION GUIDELINES:
-            1. Start with a SIMPLE game concept that works well for multiplayer
-            2. Create clean HTML structure with clear element IDs
-            3. Use requestAnimationFrame for smooth animation
-            4. Implement basic physics if needed (keep it simple)
-            5. THOROUGHLY implement ALL Socket.IO events exactly as described
-            6. Ensure the game initializes properly and handles player connections/disconnections
-            7. Use inlined CSS and JS for a single file solution
-            
-            GAME FEATURES TO INCLUDE:
-            1. Clear visual indication of each player (show usernames) using userData.username and userData.avatar
-            2. Simple UI showing connected players and basic instructions
-            3. Basic sound effects (optional)
-            4. Win/lose conditions where appropriate
-            
-            CODE STRUCTURE:
-            1. Initialize game variables and Socket.IO connection FIRST
-            2. IMMEDIATELY emit the joinGame event after initialization
-            3. Set up event listeners for inputs
-            4. Implement game loop and rendering functions
-            5. Create distinct functions for each game mechanic
-            6. Socket.IO event handlers properly separated and organized
-            7. Add thorough comments explaining critical sections
-            8. VERIFY all multiplayer events are properly implemented
-            
-            IMPLEMENTATION VERIFICATION (do this before finalizing):
-            1. Confirm joinGame event is emitted immediately after page load
-            2. Verify playerJoined handler adds new players visually
-            3. Verify playerLeft handler removes departed players
-            4. Ensure game actions synchronize between players
-            5. Test that game state updates apply correctly
-            
-            TEST THE GAME LOGIC IN YOUR MIND STEP BY STEP BEFORE GENERATING THE CODE.
-            ENSURE ALL MULTIPLAYER FUNCTIONALITY WORKS AS EXPECTED.`
+            content: `Create a multiplayer browser game based on: ${prompt}
+
+ESSENTIAL IMPLEMENTATION:
+1. Include Socket.IO: <script src="/socket.io/socket.io.js"></script>
+2. On page load, emit: socket.emit('joinGame', {gameId, userId: userData.id, userData});
+3. Handle new players: socket.on('playerJoined', (data) => {...});  
+4. Handle leaving players: socket.on('playerLeft', (data) => {...});
+5. Sync actions: socket.emit('gameAction', {action, data}) and socket.on('gameAction', (data) => {...});
+6. Keep game state updated between all players
+7. Show player usernames/avatars from userData
+8. Make the gameplay simple but fully functional`
           }
         ],
         temperature: 0.7
