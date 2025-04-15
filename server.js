@@ -218,7 +218,7 @@ async function generateMultiplayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'openrouter/optimus-alpha',
+        model: 'google/gemini-2.5-pro-exp-03-25:free',
         messages: [
           {
             role: 'system',
@@ -348,7 +348,7 @@ async function generateSinglePlayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'openrouter/optimus-alpha',
+        model: 'google/gemini-2.5-pro-exp-03-25:free',
         messages: [
           {
             role: 'system',
@@ -490,7 +490,7 @@ async function editGame(gameId, editPrompt, originalHtml) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'openrouter/optimus-alpha',
+        model: 'google/gemini-2.5-pro-exp-03-25:free',
         messages: [
           {
             role: 'system',
@@ -770,14 +770,7 @@ client.on('messageCreate', async (message) => {
       // Ensure there are no double slashes in the URL
       const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
 
-      // Create user token with Discord info for authentication
-      const userToken = jwt.sign({
-        id: message.author.id,
-        username: message.author.username,
-        avatar: message.author.displayAvatarURL({ format: 'png' })
-      }, JWT_SECRET);
-      
-      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      const gameUrl = `${baseUrl}/game/${gameId}`;
       
       // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
@@ -823,14 +816,7 @@ client.on('messageCreate', async (message) => {
       // Ensure there are no double slashes in the URL
       const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
 
-      // Create user token with Discord info for authentication
-      const userToken = jwt.sign({
-        id: message.author.id,
-        username: message.author.username,
-        avatar: message.author.displayAvatarURL({ format: 'png' })
-      }, JWT_SECRET);
-      
-      const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
+      const gameUrl = `${baseUrl}/game/${gameId}`;
       
       // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
