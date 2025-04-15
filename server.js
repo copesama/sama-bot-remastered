@@ -11,6 +11,10 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+// Add DisTube and YouTube-related imports (replace ytsr with youtube-sr)
+const { DisTube } = require('distube');
+const { YtDlpPlugin } = require('@distube/yt-dlp');
+const YouTube = require('youtube-sr').default;
 
 // Initialize Discord client
 const client = new Client({
@@ -20,6 +24,16 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildVoiceStates, // Add voice state intent to track voice channels
   ]
+});
+
+// Initialize DisTube client
+const distube = new DisTube(client, {
+  searchSongs: 0,
+  searchCooldown: 30,
+  leaveOnEmpty: true,
+  leaveOnFinish: true,
+  leaveOnStop: true,
+  plugins: [new YtDlpPlugin()]
 });
 
 // Initialize Express app for serving games
@@ -55,6 +69,9 @@ app.use(cookieParser());
 // Keep track of active voice connections and players
 const voiceConnections = new Map();
 const audioPlayers = new Map();
+
+// Keep track of out-of-context sessions and timeout handlers
+const outOfContextSessions = new Map();
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -1077,6 +1094,191 @@ client.on('messageCreate', async (message) => {
       await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
     }
   }
+
+  // Check for !outofcontext command
+  if (message.content.startsWith('!outofcontext')) {
+    const channelUrl = message.content.slice('!outofcontext'.length).trim();
+    
+    if (!channelUrl || !channelUrl.includes('youtube.com/')) {
+      message.reply('Please provide a valid YouTube channel URL. Example: `!outofcontext https://www.youtube.com/channel/UCxxx` or `!outofcontext https://www.youtube.com/@channelname`');
+      return;
+    }
+    
+    // Check if user is in a voice channel
+    const voiceChannel = message.member?.voice?.channel;
+    if (!voiceChannel) {
+      message.reply('You need to join a voice channel first!');
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply('🎬 Searching for random videos from this channel... This might take a moment!');
+    
+    try {
+      // Check if there's already an active session for this guild
+      if (outOfContextSessions.has(message.guild.id)) {
+        // Clear any existing timeout
+        clearTimeout(outOfContextSessions.get(message.guild.id).timeout);
+        // Stop any existing playback
+        distube.stop(message.guild.id);
+        // Remove the session
+        outOfContextSessions.delete(message.guild.id);
+      }
+      
+      // Fetch videos from the channel
+      const videos = await getRandomVideosFromChannel(channelUrl, 5);
+      
+      if (!videos || videos.length === 0) {
+        await loadingMessage.edit('Could not find any videos from this channel. Please check the URL and try again.');
+        return;
+      }
+      
+      // Create an embed with the info
+      const outOfContextEmbed = new EmbedBuilder()
+        .setColor('#FF0000')
+        .setTitle('🎬 Out of Context YouTube Clips')
+        .setDescription(`Playing 5-second clips from **${videos.length}** random videos`)
+        .addFields(
+          { name: 'Channel', value: channelUrl }
+        )
+        .setFooter({ text: 'Each clip will play for 5 seconds before moving to the next one' })
+        .setTimestamp();
+      
+      await loadingMessage.edit({ content: 'Found videos! Starting playback...', embeds: [outOfContextEmbed] });
+      
+      // Play the first video and set up the queue for the rest
+      await playOutOfContextVideos(message, videos, 0);
+      
+    } catch (error) {
+      console.error('Error in out of context command:', error);
+      await loadingMessage.edit('Sorry, there was an error processing your request. Please try again later.');
+    }
+  }
+});
+
+// Function to get random videos from a YouTube channel
+async function getRandomVideosFromChannel(channelUrl, count) {
+  try {
+    // Extract channel ID or handle from URL
+    let channelId = '';
+    
+    if (channelUrl.includes('/channel/')) {
+      // Extract channel ID format: /channel/UC...
+      channelId = channelUrl.split('/channel/')[1].split('/')[0];
+    } else if (channelUrl.includes('/@')) {
+      // Extract handle format: /@channelname
+      const channelHandle = channelUrl.split('/@')[1].split('/')[0];
+      
+      // Search for the channel by name to get ID
+      const searchResults = await YouTube.search(channelHandle, { type: 'channel', limit: 1 });
+      
+      if (searchResults && searchResults.length > 0) {
+        channelId = searchResults[0].channelID;
+      } else {
+        console.error('Channel not found with handle:', channelHandle);
+        return [];
+      }
+    } else {
+      console.error('Invalid channel URL format');
+      return [];
+    }
+    
+    if (!channelId) {
+      console.error('Could not extract channel ID');
+      return [];
+    }
+    
+    // Get videos from the channel
+    const channelVideos = await YouTube.channelVideos(channelId, 50);
+    
+    if (!channelVideos || channelVideos.length === 0) {
+      console.error('No videos found in this channel');
+      return [];
+    }
+    
+    // Shuffle the videos and pick the requested number
+    const shuffled = [...channelVideos].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, Math.min(count, shuffled.length));
+  } catch (error) {
+    console.error('Error getting videos from channel:', error);
+    return [];
+  }
+}
+
+// Function to play out-of-context videos
+async function playOutOfContextVideos(message, videos, index) {
+  // If we've played all videos or there are no videos, stop
+  if (index >= videos.length || videos.length === 0) {
+    message.channel.send('Finished playing all random clips!');
+    
+    // Clear from the sessions map
+    if (outOfContextSessions.has(message.guild.id)) {
+      clearTimeout(outOfContextSessions.get(message.guild.id).timeout);
+      outOfContextSessions.delete(message.guild.id);
+    }
+    
+    // Stop and leave
+    distube.stop(message.guild.id);
+    return;
+  }
+  
+  try {
+    const video = videos[index];
+    
+    // Join the voice channel if not already connected
+    const voiceChannel = message.member?.voice?.channel;
+    if (!voiceChannel) {
+      message.channel.send('You need to be in a voice channel to continue playback!');
+      return;
+    }
+    
+    // Play the current video
+    message.channel.send(`▶️ Clip ${index + 1}/${videos.length}: "${video.title}"`);
+    
+    // Now play the video
+    await distube.play(voiceChannel, video.url, {
+      message,
+      member: message.member,
+      textChannel: message.channel,
+      skip: false
+    });
+    
+    // Set a timeout to play the next video after 5 seconds
+    const timeout = setTimeout(() => {
+      // Stop current playback and move to next video
+      distube.stop(message.guild.id);
+      
+      // Small delay before playing the next video
+      setTimeout(() => {
+        playOutOfContextVideos(message, videos, index + 1);
+      }, 500);
+      
+    }, 5000); // 5 seconds per clip
+    
+    // Store the session information
+    outOfContextSessions.set(message.guild.id, {
+      videos,
+      currentIndex: index,
+      timeout
+    });
+    
+  } catch (error) {
+    console.error(`Error playing video at index ${index}:`, error);
+    message.channel.send(`Error playing clip ${index + 1}. Skipping to next...`);
+    
+    // Move to the next video
+    setTimeout(() => {
+      playOutOfContextVideos(message, videos, index + 1);
+    }, 1000);
+  }
+}
+
+// DisTube event handlers
+distube.on('error', (channel, error) => {
+  if (channel) {
+    channel.send(`An error occurred: ${error.message}`);
+  }
+  console.error('DisTube error:', error);
 });
 
 // Add a function to handle cleaning up voice connections when the bot is stopped
