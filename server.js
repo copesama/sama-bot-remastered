@@ -218,7 +218,7 @@ async function generateMultiplayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'deepseek/deepseek-v3-base:free',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           {
             role: 'system',
@@ -519,7 +519,7 @@ async function generateSinglePlayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'deepseek/deepseek-v3-base:free',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           {
             role: 'system',
@@ -661,7 +661,7 @@ async function editGame(gameId, editPrompt, originalHtml) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'deepseek/deepseek-v3-base:free',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           {
             role: 'system',
