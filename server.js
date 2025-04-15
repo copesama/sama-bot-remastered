@@ -28,9 +28,6 @@ const client = new Client({
 
 // Initialize DisTube client
 const distube = new DisTube(client, {
-  leaveOnEmpty: true,
-  leaveOnFinish: true,
-  leaveOnStop: true,
   plugins: [new YtDlpPlugin()]
 });
 
