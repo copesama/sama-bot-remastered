@@ -153,8 +153,17 @@ io.on('connection', (socket) => {
     // Send current game state to the joining player
     socket.emit('gameState', gameRooms[gameId].gameState);
     
-    // Notify all players in the room about the new player
-    io.to(gameId).emit('playerJoined', {
+    // Send the full player list to the joining player
+    socket.emit('playerList', {
+      playerCount: Object.keys(gameRooms[gameId].players).length,
+      players: Object.entries(gameRooms[gameId].players).map(([id, player]) => ({
+        id,
+        userData: player.userData
+      }))
+    });
+    
+    // Notify all other players in the room about the new player
+    socket.to(gameId).emit('playerJoined', {
       userId,
       userData,
       playerCount: Object.keys(gameRooms[gameId].players).length,
@@ -163,6 +172,9 @@ io.on('connection', (socket) => {
         userData: player.userData
       }))
     });
+    
+    // Optional: Debug logging
+    // console.log(`[JOIN] ${userId} joined game ${gameId}. Players: ${Object.keys(gameRooms[gameId].players).length}`);
   });
   
   // Handle game actions
