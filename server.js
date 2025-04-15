@@ -628,22 +628,17 @@ client.on('messageCreate', async (message) => {
     // Create an embed with the personalized game link
     const gameEmbed = new EmbedBuilder()
       .setColor('#00cc99')
-      .setTitle('🎮 Your Personal Game Link')
+      .setTitle('🎮 Here\'s Your Personal Game Link!')
       .setDescription(`**Game ID:** \`${gameId}\``)
       .addFields(
         { name: 'Play the game', value: `[Click here to play](${gameUrl})` },
-        { name: 'About Your Link', value: 'This link is personalized for you and will display your Discord username and avatar in the game.' },
-        { name: 'Privacy Note', value: 'Only you can see this message with your game link.' }
+        { name: 'About Your Link', value: 'This link is personalized for you and will display your Discord username and avatar in the game.' }
       )
       .setFooter({ text: 'Generated using AI • Link personalized for you' })
       .setTimestamp();
     
-    // Send as ephemeral message only visible to the command user
-    await message.channel.send({ 
-      content: `${message.author}, here's your private game link:`, 
-      embeds: [gameEmbed],
-      ephemeral: true // This makes the message only visible to the user who triggered the command
-    });
+    // Send directly in the channel
+    await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
     
     return;
   }
