@@ -11,9 +11,10 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-// Add DisTube and YouTube-related imports (replace ytsr with youtube-sr)
-const { DisTube } = require('distube');
+// Add YouTube-related imports
 const YouTube = require('youtube-sr').default;
+const ytdl = require('ytdl-core');
+const { createWriteStream } = require('fs');
 
 // Initialize Discord client
 const client = new Client({
@@ -24,9 +25,6 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates, // Add voice state intent to track voice channels
   ]
 });
-
-// Initialize DisTube client without YtDlp plugin
-const distube = new DisTube(client);
 
 // Initialize Express app for serving games
 const app = express();
@@ -1112,8 +1110,11 @@ client.on('messageCreate', async (message) => {
         // Clear any existing timeout
         clearTimeout(outOfContextSessions.get(message.guild.id).timeout);
         // Stop any existing playback
-        distube.stop(message.guild.id);
-        // Remove the session
+        const connection = voiceConnections.get(message.guild.id);
+        if (connection) {
+          connection.destroy();
+          voiceConnections.delete(message.guild.id);
+        }
         outOfContextSessions.delete(message.guild.id);
       }
       
@@ -1341,8 +1342,13 @@ async function playOutOfContextVideos(message, videos, index) {
       outOfContextSessions.delete(message.guild.id);
     }
     
-    // Stop and leave
-    distube.stop(message.guild.id);
+    // If we're using a voice connection directly, destroy it
+    const connection = voiceConnections.get(message.guild.id);
+    if (connection) {
+      connection.destroy();
+      voiceConnections.delete(message.guild.id);
+    }
+    
     return;
   }
   
@@ -1364,22 +1370,123 @@ async function playOutOfContextVideos(message, videos, index) {
     console.log('Playing URL:', videoUrl);
     
     try {
-      // Play the video directly without YtDlp
-      await distube.play(voiceChannel, videoUrl, {
-        message,
-        member: message.member,
-        textChannel: message.channel,
-        skip: false
+      // Create a temporary file path for the audio
+      const tempFilePath = path.join(MUSIC_DIR, `temp-${video.id}.mp3`);
+      
+      // Create or get voice connection
+      let connection = voiceConnections.get(message.guild.id);
+      if (!connection) {
+        connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: voiceChannel.guild.id,
+          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        });
+        voiceConnections.set(message.guild.id, connection);
+      }
+      
+      // Create an audio player if needed
+      let player = audioPlayers.get(message.guild.id);
+      if (!player) {
+        player = createAudioPlayer({
+          behaviors: {
+            noSubscriber: NoSubscriberBehavior.Pause,
+          },
+        });
+        audioPlayers.set(message.guild.id, player);
+        connection.subscribe(player);
+      }
+      
+      // Download a short part of the video as audio
+      await new Promise((resolve, reject) => {
+        try {
+          console.log(`Downloading brief clip from ${videoUrl}`);
+          const stream = ytdl(videoUrl, { 
+            filter: 'audioonly',
+            quality: 'lowestaudio',
+            highWaterMark: 1<<25 // 32MB buffer to prevent throttling
+          });
+          
+          const writeStream = createWriteStream(tempFilePath);
+          
+          let downloadProgress = 0;
+          const maxFileSize = 1024 * 1024; // 1MB max for a short clip
+          
+          stream.on('data', (chunk) => {
+            downloadProgress += chunk.length;
+            if (downloadProgress > maxFileSize) {
+              console.log('Downloaded enough audio for a clip');
+              stream.destroy();
+              writeStream.end();
+            }
+          });
+          
+          stream.on('end', () => {
+            console.log('Download completed normally');
+            writeStream.end();
+          });
+          
+          stream.on('error', (err) => {
+            console.error('Error in ytdl stream:', err);
+            writeStream.end();
+            reject(err);
+          });
+          
+          writeStream.on('finish', () => {
+            console.log('File write completed');
+            resolve();
+          });
+          
+          writeStream.on('error', (err) => {
+            console.error('Error writing file:', err);
+            reject(err);
+          });
+          
+          // Add a timeout to force completion if it takes too long
+          setTimeout(() => {
+            stream.destroy();
+            writeStream.end();
+            console.log('Forced completion after timeout');
+            resolve();
+          }, 5000);
+          
+        } catch (error) {
+          console.error('Error in download process:', error);
+          reject(error);
+        }
       });
-    
+      
+      console.log(`Playing audio from ${tempFilePath}`);
+      // Create an audio resource from the downloaded file
+      const resource = createAudioResource(tempFilePath);
+      
+      // Play the audio
+      player.play(resource);
+      
+      // Set up event listeners for the player
+      const stopPlayback = () => {
+        try {
+          // Remove the event listeners
+          player.removeAllListeners(AudioPlayerStatus.Idle);
+          
+          // Delete the temporary file
+          setTimeout(() => {
+            try {
+              if (fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+                console.log(`Deleted temp file: ${tempFilePath}`);
+              }
+            } catch (err) {
+              console.error(`Error deleting temp file: ${err}`);
+            }
+          }, 1000);
+        } catch (cleanupError) {
+          console.error('Error during cleanup:', cleanupError);
+        }
+      };
+      
       // Set a timeout to play the next video after 5 seconds
       const timeout = setTimeout(() => {
-        // Stop current playback and move to next video
-        try {
-          distube.stop(message.guild.id);
-        } catch (stopError) {
-          console.error('Error stopping playback:', stopError);
-        }
+        stopPlayback();
         
         // Small delay before playing the next video
         setTimeout(() => {
@@ -1388,12 +1495,25 @@ async function playOutOfContextVideos(message, videos, index) {
         
       }, 5000); // 5 seconds per clip
       
+      // Handle when audio finishes playing naturally
+      player.once(AudioPlayerStatus.Idle, () => {
+        console.log('Player became idle naturally');
+        clearTimeout(timeout); // Prevent the timeout from triggering
+        stopPlayback();
+        
+        // Move to the next video
+        setTimeout(() => {
+          playOutOfContextVideos(message, videos, index + 1);
+        }, 500);
+      });
+      
       // Store the session information
       outOfContextSessions.set(message.guild.id, {
         videos,
         currentIndex: index,
         timeout
       });
+      
     } catch (playError) {
       console.error(`Error during direct playback of video ${index}:`, playError);
       message.channel.send(`Couldn't play clip ${index + 1}. Skipping to next...`);
