@@ -11,10 +11,9 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-// Add YouTube-related imports
-const YouTube = require('youtube-sr').default;
-const ytdl = require('ytdl-core');
-const { createWriteStream } = require('fs');
+// Add new imports for !outofcontext command
+const { DisTube } = require('distube');
+const YoutubeSr = require('youtube-sr').default;
 
 // Initialize Discord client
 const client = new Client({
@@ -25,6 +24,9 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates, // Add voice state intent to track voice channels
   ]
 });
+
+// Setup DisTube for handling YouTube playback
+const distube = new DisTube(client)
 
 // Initialize Express app for serving games
 const app = express();
@@ -60,7 +62,7 @@ app.use(cookieParser());
 const voiceConnections = new Map();
 const audioPlayers = new Map();
 
-// Keep track of out-of-context sessions and timeout handlers
+// Keep track of out-of-context play sessions
 const outOfContextSessions = new Map();
 
 // Game access with user authentication
@@ -236,6 +238,174 @@ io.on('connection', (socket) => {
     }
   });
 });
+
+// Function to extract YouTube channel ID from URL
+function extractChannelId(url) {
+  try {
+    const urlObj = new URL(url);
+    // Handle different YouTube channel URL formats
+    if (urlObj.hostname.includes('youtube.com')) {
+      const pathname = urlObj.pathname;
+      // Format: youtube.com/channel/CHANNEL_ID
+      if (pathname.startsWith('/channel/')) {
+        return pathname.split('/channel/')[1];
+      }
+      // Format: youtube.com/c/CHANNEL_NAME or youtube.com/user/USERNAME
+      else if (pathname.startsWith('/c/') || pathname.startsWith('/user/')) {
+        return pathname.split('/')[2];
+      }
+      // Format: youtube.com/@USERNAME
+      else if (pathname.startsWith('/@')) {
+        return pathname.substring(2);
+      }
+    }
+  } catch (err) {
+    console.error('Error extracting channel ID:', err);
+  }
+  return null;
+}
+
+// Function to get random videos from a YouTube channel
+async function getRandomVideosFromChannel(channelUrl, count = 5) {
+  try {
+    const channelId = extractChannelId(channelUrl);
+    if (!channelId) return null;
+
+    // First, try to get channel info
+    const channelInfo = await YoutubeSr.Channel.get(channelId, { type: 'channel' }).catch(async () => {
+      // If it fails with channel ID, try as username
+      return await YoutubeSr.Channel.get(channelId, { type: 'user' }).catch(() => null);
+    });
+
+    if (!channelInfo) return null;
+
+    // Get videos from the channel (up to 100)
+    const videos = await YoutubeSr.search(channelInfo.name, { 
+      limit: 100, 
+      type: 'video',
+      channelId: channelInfo.id
+    });
+
+    if (!videos || videos.length === 0) return null;
+
+    // Select random videos
+    const selectedVideos = [];
+    const totalVideos = videos.length;
+    const sampleSize = Math.min(count, totalVideos);
+    
+    // Get random indices without duplicates
+    const indices = new Set();
+    while (indices.size < sampleSize) {
+      indices.add(Math.floor(Math.random() * totalVideos));
+    }
+    
+    // Add selected videos to the result
+    indices.forEach(index => {
+      selectedVideos.push(videos[index]);
+    });
+    
+    return {
+      channelName: channelInfo.name,
+      videos: selectedVideos
+    };
+  } catch (error) {
+    console.error('Error getting videos from channel:', error);
+    return null;
+  }
+}
+
+// Function to play out-of-context clips
+async function playOutOfContextClips(message, voiceChannel, videos, channelName) {
+  try {
+    // Create unique session ID for this playback
+    const sessionId = message.guild.id;
+    
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: voiceChannel.guild.id,
+      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+    });
+    
+    // Save session info
+    outOfContextSessions.set(sessionId, {
+      currentIndex: 0,
+      videos: videos,
+      channelName: channelName,
+      message: message,
+      connection: connection
+    });
+    
+    // Start playing the first clip
+    await playNextClip(sessionId);
+    
+  } catch (error) {
+    console.error('Error playing out-of-context clips:', error);
+    message.channel.send('❌ There was an error playing out-of-context clips. Please try again later.');
+  }
+}
+
+// Function to play the next clip in sequence
+async function playNextClip(sessionId) {
+  const session = outOfContextSessions.get(sessionId);
+  if (!session) return;
+  
+  const { currentIndex, videos, channelName, message, connection } = session;
+  
+  // If all videos have been played, clean up and exit
+  if (currentIndex >= videos.length) {
+    outOfContextSessions.delete(sessionId);
+    connection.destroy();
+    message.channel.send(`✅ Finished playing out-of-context clips from **${channelName}**!`);
+    return;
+  }
+  
+  const video = videos[currentIndex];
+  
+  try {
+    // Update message to show progress
+    message.channel.send(`🎬 Playing clip ${currentIndex + 1}/5: **${video.title}**`);
+    
+    // Play the video for 5 seconds
+    const queue = distube.createQueue(message.guild, {
+      metadata: { channel: message.channel }
+    });
+    
+    await queue.join(message.member.voice.channel);
+    
+    // Play video with 5-second duration
+    await queue.play(`${video.url}`, {
+      member: message.member,
+      textChannel: message.channel,
+      position: Math.floor(Math.random() * (video.duration - 6)) // Random position (avoid last 6 seconds)
+    });
+    
+    // Set a timeout to stop after 5 seconds and play the next clip
+    setTimeout(async () => {
+      await queue.stop();
+      
+      // Update session for next video
+      outOfContextSessions.set(sessionId, {
+        ...session,
+        currentIndex: currentIndex + 1
+      });
+      
+      // Wait a moment before playing the next clip
+      setTimeout(() => playNextClip(sessionId), 1000);
+    }, 5000); // Play for 5 seconds
+    
+  } catch (error) {
+    console.error(`Error playing clip ${currentIndex + 1}:`, error);
+    
+    // Skip to next video on error
+    outOfContextSessions.set(sessionId, {
+      ...session,
+      currentIndex: currentIndex + 1
+    });
+    
+    // Try to play the next clip
+    setTimeout(() => playNextClip(sessionId), 1000);
+  }
+}
 
 // Generate game using OpenRouter API
 async function generateMultiplayerGame(prompt) {
@@ -1089,8 +1259,14 @@ client.on('messageCreate', async (message) => {
   if (message.content.startsWith('!outofcontext')) {
     const channelUrl = message.content.slice('!outofcontext'.length).trim();
     
-    if (!channelUrl || !channelUrl.includes('youtube.com/')) {
-      message.reply('Please provide a valid YouTube channel URL. Example: `!outofcontext https://www.youtube.com/channel/UCxxx` or `!outofcontext https://www.youtube.com/@channelname`');
+    if (!channelUrl) {
+      message.reply('Please provide a YouTube channel URL. Example: `!outofcontext https://www.youtube.com/@channelname`');
+      return;
+    }
+    
+    // Check if URL is valid
+    if (!channelUrl.includes('youtube.com') && !channelUrl.includes('youtu.be')) {
+      message.reply('Please provide a valid YouTube channel URL.');
       return;
     }
     
@@ -1101,445 +1277,56 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
+    // Check if there's already an active session in this guild
+    if (outOfContextSessions.has(message.guild.id)) {
+      message.reply('There is already an out-of-context session playing in this server. Please wait for it to finish.');
+      return;
+    }
+    
     // Send initial response
-    const loadingMessage = await message.reply('🎬 Searching for random videos from this channel... This might take a moment!');
+    const loadingMessage = await message.reply('🔍 Fetching random videos from the channel... This might take a moment!');
     
     try {
-      // Check if there's already an active session for this guild
-      if (outOfContextSessions.has(message.guild.id)) {
-        // Clear any existing timeout
-        clearTimeout(outOfContextSessions.get(message.guild.id).timeout);
-        // Stop any existing playback
-        const connection = voiceConnections.get(message.guild.id);
-        if (connection) {
-          connection.destroy();
-          voiceConnections.delete(message.guild.id);
-        }
-        outOfContextSessions.delete(message.guild.id);
-      }
+      // Get random videos from the channel
+      const result = await getRandomVideosFromChannel(channelUrl);
       
-      // Fetch videos from the channel
-      const videos = await getRandomVideosFromChannel(channelUrl, 5);
-      
-      if (!videos || videos.length === 0) {
-        await loadingMessage.edit('Could not find any videos from this channel. Please check the URL and try again.');
+      if (!result || !result.videos || result.videos.length === 0) {
+        await loadingMessage.edit('❌ Could not find any videos from this channel. Please check the URL and try again.');
         return;
       }
       
-      // Create an embed with the info
-      const outOfContextEmbed = new EmbedBuilder()
+      // Create an embed with the channel information
+      const videosEmbed = new EmbedBuilder()
         .setColor('#FF0000')
-        .setTitle('🎬 Out of Context YouTube Clips')
-        .setDescription(`Playing 5-second clips from **${videos.length}** random videos`)
+        .setTitle(`🎬 Out of Context: ${result.channelName}`)
+        .setDescription(`Playing 5 second clips from 5 random videos!`)
         .addFields(
-          { name: 'Channel', value: channelUrl }
+          result.videos.map((video, index) => ({
+            name: `Clip ${index + 1}`,
+            value: `[${video.title}](${video.url})`
+          }))
         )
-        .setFooter({ text: 'Each clip will play for 5 seconds before moving to the next one' })
+        .setFooter({ text: 'Out of Context Clips • Videos selected randomly' })
         .setTimestamp();
       
-      await loadingMessage.edit({ content: 'Found videos! Starting playback...', embeds: [outOfContextEmbed] });
+      // Update the loading message
+      await loadingMessage.edit({ content: '✅ Videos found! Starting playback...', embeds: [videosEmbed] });
       
-      // Play the first video and set up the queue for the rest
-      await playOutOfContextVideos(message, videos, 0);
+      // Start playing the clips
+      await playOutOfContextClips(message, voiceChannel, result.videos, result.channelName);
       
     } catch (error) {
-      console.error('Error in out of context command:', error);
-      await loadingMessage.edit('Sorry, there was an error processing your request. Please try again later.');
-    }
-  }
-});
-
-// Function to get random videos from a YouTube channel
-async function getRandomVideosFromChannel(channelUrl, count) {
-  try {
-    console.log('Processing channel URL:', channelUrl);
-    
-    // Normalize the URL - remove trailing slashes and parameters
-    channelUrl = channelUrl.trim().split('?')[0].replace(/\/$/, '');
-    console.log('Normalized URL:', channelUrl);
-    
-    // Extract channel ID or handle from URL using various possible formats
-    let channelId = '';
-    let channelHandle = '';
-    
-    if (channelUrl.includes('/channel/')) {
-      // Format: /channel/UC...
-      channelId = channelUrl.split('/channel/')[1].split('/')[0];
-      console.log('Extracted channel ID from URL:', channelId);
-    } else if (channelUrl.includes('/c/')) {
-      // Format: /c/ChannelName
-      channelHandle = channelUrl.split('/c/')[1].split('/')[0];
-      console.log('Extracted custom URL from /c/ format:', channelHandle);
-    } else if (channelUrl.includes('/user/')) {
-      // Format: /user/Username
-      channelHandle = channelUrl.split('/user/')[1].split('/')[0];
-      console.log('Extracted username from /user/ format:', channelHandle);
-    } else if (channelUrl.includes('/@')) {
-      // Format: /@channelname
-      channelHandle = channelUrl.split('/@')[1].split('/')[0];
-      console.log('Extracted handle from /@ format:', channelHandle);
-    } else if (channelUrl.match(/youtube\.com\/\w+$/)) {
-      // Format: youtube.com/ChannelName (without @ or other prefixes)
-      channelHandle = channelUrl.split('youtube.com/')[1];
-      console.log('Extracted handle from simple format:', channelHandle);
-    } else {
-      console.error('Unrecognized YouTube channel URL format:', channelUrl);
-      return [];
-    }
-    
-    // If we have a handle but no ID, search for the channel
-    if (!channelId && channelHandle) {
-      console.log('Searching for channel ID using handle:', channelHandle);
-      
-      // Try to find the channel by name/handle
-      try {
-        const searchResults = await YouTube.search(channelHandle, { type: 'channel', limit: 1 });
-        
-        if (searchResults && searchResults.length > 0) {
-          channelId = searchResults[0].channelID;
-          console.log('Found channel ID via search:', channelId);
-        } else {
-          console.error('No channels found for handle:', channelHandle);
-          
-          // Try an alternative approach - get videos from the handle directly
-          try {
-            console.log('Attempting to search for videos by channel name');
-            const videoSearch = await YouTube.search(`${channelHandle} channel`, { limit: 50 });
-            
-            if (videoSearch && videoSearch.length > 0) {
-              // Filter to get videos from what appears to be the same channel
-              const commonChannelId = findMostCommonChannelId(videoSearch);
-              
-              if (commonChannelId) {
-                channelId = commonChannelId;
-                console.log('Found likely channel ID through video search:', channelId);
-              } else {
-                // If we can't determine a common channel, just return some videos
-                console.log('Returning random videos from search results');
-                const shuffled = [...videoSearch].sort(() => 0.5 - Math.random());
-                return shuffled.slice(0, Math.min(count, shuffled.length));
-              }
-            }
-          } catch (searchError) {
-            console.error('Error in fallback video search:', searchError);
-          }
-        }
-      } catch (searchError) {
-        console.error('Error searching for channel:', searchError);
-      }
-    }
-    
-    if (!channelId) {
-      console.error('Could not determine channel ID from:', channelUrl);
-      return [];
-    }
-    
-    // Get videos from the channel using the proper method
-    console.log('Fetching videos for channel ID:', channelId);
-    let channelVideos = [];
-    
-    try {
-      // First approach: try to get videos using getChannelVideos
-      if (typeof YouTube.getChannelVideos === 'function') {
-        channelVideos = await YouTube.getChannelVideos(channelId, 50);
-        console.log('Retrieved videos using getChannelVideos');
-      } 
-      // Second approach: try to get videos using the get method
-      else if (typeof YouTube.get === 'function') {
-        const channel = await YouTube.getChannel(channelId);
-        if (channel && channel.videos) {
-          channelVideos = channel.videos;
-          console.log('Retrieved videos from channel object');
-        }
-      }
-      
-      // Third approach: search for videos from this channel
-      if (!channelVideos || channelVideos.length === 0) {
-        const searchQuery = `channel:${channelId}`;
-        console.log('Searching for videos with query:', searchQuery);
-        channelVideos = await YouTube.search(searchQuery, { limit: 50 });
-        console.log('Retrieved videos using search');
-      }
-      
-      // Fourth approach: more general search including channel name
-      if (!channelVideos || channelVideos.length === 0) {
-        // Try a more generic search
-        const searchQuery = channelHandle || channelId;
-        console.log('Performing generic search for videos:', searchQuery);
-        channelVideos = await YouTube.search(searchQuery, { limit: 50 });
-        
-        // Filter to only include videos from our target channel if possible
-        if (channelVideos.length > 0 && channelId) {
-          channelVideos = channelVideos.filter(video => 
-            video.channel && (video.channel.id === channelId || video.channelID === channelId)
-          );
-          console.log(`Filtered to ${channelVideos.length} videos from the target channel`);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching channel videos:', error);
-      // If everything fails, make a generic search
-      try {
-        const searchTerm = channelHandle || channelId;
-        console.log('Falling back to basic search for term:', searchTerm);
-        channelVideos = await YouTube.search(searchTerm, { limit: 50 });
-      } catch (searchError) {
-        console.error('Error in final fallback search:', searchError);
-      }
-    }
-    
-    if (!channelVideos || channelVideos.length === 0) {
-      console.error('No videos found for channel ID:', channelId);
-      return [];
-    }
-    
-    console.log(`Found ${channelVideos.length} videos from channel`);
-    
-    // Shuffle the videos and pick the requested number
-    const shuffled = [...channelVideos].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, Math.min(count, shuffled.length));
-  } catch (error) {
-    console.error('Error getting videos from channel:', error);
-    return [];
-  }
-}
-
-// Helper function to find the most common channel ID in a list of videos
-function findMostCommonChannelId(videos) {
-  if (!videos || videos.length === 0) return null;
-  
-  // Count occurrences of each channel ID
-  const channelCounts = {};
-  videos.forEach(video => {
-    if (video.channelID) {
-      channelCounts[video.channelID] = (channelCounts[video.channelID] || 0) + 1;
-    }
-  });
-  
-  // Find the channel ID with the most videos
-  let mostCommonChannelId = null;
-  let maxCount = 0;
-  
-  Object.entries(channelCounts).forEach(([channelId, count]) => {
-    if (count > maxCount) {
-      mostCommonChannelId = channelId;
-      maxCount = count;
-    }
-  });
-  
-  return mostCommonChannelId;
-}
-
-// Function to play out-of-context videos
-async function playOutOfContextVideos(message, videos, index) {
-  // If we've played all videos or there are no videos, stop
-  if (index >= videos.length || videos.length === 0) {
-    message.channel.send('Finished playing all random clips!');
-    
-    // Clear from the sessions map
-    if (outOfContextSessions.has(message.guild.id)) {
-      clearTimeout(outOfContextSessions.get(message.guild.id).timeout);
-      outOfContextSessions.delete(message.guild.id);
-    }
-    
-    // If we're using a voice connection directly, destroy it
-    const connection = voiceConnections.get(message.guild.id);
-    if (connection) {
-      connection.destroy();
-      voiceConnections.delete(message.guild.id);
+      console.error('Error processing out-of-context command:', error);
+      await loadingMessage.edit('❌ There was an error processing your request. Please try again later.');
     }
     
     return;
   }
-  
-  try {
-    const video = videos[index];
-    
-    // Join the voice channel if not already connected
-    const voiceChannel = message.member?.voice?.channel;
-    if (!voiceChannel) {
-      message.channel.send('You need to be in a voice channel to continue playback!');
-      return;
-    }
-    
-    // Play the current video
-    message.channel.send(`▶️ Clip ${index + 1}/${videos.length}: "${video.title}"`);
-    
-    // Get the direct YouTube URL for playback
-    const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
-    console.log('Playing URL:', videoUrl);
-    
-    try {
-      // Create a temporary file path for the audio
-      const tempFilePath = path.join(MUSIC_DIR, `temp-${video.id}.mp3`);
-      
-      // Create or get voice connection
-      let connection = voiceConnections.get(message.guild.id);
-      if (!connection) {
-        connection = joinVoiceChannel({
-          channelId: voiceChannel.id,
-          guildId: voiceChannel.guild.id,
-          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-        });
-        voiceConnections.set(message.guild.id, connection);
-      }
-      
-      // Create an audio player if needed
-      let player = audioPlayers.get(message.guild.id);
-      if (!player) {
-        player = createAudioPlayer({
-          behaviors: {
-            noSubscriber: NoSubscriberBehavior.Pause,
-          },
-        });
-        audioPlayers.set(message.guild.id, player);
-        connection.subscribe(player);
-      }
-      
-      // Download a short part of the video as audio
-      await new Promise((resolve, reject) => {
-        try {
-          console.log(`Downloading brief clip from ${videoUrl}`);
-          const stream = ytdl(videoUrl, { 
-            filter: 'audioonly',
-            quality: 'lowestaudio',
-            highWaterMark: 1<<25 // 32MB buffer to prevent throttling
-          });
-          
-          const writeStream = createWriteStream(tempFilePath);
-          
-          let downloadProgress = 0;
-          const maxFileSize = 1024 * 1024; // 1MB max for a short clip
-          
-          stream.on('data', (chunk) => {
-            downloadProgress += chunk.length;
-            if (downloadProgress > maxFileSize) {
-              console.log('Downloaded enough audio for a clip');
-              stream.destroy();
-              writeStream.end();
-            }
-          });
-          
-          stream.on('end', () => {
-            console.log('Download completed normally');
-            writeStream.end();
-          });
-          
-          stream.on('error', (err) => {
-            console.error('Error in ytdl stream:', err);
-            writeStream.end();
-            reject(err);
-          });
-          
-          writeStream.on('finish', () => {
-            console.log('File write completed');
-            resolve();
-          });
-          
-          writeStream.on('error', (err) => {
-            console.error('Error writing file:', err);
-            reject(err);
-          });
-          
-          // Add a timeout to force completion if it takes too long
-          setTimeout(() => {
-            stream.destroy();
-            writeStream.end();
-            console.log('Forced completion after timeout');
-            resolve();
-          }, 5000);
-          
-        } catch (error) {
-          console.error('Error in download process:', error);
-          reject(error);
-        }
-      });
-      
-      console.log(`Playing audio from ${tempFilePath}`);
-      // Create an audio resource from the downloaded file
-      const resource = createAudioResource(tempFilePath);
-      
-      // Play the audio
-      player.play(resource);
-      
-      // Set up event listeners for the player
-      const stopPlayback = () => {
-        try {
-          // Remove the event listeners
-          player.removeAllListeners(AudioPlayerStatus.Idle);
-          
-          // Delete the temporary file
-          setTimeout(() => {
-            try {
-              if (fs.existsSync(tempFilePath)) {
-                fs.unlinkSync(tempFilePath);
-                console.log(`Deleted temp file: ${tempFilePath}`);
-              }
-            } catch (err) {
-              console.error(`Error deleting temp file: ${err}`);
-            }
-          }, 1000);
-        } catch (cleanupError) {
-          console.error('Error during cleanup:', cleanupError);
-        }
-      };
-      
-      // Set a timeout to play the next video after 5 seconds
-      const timeout = setTimeout(() => {
-        stopPlayback();
-        
-        // Small delay before playing the next video
-        setTimeout(() => {
-          playOutOfContextVideos(message, videos, index + 1);
-        }, 500);
-        
-      }, 5000); // 5 seconds per clip
-      
-      // Handle when audio finishes playing naturally
-      player.once(AudioPlayerStatus.Idle, () => {
-        console.log('Player became idle naturally');
-        clearTimeout(timeout); // Prevent the timeout from triggering
-        stopPlayback();
-        
-        // Move to the next video
-        setTimeout(() => {
-          playOutOfContextVideos(message, videos, index + 1);
-        }, 500);
-      });
-      
-      // Store the session information
-      outOfContextSessions.set(message.guild.id, {
-        videos,
-        currentIndex: index,
-        timeout
-      });
-      
-    } catch (playError) {
-      console.error(`Error during direct playback of video ${index}:`, playError);
-      message.channel.send(`Couldn't play clip ${index + 1}. Skipping to next...`);
-      
-      // Move to the next video
-      setTimeout(() => {
-        playOutOfContextVideos(message, videos, index + 1);
-      }, 1000);
-    }
-    
-  } catch (error) {
-    console.error(`Error playing video at index ${index}:`, error);
-    message.channel.send(`Error playing clip ${index + 1}. Skipping to next...`);
-    
-    // Move to the next video
-    setTimeout(() => {
-      playOutOfContextVideos(message, videos, index + 1);
-    }, 1000);
-  }
-}
+});
 
-// DisTube event handlers
+// Add DisTube event handlers
 distube.on('error', (channel, error) => {
-  if (channel) {
-    channel.send(`An error occurred: ${error.message}`);
-  }
+  if (channel) channel.send(`❌ An error occurred: ${error.message}`);
   console.error('DisTube error:', error);
 });
 

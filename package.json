@@ -19,8 +19,8 @@
     "@discordjs/voice": "^0.18.0",
     "ffmpeg-static":"^5.2.0",
     "libsodium-wrappers":"^0.7.15",
-    "youtube-sr": "^4.3.11",
-    "ytdl-core": "^4.11.5"
+    "distube":"^5.0.7",
+    "youtube-sr":"^4.3.11"
 
   },
   "engines": {
