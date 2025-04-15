@@ -239,55 +239,119 @@ io.on('connection', (socket) => {
   });
 });
 
-// Function to extract YouTube channel ID from URL
-function extractChannelId(url) {
-  try {
-    const urlObj = new URL(url);
-    // Handle different YouTube channel URL formats
-    if (urlObj.hostname.includes('youtube.com')) {
-      const pathname = urlObj.pathname;
-      // Format: youtube.com/channel/CHANNEL_ID
-      if (pathname.startsWith('/channel/')) {
-        return pathname.split('/channel/')[1];
-      }
-      // Format: youtube.com/c/CHANNEL_NAME or youtube.com/user/USERNAME
-      else if (pathname.startsWith('/c/') || pathname.startsWith('/user/')) {
-        return pathname.split('/')[2];
-      }
-      // Format: youtube.com/@USERNAME
-      else if (pathname.startsWith('/@')) {
-        return pathname.substring(2);
-      }
-    }
-  } catch (err) {
-    console.error('Error extracting channel ID:', err);
-  }
-  return null;
-}
-
 // Function to get random videos from a YouTube channel
 async function getRandomVideosFromChannel(channelUrl, count = 5) {
   try {
-    const channelId = extractChannelId(channelUrl);
-    if (!channelId) return null;
-
-    // First, try to get channel info
-    const channelInfo = await YoutubeSr.Channel.get(channelId, { type: 'channel' }).catch(async () => {
-      // If it fails with channel ID, try as username
-      return await YoutubeSr.Channel.get(channelId, { type: 'user' }).catch(() => null);
+    // Extract channel identifiers from URL
+    let channelId = null;
+    let channelName = null;
+    
+    try {
+      const urlObj = new URL(channelUrl);
+      // Handle different YouTube channel URL formats
+      if (urlObj.hostname.includes('youtube.com')) {
+        const pathname = urlObj.pathname;
+        // Format: youtube.com/channel/CHANNEL_ID
+        if (pathname.startsWith('/channel/')) {
+          channelId = pathname.split('/channel/')[1];
+        }
+        // Format: youtube.com/c/CHANNEL_NAME or youtube.com/user/USERNAME
+        else if (pathname.startsWith('/c/') || pathname.startsWith('/user/')) {
+          channelName = pathname.split('/')[2];
+        }
+        // Format: youtube.com/@USERNAME
+        else if (pathname.startsWith('/@')) {
+          channelName = pathname.substring(2);
+        }
+      }
+    } catch (err) {
+      console.error('Error parsing YouTube URL:', err);
+      return null;
+    }
+    
+    if (!channelId && !channelName) {
+      console.error('Could not extract channel ID or name from URL:', channelUrl);
+      return null;
+    }
+    
+    console.log(`Searching for channel - ID: ${channelId || 'N/A'}, Name: ${channelName || 'N/A'}`);
+    
+    // First try to search for the channel to get its info
+    let channelInfo;
+    
+    if (channelId) {
+      // Search by channel ID
+      console.log('Searching by channel ID');
+      const channelSearch = await YoutubeSr.search(channelId, {
+        type: 'channel',
+        limit: 1
+      }).catch(err => {
+        console.log('Error searching by channel ID:', err.message);
+        return [];
+      });
+      
+      if (channelSearch && channelSearch.length > 0) {
+        channelInfo = channelSearch[0];
+      }
+    }
+    
+    // If channel ID search failed, try by name
+    if (!channelInfo && channelName) {
+      console.log('Searching by channel name');
+      const channelSearch = await YoutubeSr.search(channelName, {
+        type: 'channel',
+        limit: 1
+      }).catch(err => {
+        console.log('Error searching by channel name:', err.message);
+        return [];
+      });
+      
+      if (channelSearch && channelSearch.length > 0) {
+        channelInfo = channelSearch[0];
+      }
+    }
+    
+    // If both methods failed, try a direct search with the whole URL
+    if (!channelInfo) {
+      console.log('Trying direct URL search');
+      const channelSearch = await YoutubeSr.search(channelUrl, {
+        type: 'channel',
+        limit: 1
+      }).catch(err => {
+        console.log('Error with direct URL search:', err.message);
+        return [];
+      });
+      
+      if (channelSearch && channelSearch.length > 0) {
+        channelInfo = channelSearch[0];
+      }
+    }
+    
+    if (!channelInfo) {
+      console.error('Could not find channel information');
+      return null;
+    }
+    
+    console.log('Found channel:', channelInfo.name || channelInfo.title);
+    
+    // Get videos from the channel (up to 50)
+    console.log('Fetching videos from channel');
+    const queryText = (channelInfo.name || channelInfo.title) + ' channel:' + (channelId || channelName);
+    const videos = await YoutubeSr.search(queryText, { 
+      limit: 50, 
+      type: 'video'
+    }).catch(err => {
+      console.log('Error searching videos:', err.message);
+      return [];
     });
 
-    if (!channelInfo) return null;
+    if (!videos || videos.length === 0) {
+      console.error('No videos found for channel');
+      return null;
+    }
 
-    // Get videos from the channel (up to 100)
-    const videos = await YoutubeSr.search(channelInfo.name, { 
-      limit: 100, 
-      type: 'video',
-      channelId: channelInfo.id
-    });
-
-    if (!videos || videos.length === 0) return null;
-
+    console.log(`Found ${videos.length} videos from channel`);
+    
     // Select random videos
     const selectedVideos = [];
     const totalVideos = videos.length;
@@ -305,7 +369,7 @@ async function getRandomVideosFromChannel(channelUrl, count = 5) {
     });
     
     return {
-      channelName: channelInfo.name,
+      channelName: channelInfo.name || channelInfo.title || 'YouTube Channel',
       videos: selectedVideos
     };
   } catch (error) {
@@ -363,40 +427,58 @@ async function playNextClip(sessionId) {
   
   try {
     // Update message to show progress
-    message.channel.send(`🎬 Playing clip ${currentIndex + 1}/5: **${video.title}**`);
+    message.channel.send(`🎬 Playing clip ${currentIndex + 1}/${videos.length}: **${video.title}**`);
     
-    // Play the video for 5 seconds
-    const queue = distube.createQueue(message.guild, {
-      metadata: { channel: message.channel }
-    });
-    
-    await queue.join(message.member.voice.channel);
-    
-    // Play video with 5-second duration
-    await queue.play(`${video.url}`, {
-      member: message.member,
-      textChannel: message.channel,
-      position: Math.floor(Math.random() * (video.duration - 6)) // Random position (avoid last 6 seconds)
-    });
-    
-    // Set a timeout to stop after 5 seconds and play the next clip
-    setTimeout(async () => {
-      await queue.stop();
-      
-      // Update session for next video
-      outOfContextSessions.set(sessionId, {
-        ...session,
-        currentIndex: currentIndex + 1
+    try {
+      // Play the video for 5 seconds
+      const queue = distube.createQueue(message.guild, {
+        metadata: { 
+          channel: message.channel 
+        }
       });
       
-      // Wait a moment before playing the next clip
-      setTimeout(() => playNextClip(sessionId), 1000);
-    }, 5000); // Play for 5 seconds
-    
+      await queue.join(message.member.voice.channel);
+      
+      const randomPosition = video.duration > 10 ? 
+        Math.floor(Math.random() * (video.duration - 10)) : 0;
+      
+      // Play video
+      await queue.play(video.url, {
+        member: message.member,
+        textChannel: message.channel,
+        skip: false,
+        position: randomPosition
+      });
+      
+      // Set a timeout to stop after 5 seconds and play the next clip
+      setTimeout(async () => {
+        try {
+          await queue.stop();
+          
+          // Update session for next video
+          outOfContextSessions.set(sessionId, {
+            ...session,
+            currentIndex: currentIndex + 1
+          });
+          
+          // Wait a moment before playing the next clip
+          setTimeout(() => playNextClip(sessionId), 1000);
+        } catch (err) {
+          console.error('Error stopping playback:', err);
+          advanceToNextClip();
+        }
+      }, 5000); // Play for 5 seconds
+    } catch (playbackError) {
+      console.error('Error starting playback:', playbackError);
+      advanceToNextClip();
+    }
   } catch (error) {
     console.error(`Error playing clip ${currentIndex + 1}:`, error);
-    
-    // Skip to next video on error
+    advanceToNextClip();
+  }
+  
+  // Helper function to advance to next clip on error
+  function advanceToNextClip() {
     outOfContextSessions.set(sessionId, {
       ...session,
       currentIndex: currentIndex + 1
