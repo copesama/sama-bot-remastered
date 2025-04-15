@@ -657,7 +657,7 @@ async function generateMusic(prompt, lyrics = null) {
     const extractedLyrics = lyrics || prompt.includes('[verse]') ? prompt : null;
     const musicPrompt = extractedLyrics ? "Generate music for these lyrics" : prompt;
     
-    // Set up form data for the request
+    // Set up form data for the request - properly handle null values
     if (extractedLyrics) {
       formData.append('lyrics', extractedLyrics);
     } else {
@@ -665,14 +665,23 @@ async function generateMusic(prompt, lyrics = null) {
       formData.append('lyrics', `[verse]\n${prompt}\n[chorus]\nInspired by your imagination\nCreated just for you`);
     }
     
-    // Add required parameters
-    formData.append('bitrate', 256000);
-    formData.append('voice_id', null);
-    formData.append('song_file', null);
-    formData.append('voice_file', null);
-    formData.append('sample_rate', 44100);
-    formData.append('instrumental_id', null);
-    formData.append('instrumental_file', null);
+    // Add required parameters - Avoid null values by using empty strings or specific default values
+    formData.append('bitrate', '256000');
+    formData.append('sample_rate', '44100');
+    
+    // For fields that are supposed to be null, either omit them or use empty strings
+    formData.append('voice_id', '');
+    formData.append('song_file', 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav');
+    formData.append('voice_file', '');
+    formData.append('instrumental_id', '');
+    formData.append('instrumental_file', '');
+
+    console.log('Sending music generation request with parameters:', { 
+      lyrics: formData.get('lyrics'),
+      bitrate: formData.get('bitrate'),
+      sample_rate: formData.get('sample_rate'),
+      song_file: formData.get('song_file')
+    });
 
     const response = await axios.post(
       'https://api.segmind.com/v1/minimax-music-01',
@@ -682,9 +691,22 @@ async function generateMusic(prompt, lyrics = null) {
           'x-api-key': process.env.SEGMIND_API_KEY,
           ...formData.getHeaders()
         },
-        responseType: 'arraybuffer' // Important for receiving binary audio data
+        responseType: 'arraybuffer', // Important for receiving binary audio data
+        validateStatus: false // Allow non-2xx responses for better error handling
       }
     );
+
+    // Check if response contains an error
+    if (response.status !== 200) {
+      let errorMessage;
+      try {
+        errorMessage = Buffer.from(response.data).toString('utf8');
+        console.error('Music API error response:', errorMessage);
+      } catch (e) {
+        errorMessage = `HTTP status ${response.status}`;
+      }
+      throw new Error(`Music generation failed: ${errorMessage}`);
+    }
 
     // Generate unique ID for the music file
     const musicId = shortid.generate();
@@ -692,10 +714,22 @@ async function generateMusic(prompt, lyrics = null) {
 
     // Save the music file
     fs.writeFileSync(musicPath, Buffer.from(response.data));
+    console.log(`Music file saved to ${musicPath}`);
 
     return { musicId, musicPath };
   } catch (error) {
     console.error('Error generating music:', error);
+    
+    if (error.response) {
+      console.error('Error status:', error.response.status);
+      try {
+        const errorData = Buffer.from(error.response.data).toString('utf8');
+        console.error('API error response:', errorData);
+      } catch (e) {
+        console.error('Could not parse error response data');
+      }
+    }
+    
     throw error;
   }
 }
