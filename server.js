@@ -11,8 +11,9 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
-// Add new imports for YouTube functionality
+// Update discord-player imports to include the DefaultExtractors
 const { Player, QueryType, useQueue } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
 const YoutubeSr = require('youtube-sr').default;
 
 // Initialize Discord client
@@ -77,8 +78,8 @@ player.events.on('ready', () => {
 // Make sure to initialize the player properly
 (async () => {
   try {
-    // Register extractor if needed
-    await player.extractors.loadDefault();
+    // Use loadMulti instead of loadDefault as per error message
+    await player.extractors.loadMulti(DefaultExtractors);
     console.log('Discord Player extractors loaded');
   } catch (error) {
     console.error('Error initializing discord-player:', error);
