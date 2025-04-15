@@ -1236,31 +1236,63 @@ async function getRandomVideosFromChannel(channelUrl, count) {
       return [];
     }
     
-    // Get videos from the channel
+    // Get videos from the channel using the proper method
     console.log('Fetching videos for channel ID:', channelId);
-    const channelVideos = await YouTube.channelVideos(channelId, 50);
+    let channelVideos = [];
+    
+    try {
+      // First approach: try to get videos using getChannelVideos
+      if (typeof YouTube.getChannelVideos === 'function') {
+        channelVideos = await YouTube.getChannelVideos(channelId, 50);
+        console.log('Retrieved videos using getChannelVideos');
+      } 
+      // Second approach: try to get videos using the get method
+      else if (typeof YouTube.get === 'function') {
+        const channel = await YouTube.getChannel(channelId);
+        if (channel && channel.videos) {
+          channelVideos = channel.videos;
+          console.log('Retrieved videos from channel object');
+        }
+      }
+      
+      // Third approach: search for videos from this channel
+      if (!channelVideos || channelVideos.length === 0) {
+        const searchQuery = `channel:${channelId}`;
+        console.log('Searching for videos with query:', searchQuery);
+        channelVideos = await YouTube.search(searchQuery, { limit: 50 });
+        console.log('Retrieved videos using search');
+      }
+      
+      // Fourth approach: more general search including channel name
+      if (!channelVideos || channelVideos.length === 0) {
+        // Try a more generic search
+        const searchQuery = channelHandle || channelId;
+        console.log('Performing generic search for videos:', searchQuery);
+        channelVideos = await YouTube.search(searchQuery, { limit: 50 });
+        
+        // Filter to only include videos from our target channel if possible
+        if (channelVideos.length > 0 && channelId) {
+          channelVideos = channelVideos.filter(video => 
+            video.channel && (video.channel.id === channelId || video.channelID === channelId)
+          );
+          console.log(`Filtered to ${channelVideos.length} videos from the target channel`);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching channel videos:', error);
+      // If everything fails, make a generic search
+      try {
+        const searchTerm = channelHandle || channelId;
+        console.log('Falling back to basic search for term:', searchTerm);
+        channelVideos = await YouTube.search(searchTerm, { limit: 50 });
+      } catch (searchError) {
+        console.error('Error in final fallback search:', searchError);
+      }
+    }
     
     if (!channelVideos || channelVideos.length === 0) {
       console.error('No videos found for channel ID:', channelId);
-      
-      // Try a fallback approach using search
-      try {
-        console.log('Attempting fallback search for channel videos');
-        const fallbackVideos = await YouTube.search(`channel:${channelId}`, { limit: 50 });
-        
-        if (fallbackVideos && fallbackVideos.length > 0) {
-          console.log('Found videos through fallback search');
-          // Shuffle the videos and pick the requested number
-          const shuffled = [...fallbackVideos].sort(() => 0.5 - Math.random());
-          return shuffled.slice(0, Math.min(count, shuffled.length));
-        } else {
-          console.error('Fallback search also yielded no videos');
-          return [];
-        }
-      } catch (fallbackError) {
-        console.error('Error in fallback search:', fallbackError);
-        return [];
-      }
+      return [];
     }
     
     console.log(`Found ${channelVideos.length} videos from channel`);
