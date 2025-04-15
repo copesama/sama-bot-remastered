@@ -628,38 +628,22 @@ client.on('messageCreate', async (message) => {
     // Create an embed with the personalized game link
     const gameEmbed = new EmbedBuilder()
       .setColor('#00cc99')
-      .setTitle('🎮 Here\'s Your Personal Game Link!')
+      .setTitle('🎮 Your Personal Game Link')
       .setDescription(`**Game ID:** \`${gameId}\``)
       .addFields(
         { name: 'Play the game', value: `[Click here to play](${gameUrl})` },
-        { name: 'About Your Link', value: 'This link is personalized for you and will display your Discord username and avatar in the game.' }
+        { name: 'About Your Link', value: 'This link is personalized for you and will display your Discord username and avatar in the game.' },
+        { name: 'Privacy Note', value: 'Only you can see this message with your game link.' }
       )
       .setFooter({ text: 'Generated using AI • Link personalized for you' })
       .setTimestamp();
     
-    // Send as a private message to the user using ephemeral messages
-    try {
-      // First, delete the command message to keep the channel clean
-      await message.delete().catch(err => console.error('Error deleting message:', err));
-      
-      // Then send an ephemeral message in the channel that only the command user can see
-      await message.channel.send({
-        content: `${message.author} Here's your private game link (only you can see this message):`,
-        embeds: [gameEmbed],
-        ephemeral: true
-      });
-    } catch (error) {
-      console.error('Error sending ephemeral message:', error);
-      // Fallback to a direct message if ephemeral message fails
-      await message.author.send({ 
-        content: `Here's your game link (sent as a DM because ephemeral messages aren't available):`, 
-        embeds: [gameEmbed] 
-      }).catch(err => {
-        // If direct message fails too, reply in the channel
-        console.error('Error sending DM:', err);
-        message.reply('I couldn\'t send you a private message. Please check your privacy settings and try again.');
-      });
-    }
+    // Send as ephemeral message only visible to the command user
+    await message.channel.send({ 
+      content: `${message.author}, here's your private game link:`, 
+      embeds: [gameEmbed],
+      ephemeral: true // This makes the message only visible to the user who triggered the command
+    });
     
     return;
   }
