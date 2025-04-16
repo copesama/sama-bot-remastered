@@ -163,7 +163,7 @@ async function generateSinglePlayerGame(prompt) {
             TEST THE GAME LOGIC IN YOUR MIND STEP BY STEP BEFORE GENERATING THE CODE.`
           }
         ],
-        temperature: 0.4
+        temperature: 0.6
       },
       {
         headers: {
@@ -358,7 +358,7 @@ async function editGame(gameId, editPrompt, originalHtml) {
             content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab.`
           }
         ],
-        temperature: 0.4
+        temperature: 0.6
       },
       {
         headers: {
