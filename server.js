@@ -192,7 +192,7 @@ async function generateSinglePlayerGame(prompt) {
 }
 
 // Function to generate music using Segmind API
-async function generateMusic(prompt, lyrics = null) {
+async function generateMusic(prompt, lyrics = null, songFileUrl = null) {
   try {
     const formData = new FormData();
     
@@ -221,17 +221,10 @@ async function generateMusic(prompt, lyrics = null) {
     formData.append('sample_rate', '44100');
     requestParams.sample_rate = '44100';
     
-    // For song_file, use a default electronic sample - this is a valid URI
-    const songFileUrl = 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
-    formData.append('song_file', songFileUrl);
-    requestParams.song_file = songFileUrl;
-    
-    // Based on the error, we should NOT include voice_id or instrumental_id at all
-    // DO NOT include any of these fields in the request:
-    // - voice_id 
-    // - instrumental_id
-    // - voice_file
-    // - instrumental_file
+    // Use the provided song file URL or default
+    const songFile = songFileUrl || 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
+    formData.append('song_file', songFile);
+    requestParams.song_file = songFile;
     
     // Log parameters
     console.log('Sending music generation request with parameters:', requestParams);
@@ -529,7 +522,7 @@ client.on('messageCreate', async (message) => {
     }
     
     if (!prompt) {
-      message.reply('Please provide a prompt for the music. Examples:\n- `!createmusic upbeat jazz with piano solo`\n- `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics] soft piano ballad`');
+      message.reply('Please provide a prompt for the music. Examples:\n- `!createmusic upbeat jazz with piano solo`\n- `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics] soft piano ballad`\n- Attach an audio file with your command to use it as a base for music generation');
       return;
     }
     
@@ -540,18 +533,35 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
+    // Check if a file is attached to the message
+    let songFileUrl = 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
+    const hasAttachment = message.attachments.size > 0;
+    
+    if (hasAttachment) {
+      const attachment = message.attachments.first();
+      // Check if the attachment is an audio file
+      const isAudio = attachment.contentType && attachment.contentType.startsWith('audio/');
+      
+      if (isAudio) {
+        songFileUrl = attachment.url;
+        console.log(`Using user-provided song file: ${songFileUrl}`);
+      } else {
+        await message.reply('The attached file is not recognized as an audio file. Using the default sample instead.');
+      }
+    }
+    
     // Send initial response with better messaging about timing
-    const loadingMessage = await message.reply('🎵 Generating your custom music track... This might take 1-2 minutes. Please be patient!');
+    const loadingMessage = await message.reply(`🎵 Generating your custom music track${hasAttachment ? ' using your audio file' : ''}... This might take 1-2 minutes. Please be patient!`);
     
     try {
-      // Generate the music
-      const { musicId, musicPath } = await generateMusic(prompt, lyrics);
+      // Generate the music with the song file URL (default or from attachment)
+      const { musicId, musicPath } = await generateMusic(prompt, lyrics, songFileUrl);
       
       // Create an embed with the music information
       const musicEmbed = new EmbedBuilder()
         .setColor('#9966ff')
         .setTitle('🎵 Your Custom Music Track is Ready!')
-        .setDescription(`**Music prompt:** ${prompt}${lyrics ? '\n\n**With custom lyrics**' : ''}`)
+        .setDescription(`**Music prompt:** ${prompt}${lyrics ? '\n\n**With custom lyrics**' : ''}${hasAttachment ? '\n\n**Using your provided audio file**' : ''}`)
         .setFooter({ text: 'Generated using AI • Now playing in your voice channel' })
         .setTimestamp();
       
