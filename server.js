@@ -394,7 +394,11 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     const findWhiteCircles = async (image) => {
       const circles = [];
       const threshold = 230; // RGB threshold for "white" pixels
-      const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.05; // Minimum circle size (5% of image dimension)
+      
+      // Increase the minimum circle size from 5% to 10% of image dimension for stricter filtering
+      const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.1; // Minimum circle size (10% of image dimension)
+      
+      console.log(`Using minimum circle radius threshold: ${circleMinRadius} pixels`);
       
       // Scan the image to find white areas that might be circles
       for (let y = 0; y < image.getHeight(); y += 10) { // Sample every 10 pixels for performance
@@ -451,19 +455,26 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             
             // Check if it's big enough to be a circle we want
             if (radius > circleMinRadius) {
-              // Check if we already found a circle too close to this one
-              const isNewCircle = !circles.some(circle => {
-                const distance = Math.sqrt(
-                  Math.pow(circle.centerX - centerX, 2) + 
-                  Math.pow(circle.centerY - centerY, 2)
-                );
-                return distance < radius;
-              });
+              // Add additional check for roundness - ensure radiusX and radiusY are similar
+              // If the ratio is too far from 1.0, it's not a good circle
+              const roundnessRatio = Math.min(radiusX, radiusY) / Math.max(radiusX, radiusY);
               
-              if (isNewCircle) {
-                circles.push({ centerX, centerY, radius });
-                // Skip ahead to avoid finding the same circle again
-                x = Math.min(rightEdge + radius, image.getWidth() - 1);
+              if (roundnessRatio > 0.7) { // Allow slight elliptical shapes but not too stretched
+                // Check if we already found a circle too close to this one
+                const isNewCircle = !circles.some(circle => {
+                  const distance = Math.sqrt(
+                    Math.pow(circle.centerX - centerX, 2) + 
+                    Math.pow(circle.centerY - centerY, 2)
+                  );
+                  return distance < (radius * 1.5); // Increased distance threshold to better avoid duplicates
+                });
+                
+                if (isNewCircle) {
+                  circles.push({ centerX, centerY, radius });
+                  console.log(`Found potential circle at (${Math.round(centerX)},${Math.round(centerY)}) with radius ${Math.round(radius)} and roundness ${roundnessRatio.toFixed(2)}`);
+                  // Skip ahead to avoid finding the same circle again
+                  x = Math.min(rightEdge + radius, image.getWidth() - 1);
+                }
               }
             }
           }
@@ -475,7 +486,10 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     
     // Find white circles in the base image
     let circles = await findWhiteCircles(baseImage);
-    console.log(`Found ${circles.length} potential white circles in the image`);
+    console.log(`Found ${circles.length} potential white circles in the image that meet the size requirements`);
+    
+    // Sort circles by size (largest first) before limiting to number of avatars
+    circles.sort((a, b) => b.radius - a.radius);
     
     // If we found fewer circles than avatars, fall back to automatic placement
     if (circles.length < avatarUrls.length) {
@@ -503,12 +517,13 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           radius: avatarSize / 2
         });
       }
+    } else {
+      // If we have more circles than avatars, keep only the largest ones up to the number of avatars
+      circles = circles.slice(0, avatarUrls.length);
+      
+      // Then resort by Y position for more natural avatar placement
+      circles.sort((a, b) => a.centerY - b.centerY);
     }
-    
-    // Sort circles from top to bottom (for more natural avatar placement)
-    circles.sort((a, b) => a.centerY - b.centerY);
-    // Limit to the number of avatars we have
-    circles = circles.slice(0, avatarUrls.length);
     
     // Download and place each avatar
     for (let i = 0; i < avatarUrls.length && i < circles.length; i++) {
