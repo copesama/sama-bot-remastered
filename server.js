@@ -335,8 +335,19 @@ function extractHtmlFromResponse(response) {
 // Function to generate image using Hugging Face API (step 1: text-to-image with white circles)
 async function generateBaseImage(prompt, numAvatars) {
   try {
-    // Create a more specific prompt that requests white circles for avatar placement
-    const enhancedPrompt = `${prompt}. Include ONLY ${numAvatars} empty white circles where profile pictures should be placed. These white circles should be clearly visible and positioned where heads would normally be and completely match head's size. It's very important to hide the heads behind the white circles`;
+    // Calculate a reasonable percentage for the image generation prompt
+    const circleSizePercent = 20; // We use 10% as minimum detection threshold, so request 20% for safety
+    
+    // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
+    const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
+    IMPORTANT REQUIREMENTS FOR THE CIRCLES:
+    - Each white circle must be at least ${circleSizePercent}% of the image size
+    - Circles must be very clearly visible with clean, defined edges
+    - Position circles where heads would normally be in the scene
+    - Make sure circles are perfectly round, not oval or irregular
+    - The circles should be prominent and easily detectable
+    - Ensure each circle has a solid white fill with no patterns
+    - Completely hide/replace heads with these white circles`;
     
     console.log(`Step 1: Generating base image with enhanced prompt: ${enhancedPrompt}`);
     
