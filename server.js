@@ -354,7 +354,6 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
           'Content-Type': 'application/json'
         },
         responseType: 'arraybuffer',
-        timeout: 60000 // 1 minute timeout
       }
     );
 
