@@ -332,12 +332,15 @@ function extractHtmlFromResponse(response) {
 </html>`;
 }
 
-// Function to generate image using Hugging Face API (step 1: text-to-image)
-async function generateBaseImage(prompt) {
+// Function to generate image using Hugging Face API (step 1: text-to-image with white circles)
+async function generateBaseImage(prompt, numAvatars) {
   try {
-    console.log(`Step 1: Generating base image with prompt: ${prompt}`);
+    // Create a more specific prompt that requests white circles for avatar placement
+    const enhancedPrompt = `${prompt}. Include ${numAvatars} empty white circles where profile pictures should be placed. These white circles should be clearly visible and positioned where heads would normally be.`;
     
-    const payload = { inputs: prompt };
+    console.log(`Step 1: Generating base image with enhanced prompt: ${enhancedPrompt}`);
+    
+    const payload = { inputs: enhancedPrompt };
 
     const response = await axios.post(
       'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',
@@ -358,11 +361,11 @@ async function generateBaseImage(prompt) {
 
     // Save the temporary image file
     fs.writeFileSync(tempImagePath, Buffer.from(response.data));
-    console.log(`Base image saved to ${tempImagePath}`);
+    console.log(`Base image with white circles saved to ${tempImagePath}`);
 
     return { tempImageId, tempImagePath };
   } catch (error) {
-    console.error('Error generating base image:', error);
+    console.error('Error generating base image with white circles:', error);
     if (error.response) {
       console.error('Error status:', error.response.status);
       try {
@@ -376,78 +379,194 @@ async function generateBaseImage(prompt) {
   }
 }
 
-// Function to add avatars to the base image (step 2: image-to-image)
-async function addAvatarsToImage(baseImagePath, avatarUrls, originalPrompt) {
+// New function to place avatars into white circles using Jimp
+async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
   try {
-    console.log(`Step 2: Adding ${avatarUrls.length} avatars to base image`);
+    console.log(`Step 2: Placing ${avatarUrls.length} avatars into white circles`);
     
-    // Read base image as base64
-    const baseImageBuffer = fs.readFileSync(baseImagePath);
-    const baseImageBase64 = baseImageBuffer.toString('base64');
+    // Install the necessary packages if not already installed
+    const Jimp = require('jimp');
     
-    // First, we need to download all avatar images so we can use them properly
-    const avatarBuffers = [];
-    for (let i = 0; i < avatarUrls.length; i++) {
-      try {
-        console.log(`Downloading avatar from URL: ${avatarUrls[i]}`);
-        const avatarResponse = await axios.get(avatarUrls[i], { responseType: 'arraybuffer' });
-        avatarBuffers.push(Buffer.from(avatarResponse.data));
-      } catch (err) {
-        console.error(`Error downloading avatar ${i+1}:`, err);
-        // Continue with the avatars we were able to download
+    // Load the base image
+    const baseImage = await Jimp.read(baseImagePath);
+    const baseWidth = baseImage.getWidth();
+    const baseHeight = baseImage.getHeight();
+    
+    // Function to detect white circles in the image
+    const findWhiteCircles = async (image) => {
+      const circles = [];
+      const threshold = 230; // RGB threshold for "white" pixels
+      const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.05; // Minimum circle size (5% of image dimension)
+      
+      // Scan the image to find white areas that might be circles
+      for (let y = 0; y < image.getHeight(); y += 10) { // Sample every 10 pixels for performance
+        for (let x = 0; x < image.getWidth(); x += 10) {
+          const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(x, y));
+          
+          // If we find a white pixel
+          if (r > threshold && g > threshold && b > threshold) {
+            // Expand from this point to find the approximate circle
+            let leftEdge = x, rightEdge = x, topEdge = y, bottomEdge = y;
+            
+            // Find horizontal edges (approximate)
+            for (let testX = x; testX >= 0; testX -= 5) {
+              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(testX, y));
+              if (r < threshold || g < threshold || b < threshold) {
+                leftEdge = testX + 5;
+                break;
+              }
+            }
+            
+            for (let testX = x; testX < image.getWidth(); testX += 5) {
+              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(testX, y));
+              if (r < threshold || g < threshold || b < threshold) {
+                rightEdge = testX - 5;
+                break;
+              }
+            }
+            
+            // Find vertical edges (approximate)
+            for (let testY = y; testY >= 0; testY -= 5) {
+              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(x, testY));
+              if (r < threshold || g < threshold || b < threshold) {
+                topEdge = testY + 5;
+                break;
+              }
+            }
+            
+            for (let testY = y; testY < image.getHeight(); testY += 5) {
+              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(x, testY));
+              if (r < threshold || g < threshold || b < threshold) {
+                bottomEdge = testY - 5;
+                break;
+              }
+            }
+            
+            // Calculate approximate circle dimensions
+            const centerX = (leftEdge + rightEdge) / 2;
+            const centerY = (topEdge + bottomEdge) / 2;
+            const radiusX = (rightEdge - leftEdge) / 2;
+            const radiusY = (bottomEdge - topEdge) / 2;
+            
+            // Average the radii for a more accurate circle
+            const radius = (radiusX + radiusY) / 2;
+            
+            // Check if it's big enough to be a circle we want
+            if (radius > circleMinRadius) {
+              // Check if we already found a circle too close to this one
+              const isNewCircle = !circles.some(circle => {
+                const distance = Math.sqrt(
+                  Math.pow(circle.centerX - centerX, 2) + 
+                  Math.pow(circle.centerY - centerY, 2)
+                );
+                return distance < radius;
+              });
+              
+              if (isNewCircle) {
+                circles.push({ centerX, centerY, radius });
+                // Skip ahead to avoid finding the same circle again
+                x = Math.min(rightEdge + radius, image.getWidth() - 1);
+              }
+            }
+          }
+        }
+      }
+      
+      return circles;
+    };
+    
+    // Find white circles in the base image
+    let circles = await findWhiteCircles(baseImage);
+    console.log(`Found ${circles.length} potential white circles in the image`);
+    
+    // If we found fewer circles than avatars, fall back to automatic placement
+    if (circles.length < avatarUrls.length) {
+      console.log(`Not enough circles found (${circles.length}), using automatic placement for ${avatarUrls.length} avatars`);
+      
+      // Create circles automatically
+      circles = [];
+      const margin = baseWidth * 0.1;
+      const avatarSize = Math.min(baseWidth, baseHeight) * 0.2; // 20% of the image dimension
+      
+      // Calculate how many avatars per row based on image width
+      const avatarsPerRow = Math.ceil(Math.sqrt(avatarUrls.length));
+      const spacing = (baseWidth - 2 * margin) / avatarsPerRow;
+      
+      for (let i = 0; i < avatarUrls.length; i++) {
+        const row = Math.floor(i / avatarsPerRow);
+        const col = i % avatarsPerRow;
+        
+        const centerX = margin + col * spacing + spacing / 2;
+        const centerY = margin + row * spacing + spacing / 2;
+        
+        circles.push({
+          centerX,
+          centerY,
+          radius: avatarSize / 2
+        });
       }
     }
     
-    // Create a descriptive prompt for the image-to-image model
-    const compositePrompt = `Transform this image: include the people from the profile pictures as characters in the scene. ${originalPrompt}`;
+    // Sort circles from top to bottom (for more natural avatar placement)
+    circles.sort((a, b) => a.centerY - b.centerY);
+    // Limit to the number of avatars we have
+    circles = circles.slice(0, avatarUrls.length);
     
-    console.log(`Using prompt for image-to-image: ${compositePrompt}`);
+    // Download and place each avatar
+    for (let i = 0; i < avatarUrls.length && i < circles.length; i++) {
+      const { centerX, centerY, radius } = circles[i];
+      const avatarUrl = avatarUrls[i];
+      
+      try {
+        // Download the avatar
+        const avatarResponse = await axios.get(avatarUrl, { responseType: 'arraybuffer' });
+        const avatarImage = await Jimp.read(Buffer.from(avatarResponse.data));
+        
+        // Resize the avatar to fit the circle
+        avatarImage.resize(radius * 2, radius * 2);
+        
+        // Create a circular mask for the avatar
+        const mask = new Jimp(radius * 2, radius * 2, 0x00000000);
+        for (let y = 0; y < radius * 2; y++) {
+          for (let x = 0; x < radius * 2; x++) {
+            const distanceFromCenter = Math.sqrt(Math.pow(x - radius, 2) + Math.pow(y - radius, 2));
+            if (distanceFromCenter <= radius) {
+              mask.setPixelColor(0xFFFFFFFF, x, y); // Set white (opaque) for the circle area
+            }
+          }
+        }
+        
+        // Apply the circular mask to the avatar
+        avatarImage.mask(mask, 0, 0);
+        
+        // Calculate position to place the avatar (centered on the white circle)
+        const avatarX = Math.round(centerX - radius);
+        const avatarY = Math.round(centerY - radius);
+        
+        // Composite the avatar onto the base image
+        baseImage.composite(avatarImage, avatarX, avatarY, {
+          mode: Jimp.BLEND_SOURCE_OVER,
+          opacitySource: 1,
+          opacityDest: 1
+        });
+        
+        console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with radius ${radius}`);
+      } catch (error) {
+        console.error(`Error processing avatar at URL ${avatarUrl}:`, error);
+      }
+    }
     
-    // Use img2img endpoint in Stable Diffusion instead
-    const payload = {
-      inputs: {
-        image: baseImageBase64,
-        prompt: compositePrompt,
-        negative_prompt: "deformed, bad anatomy, disfigured, poorly drawn face, mutation, mutated, extra limb, ugly, missing limb",
-        strength: 0.75,
-        guidance_scale: 7.5,
-      }
-    };
-
-    const response = await axios.post(
-      'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
-      payload,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        responseType: 'arraybuffer',
-        timeout: 120000 // 2 minute timeout for the composite image
-      }
-    );
-
     // Generate unique ID for the final image file
     const imageId = shortid.generate();
     const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
-
-    // Save the final composite image file
-    fs.writeFileSync(imagePath, Buffer.from(response.data));
+    
+    // Save the final composite image
+    await baseImage.writeAsync(imagePath);
     console.log(`Final composite image saved to ${imagePath}`);
-
+    
     return { imageId, imagePath };
   } catch (error) {
-    console.error('Error adding avatars to image:', error);
-    if (error.response) {
-      console.error('Error status:', error.response.status);
-      console.error('Error URL:', error.config?.url || 'unknown URL');
-      try {
-        const errorData = Buffer.from(error.response.data).toString('utf8');
-        console.error('API error response:', errorData);
-      } catch (e) {
-        console.error('Could not parse error response data');
-      }
-    }
+    console.error('Error placing avatars in circles:', error);
     throw error;
   }
 }
@@ -457,11 +576,11 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
   try {
     console.log(`Starting two-step image generation process for prompt: ${prompt}`);
     
-    // Step 1: Generate base image from text prompt
-    const { tempImageId, tempImagePath } = await generateBaseImage(prompt);
+    // Step 1: Generate base image from text prompt with white circles for avatar placement
+    const { tempImageId, tempImagePath } = await generateBaseImage(prompt, avatarUrls.length);
     
-    // Step 2: Add avatars to the base image
-    const { imageId, imagePath } = await addAvatarsToImage(tempImagePath, avatarUrls, prompt);
+    // Step 2: Place avatars into the white circles
+    const { imageId, imagePath } = await placeAvatarsInCircles(tempImagePath, avatarUrls);
     
     // Clean up the temporary base image
     try {
