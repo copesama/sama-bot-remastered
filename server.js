@@ -11,7 +11,7 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
-const YouTube = require('youtube-sr').default;
+const YouTube = require('youtube-sr');
 const ytdl = require('ytdl-core');
 
 // Initialize Discord client
