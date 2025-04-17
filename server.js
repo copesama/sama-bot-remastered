@@ -332,17 +332,15 @@ function extractHtmlFromResponse(response) {
 </html>`;
 }
 
-// Function to generate image using Hugging Face API
-async function generateImageWithAvatars(prompt, avatarUrls) {
+// Function to generate image using Hugging Face API (step 1: text-to-image)
+async function generateBaseImage(prompt) {
   try {
-    console.log(`Generating image with prompt: ${prompt} and ${avatarUrls.length} avatars`);
+    console.log(`Step 1: Generating base image with prompt: ${prompt}`);
     
-    // Build a single prompt string that includes the avatar URLs
-    const fullPrompt = `${prompt}. Please incorporate these user avatars into the scene: ${avatarUrls.join(', ')}`;
-    const payload = { inputs: fullPrompt };
+    const payload = { inputs: prompt };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev',
+      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',
       payload,
       {
         headers: {
@@ -350,21 +348,21 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
           'Content-Type': 'application/json'
         },
         responseType: 'arraybuffer',
+        timeout: 60000 // 1 minute timeout
       }
     );
 
-    // Generate unique ID for the image file
-    const imageId = shortid.generate();
-    const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
+    // Generate temporary ID for the intermediate image file
+    const tempImageId = `temp_${shortid.generate()}`;
+    const tempImagePath = path.join(IMAGES_DIR, `${tempImageId}.png`);
 
-    // Save the image file
-    fs.writeFileSync(imagePath, Buffer.from(response.data));
-    console.log(`Image saved to ${imagePath}`);
+    // Save the temporary image file
+    fs.writeFileSync(tempImagePath, Buffer.from(response.data));
+    console.log(`Base image saved to ${tempImagePath}`);
 
-    return { imageId, imagePath };
+    return { tempImageId, tempImagePath };
   } catch (error) {
-    console.error('Error generating image:', error);
-    
+    console.error('Error generating base image:', error);
     if (error.response) {
       console.error('Error status:', error.response.status);
       try {
@@ -374,7 +372,92 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
         console.error('Could not parse error response data');
       }
     }
+    throw error;
+  }
+}
+
+// Function to add avatars to the base image (step 2: image-to-image)
+async function addAvatarsToImage(baseImagePath, avatarUrls, originalPrompt) {
+  try {
+    console.log(`Step 2: Adding ${avatarUrls.length} avatars to base image`);
     
+    // Read base image as base64
+    const baseImageBuffer = fs.readFileSync(baseImagePath);
+    const baseImageBase64 = baseImageBuffer.toString('base64');
+    
+    // Create a descriptive prompt for the image-to-image model
+    const compositePrompt = `Modify this image to include the people from the provided profile pictures. Original prompt: ${originalPrompt}`;
+    
+    // Prepare the form data with the base image and avatars
+    const formData = new FormData();
+    formData.append('input_image', baseImageBase64);
+    formData.append('prompt', compositePrompt);
+    
+    // Add all avatar URLs as reference images
+    avatarUrls.forEach((avatarUrl, index) => {
+      formData.append(`reference_image_${index+1}`, avatarUrl);
+    });
+
+    // Use an image-to-image model that can incorporate reference images
+    const response = await axios.post(
+      'https://api-inference.huggingface.co/models/lllyasviel/sd-controlnet-depth',
+      formData,
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          'Content-Type': 'multipart/form-data'
+        },
+        responseType: 'arraybuffer',
+        timeout: 120000 // 2 minute timeout for the composite image
+      }
+    );
+
+    // Generate unique ID for the final image file
+    const imageId = shortid.generate();
+    const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
+
+    // Save the final composite image file
+    fs.writeFileSync(imagePath, Buffer.from(response.data));
+    console.log(`Final composite image saved to ${imagePath}`);
+
+    return { imageId, imagePath };
+  } catch (error) {
+    console.error('Error adding avatars to image:', error);
+    if (error.response) {
+      console.error('Error status:', error.response.status);
+      try {
+        const errorData = Buffer.from(error.response.data).toString('utf8');
+        console.error('API error response:', errorData);
+      } catch (e) {
+        console.error('Could not parse error response data');
+      }
+    }
+    throw error;
+  }
+}
+
+// Updated function to generate image with avatars (two-step process)
+async function generateImageWithAvatars(prompt, avatarUrls) {
+  try {
+    console.log(`Starting two-step image generation process for prompt: ${prompt}`);
+    
+    // Step 1: Generate base image from text prompt
+    const { tempImageId, tempImagePath } = await generateBaseImage(prompt);
+    
+    // Step 2: Add avatars to the base image
+    const { imageId, imagePath } = await addAvatarsToImage(tempImagePath, avatarUrls, prompt);
+    
+    // Clean up the temporary base image
+    try {
+      fs.unlinkSync(tempImagePath);
+      console.log(`Deleted temporary base image: ${tempImagePath}`);
+    } catch (err) {
+      console.error(`Error deleting temporary image file: ${err}`);
+    }
+    
+    return { imageId, imagePath };
+  } catch (error) {
+    console.error('Error in two-step image generation process:', error);
     throw error;
   }
 }
@@ -904,33 +987,33 @@ client.on('messageCreate', async (message) => {
     usersWaitingForImagePrompt.delete(message.author.id);
     
     // Update the loading message to indicate image generation has started
-    await loadingMessage.edit('🎨 Generating your custom image... This might take a minute!');
+    await loadingMessage.edit('🎨 Generating your custom image in two steps...\n1️⃣ Creating base image from your prompt\n2️⃣ Adding user avatars to the scene\n\nThis process might take 2-3 minutes!');
     
     try {
       // Collect avatar URLs from mentioned users
       const avatarUrls = mentionedUsers.map(user => user.displayAvatarURL({ format: 'png', size: 512 }));
       
-      // Generate the image
+      // Generate the image using the two-step process
       const { imageId, imagePath } = await generateImageWithAvatars(imagePrompt, avatarUrls);
       
       // Create an embed with the image information
       const imageEmbed = new EmbedBuilder()
         .setColor('#ff6600')
-        .setTitle('🎨 Your Custom Image is Ready!')
-        .setDescription(`**Image prompt:** ${imagePrompt}`)
+        .setTitle('🎨 Your Custom Image with Avatars is Ready!')
+        .setDescription(`**Image prompt:** ${imagePrompt}\n\n**Featuring:** ${mentionedUsers.map(user => user.username).join(', ')}`)
         .setImage(`attachment://${imageId}.png`)
         .setFooter({ text: 'Generated using AI with Discord avatars' })
         .setTimestamp();
       
       // Send the image in the channel
       await message.channel.send({ 
-        content: `${message.author} Here's your generated image:`,
+        content: `${message.author} Here's your generated image with ${mentionedUsers.length} user avatars:`,
         embeds: [imageEmbed],
         files: [{ attachment: imagePath, name: `${imageId}.png` }]
       });
       
       // Edit the loading message
-      await loadingMessage.edit('✅ Image generated successfully!');
+      await loadingMessage.edit('✅ Composite image generated successfully!');
       
       // Delete the prompt message to keep the channel clean
       try {
