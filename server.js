@@ -376,6 +376,62 @@ async function editGame(gameId, editPrompt, originalHtml) {
   }
 }
 
+// Function to auto-enhance an existing game
+async function enhanceGame(gameId, originalHtml) {
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert game developer tasked with enhancing and improving an existing HTML game. 
+            
+            CRITICAL ENHANCEMENT REQUIREMENTS:
+            1. Fix any bugs or errors in the game code
+            2. Improve game mechanics and features where possible
+            3. Enhance visuals and user interface
+            4. Add appropriate sound effects where missing
+            5. Optimize performance and responsiveness
+            6. Ensure mobile compatibility if not already present
+            7. Add helpful game instructions if they're missing or unclear
+            8. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
+            9. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
+            
+            Analyze the game thoroughly and implement enhancements that improve the player experience while maintaining the core gameplay concept.
+            Return the complete enhanced HTML file.`
+          },
+          {
+            role: 'user',
+            content: `Here is an HTML game that needs enhancement:\n\n${originalHtml}\n\nPlease analyze this game, fix any bugs, and enhance its features automatically. Keep the core game concept intact while improving the user experience, visuals, and performance. Make sure any existing "Powered by Luck Off" link is preserved or add one if it's missing.`
+          }
+        ],
+        temperature: 0.8
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Extract HTML game code from response
+    const gameCode = response.data.choices[0].message.content;
+    const enhancedHtml = extractHtmlFromResponse(gameCode);
+    
+    // Save the enhanced game HTML to file
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+    fs.writeFileSync(gamePath, enhancedHtml);
+    
+    return gameId;
+  } catch (error) {
+    console.error('Error enhancing game:', error);
+    throw error;
+  }
+}
+
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -499,6 +555,52 @@ client.on('messageCreate', async (message) => {
     
     // Put the user in edit mode
     usersInEditMode.set(message.author.id, { gameId, loadingMessage });
+    return;
+  }
+
+  // Check for !enhance command
+  const enhanceGameMatch = message.content.match(/^!enhance\s+([a-zA-Z0-9_-]+)$/);
+  if (enhanceGameMatch) {
+    const gameId = enhanceGameMatch[1];
+    
+    // Check if the game exists
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+    if (!fs.existsSync(gamePath)) {
+      message.reply(`Error: Game with ID ${gameId} not found.`);
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply(`🔄 Enhancing game ${gameId}... This might take a minute or two!`);
+    
+    try {
+      // Read the original game file
+      const originalHtml = fs.readFileSync(gamePath, 'utf8');
+      
+      // Enhance the game
+      await enhanceGame(gameId, originalHtml);
+      
+      // Create an embed with the game information
+      const gameEmbed = new EmbedBuilder()
+        .setColor('#5533ff')
+        .setTitle('✨ Your Game Has Been Enhanced!')
+        .setDescription('Your game has been automatically improved with bug fixes and enhanced features!')
+        .addFields(
+          { name: 'Game ID', value: `\`${gameId}\`` },
+          { name: 'Enhancements Applied', value: '• Bug fixes\n• Improved game mechanics\n• Enhanced visuals\n• Performance optimization\n• Mobile compatibility improvements' },
+          { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your enhanced game.' }
+        )
+        .setFooter({ text: 'Auto-enhanced using AI • To play, use !playgame command' })
+        .setTimestamp();
+      
+      // Edit the loading message with the game ID
+      await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
+      
+    } catch (error) {
+      console.error('Error:', error);
+      await loadingMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
+    }
+    
     return;
   }
 
