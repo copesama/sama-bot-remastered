@@ -42,6 +42,12 @@ if (!fs.existsSync(MUSIC_DIR)) {
   fs.mkdirSync(MUSIC_DIR);
 }
 
+// Create images directory if it doesn't exist
+const IMAGES_DIR = path.join(__dirname, 'images');
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR);
+}
+
 // Serve static game files
 app.use('/games', express.static(GAMES_DIR));
 app.use(cookieParser());
@@ -49,6 +55,9 @@ app.use(cookieParser());
 // Keep track of active voice connections and players
 const voiceConnections = new Map();
 const audioPlayers = new Map();
+
+// Track users who are waiting to provide image prompts
+const usersWaitingForImagePrompt = new Map();
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -299,6 +308,89 @@ async function generateMusic(prompt, lyrics = null, songFileUrl = null) {
   }
 }
 
+// Function to generate an image with user avatars using OpenRouter API
+async function generateImage(avatarUrls, prompt) {
+  try {
+    console.log(`Generating image with ${avatarUrls.length} avatars and prompt: ${prompt}`);
+    
+    // Prepare the system prompt for image generation
+    const systemPrompt = `You are an expert image creator. Generate an image based on the user's scenario prompt that MUST include all the provided avatars.
+    The avatars must be integrated naturally into the scene, maintaining recognizable faces.
+    Follow the user's prompt precisely and create a cohesive scene with all avatars included.`;
+    
+    // Create the prompt with avatar URLs
+    let contentPrompt = `Create an image with the following scenario: ${prompt}\n\n`;
+    contentPrompt += `Please incorporate these ${avatarUrls.length} profile avatars into the image naturally:\n`;
+    
+    // Add all avatar URLs to the prompt
+    avatarUrls.forEach((url, index) => {
+      contentPrompt += `Avatar ${index + 1}: ${url}\n`;
+    });
+    
+    contentPrompt += `\nMake sure all ${avatarUrls.length} avatars are clearly visible and identifiable in the final image. Place them appropriately in the scene according to the scenario.`;
+    
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: contentPrompt
+          }
+        ],
+        temperature: 0.7,
+        response_format: { type: "text" }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+
+    // Extract the image URL from the response - Claude often outputs image URLs in Markdown format
+    let generatedImageUrl = null;
+    const responseContent = response.data.choices[0].message.content;
+    
+    // Check for Markdown image syntax or URL patterns
+    const markdownMatch = responseContent.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/);
+    const urlMatch = responseContent.match(/(https?:\/\/[^\s]+\.(png|jpg|jpeg|gif|webp))/i);
+    
+    if (markdownMatch) {
+      generatedImageUrl = markdownMatch[1];
+    } else if (urlMatch) {
+      generatedImageUrl = urlMatch[0];
+    } else {
+      throw new Error('No image URL found in the response');
+    }
+    
+    // Download the generated image
+    const imageResponse = await axios.get(generatedImageUrl, { responseType: 'arraybuffer' });
+    
+    // Generate unique ID for the image file
+    const imageId = shortid.generate();
+    const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
+    
+    // Save the image file
+    fs.writeFileSync(imagePath, Buffer.from(imageResponse.data));
+    console.log(`Image file saved to ${imagePath}`);
+    
+    return { imageId, imagePath };
+  } catch (error) {
+    console.error('Error generating image:', error);
+    if (error.response) {
+      console.error('API error response:', error.response.data);
+    }
+    throw error;
+  }
+}
+
 // Helper function to extract HTML from API response
 function extractHtmlFromResponse(response) {
   // Try to extract HTML from code blocks if present
@@ -442,6 +534,94 @@ client.once('ready', () => {
 client.on('messageCreate', async (message) => {
   // Ignore messages from bots
   if (message.author.bot) return;
+
+  // Check if the user is waiting to provide an image prompt
+  if (usersWaitingForImagePrompt.has(message.author.id)) {
+    const { mentionedUsers, loadingMessage } = usersWaitingForImagePrompt.get(message.author.id);
+    const prompt = message.content;
+    
+    // Clear waiting status for this user
+    usersWaitingForImagePrompt.delete(message.author.id);
+    
+    // Update the loading message to indicate generation has started
+    await loadingMessage.edit('🖼️ Generating your image... This might take a minute or two!');
+    
+    try {
+      // Get avatar URLs for all mentioned users
+      const avatarUrls = mentionedUsers.map(user => 
+        user.displayAvatarURL({ format: 'png', size: 256 })
+      );
+      
+      // Generate the image
+      const { imageId, imagePath } = await generateImage(avatarUrls, prompt);
+      
+      // Create an embed with the image information
+      const imageEmbed = new EmbedBuilder()
+        .setColor('#ff66aa')
+        .setTitle('🖼️ Your Generated Image')
+        .setDescription(`**Prompt:** ${prompt}`)
+        .setImage(`attachment://${imageId}.png`)
+        .setFooter({ text: 'Generated using AI' })
+        .setTimestamp();
+      
+      // Send the image with the embed
+      await message.channel.send({ 
+        embeds: [imageEmbed],
+        files: [{ attachment: imagePath, name: `${imageId}.png` }]
+      });
+      
+      // Edit the loading message to indicate success
+      await loadingMessage.edit('✅ Image generated successfully!');
+      
+      // Delete user prompt message to keep the channel clean
+      try {
+        await message.delete();
+      } catch (error) {
+        console.error('Error deleting message:', error);
+      }
+      
+      // Clean up the image file after sending
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(imagePath);
+          console.log(`Deleted image file: ${imagePath}`);
+        } catch (err) {
+          console.error(`Error deleting image file: ${err}`);
+        }
+      }, 5000); // 5 seconds delay
+      
+    } catch (error) {
+      console.error('Error generating image:', error);
+      await loadingMessage.edit('Sorry, there was an error generating your image. Please try again later.');
+    }
+    
+    return;
+  }
+
+  // Check for !generateimage command with mentioned users
+  if (message.content.startsWith('!generateimage')) {
+    // Extract mentioned users from the message
+    const mentionedUsers = Array.from(message.mentions.users.values());
+    
+    if (mentionedUsers.length === 0) {
+      message.reply('Please mention at least one user to generate an image with their avatar. Example: `!generateimage @user1 @user2`');
+      return;
+    }
+    
+    // Create a list of mentioned usernames for the response
+    const mentionedUsernames = mentionedUsers.map(user => user.username).join(', ');
+    
+    // Send initial response asking for the scenario prompt
+    const loadingMessage = await message.reply(`I'll create an image with ${mentionedUsers.length} users: ${mentionedUsernames}. Please send your scenario prompt in the next message.`);
+    
+    // Store that this user is waiting to provide an image prompt
+    usersWaitingForImagePrompt.set(message.author.id, { 
+      mentionedUsers,
+      loadingMessage
+    });
+    
+    return;
+  }
 
   // Check if the user is in edit mode and waiting for an edit prompt
   if (usersInEditMode.has(message.author.id)) {
