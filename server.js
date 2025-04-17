@@ -840,9 +840,13 @@ client.on('messageCreate', async (message) => {
     // fetch videos
     let vids;
     try {
-      vids = await YouTube.search({ channelId, type: 'video', limit: 50 });
-      if (!vids.length) throw 0;
-    } catch {
+      // lookup channel entity directly from URL
+      const channelEntity = await YouTube.getChannel(url);
+      if (!channelEntity) throw new Error('Channel not found');
+      vids = await channelEntity.videos({ limit: 50 });
+      if (!vids.length) throw new Error('No videos found');
+    } catch (err) {
+      console.error('youtube-sr error fetching videos:', err);
       return message.reply('Could not fetch videos from that channel.');
     }
     // choose 5 random
