@@ -379,15 +379,13 @@ async function generateBaseImage(prompt, numAvatars) {
   }
 }
 
-// New function to place avatars into white circles using Jimp
+// Updated function to place avatars into white circles using Jimp
 async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
   try {
     console.log(`Step 2: Placing ${avatarUrls.length} avatars into white circles`);
     
-    // Install the necessary packages if not already installed
-    const Jimp = require('jimp');
-    
     // Load the base image
+    const Jimp = require('jimp');
     const baseImage = await Jimp.read(baseImagePath);
     const baseWidth = baseImage.getWidth();
     const baseHeight = baseImage.getHeight();
@@ -515,12 +513,102 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     // Download and place each avatar
     for (let i = 0; i < avatarUrls.length && i < circles.length; i++) {
       const { centerX, centerY, radius } = circles[i];
-      const avatarUrl = avatarUrls[i];
       
       try {
-        // Download the avatar
-        const avatarResponse = await axios.get(avatarUrl, { responseType: 'arraybuffer' });
-        const avatarImage = await Jimp.read(Buffer.from(avatarResponse.data));
+        // Ensure we're requesting a PNG format from Discord instead of WebP
+        // Replace .webp with .png in the URL or add format=png parameter
+        let avatarUrl = avatarUrls[i];
+        
+        // Make sure we're requesting PNG format
+        if (avatarUrl.includes('discord.com') || avatarUrl.includes('discordapp.com')) {
+          // If the URL already specifies size, just replace or add format
+          if (avatarUrl.includes('?')) {
+            if (avatarUrl.includes('format=')) {
+              avatarUrl = avatarUrl.replace(/format=\w+/, 'format=png');
+            } else {
+              avatarUrl += '&format=png';
+            }
+          } else {
+            avatarUrl += '?format=png';
+          }
+          
+          // Replace .webp extension if present
+          avatarUrl = avatarUrl.replace('.webp', '.png');
+        }
+        
+        console.log(`Processing avatar ${i+1} with URL: ${avatarUrl}`);
+        
+        // Download the avatar with proper error handling
+        let avatarImage;
+        try {
+          const avatarResponse = await axios.get(avatarUrl, { 
+            responseType: 'arraybuffer',
+            // Add timeout and retry logic
+            timeout: 10000,
+            headers: {
+              'Accept': 'image/png,image/*'
+            }
+          });
+          
+          // Check the content type
+          const contentType = avatarResponse.headers['content-type'];
+          console.log(`Avatar ${i+1} content type: ${contentType}`);
+          
+          // If we still get webp despite requesting png, we need to convert it
+          if (contentType && contentType.includes('webp')) {
+            console.log(`Avatar ${i+1} is in WebP format, using fallback circle`);
+            // Create a colored circle instead as a fallback
+            avatarImage = new Jimp(radius * 2, radius * 2, Jimp.cssColorToHex(`hsl(${i * 30 % 360}, 70%, 60%)`));
+            // Add a simple text label in the center of the circle (first letter of the URL)
+            const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+            // Use some identifier from the URL or a simple number
+            const label = `${i+1}`;
+            const textWidth = Jimp.measureText(font, label);
+            const textHeight = Jimp.measureTextHeight(font, label, textWidth);
+            avatarImage.print(
+              font,
+              Math.floor(radius - textWidth / 2),
+              Math.floor(radius - textHeight / 2),
+              {
+                text: label,
+                alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER,
+                alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE
+              },
+              textWidth * 2,
+              textHeight * 2
+            );
+          } else {
+            // Process normal PNG avatar
+            avatarImage = await Jimp.read(Buffer.from(avatarResponse.data));
+          }
+        } catch (avatarError) {
+          console.error(`Error downloading/processing avatar ${i+1}:`, avatarError);
+          // Create a fallback colored circle with a number
+          console.log(`Using fallback circle for avatar ${i+1}`);
+          avatarImage = new Jimp(radius * 2, radius * 2, Jimp.cssColorToHex(`hsl(${i * 30 % 360}, 70%, 60%)`));
+          
+          // Add a number in the center of the circle
+          try {
+            const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+            const label = `${i+1}`;
+            const textWidth = Jimp.measureText(font, label);
+            const textHeight = Jimp.measureTextHeight(font, label, textWidth);
+            avatarImage.print(
+              font,
+              Math.floor(radius - textWidth / 2),
+              Math.floor(radius - textHeight / 2),
+              {
+                text: label,
+                alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER,
+                alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE
+              },
+              textWidth * 2,
+              textHeight * 2
+            );
+          } catch (textError) {
+            console.error(`Error adding text to fallback circle:`, textError);
+          }
+        }
         
         // Resize the avatar to fit the circle
         avatarImage.resize(radius * 2, radius * 2);
@@ -552,7 +640,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         
         console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with radius ${radius}`);
       } catch (error) {
-        console.error(`Error processing avatar at URL ${avatarUrl}:`, error);
+        console.error(`Error processing avatar ${i+1}:`, error);
       }
     }
     
@@ -1122,11 +1210,15 @@ client.on('messageCreate', async (message) => {
     usersWaitingForImagePrompt.delete(message.author.id);
     
     // Update the loading message to indicate image generation has started
-    await loadingMessage.edit('🎨 Generating your custom image in two steps...\n1️⃣ Creating base image from your prompt\n2️⃣ Adding user avatars to the scene\n\nThis process might take 2-3 minutes!');
+    await loadingMessage.edit('🎨 Generating your custom image in two steps...\n1️⃣ Creating base image from your prompt with placeholder circles\n2️⃣ Adding user avatars to the circles\n\nThis process might take 2-3 minutes!');
     
     try {
-      // Collect avatar URLs from mentioned users
-      const avatarUrls = mentionedUsers.map(user => user.displayAvatarURL({ format: 'png', size: 512 }));
+      // Collect avatar URLs from mentioned users - EXPLICITLY REQUEST PNG FORMAT
+      const avatarUrls = mentionedUsers.map(user => 
+        user.displayAvatarURL({ format: 'png', size: 512 })
+      );
+      
+      console.log('Avatar URLs:', avatarUrls);
       
       // Generate the image using the two-step process
       const { imageId, imagePath } = await generateImageWithAvatars(imagePrompt, avatarUrls);

@@ -19,7 +19,7 @@
     "ffmpeg-static":"^5.2.0",
     "libsodium-wrappers":"^0.7.15",
     "form-data":"4.0.2",
-    "jimp": "^1.6.0"
+    "jimp": "^0.22.10"
   },
   "engines": {
     "node": ">=16.x"
