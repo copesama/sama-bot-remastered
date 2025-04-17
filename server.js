@@ -336,7 +336,7 @@ function extractHtmlFromResponse(response) {
 async function generateBaseImage(prompt, numAvatars) {
   try {
     // Create a more specific prompt that requests white circles for avatar placement
-    const enhancedPrompt = `${prompt}. Include ${numAvatars} empty white circles where profile pictures should be placed. These white circles should be clearly visible and positioned where heads would normally be and completely fit head's size.`;
+    const enhancedPrompt = `${prompt}. Include ${numAvatars} empty white circles where profile pictures should be placed. These white circles should be clearly visible and positioned where heads would normally be and completely fit head's size. It's very important to hide the heads behind the white circles`;
     
     console.log(`Step 1: Generating base image with enhanced prompt: ${enhancedPrompt}`);
     
