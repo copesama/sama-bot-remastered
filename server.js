@@ -385,27 +385,42 @@ async function addAvatarsToImage(baseImagePath, avatarUrls, originalPrompt) {
     const baseImageBuffer = fs.readFileSync(baseImagePath);
     const baseImageBase64 = baseImageBuffer.toString('base64');
     
+    // First, we need to download all avatar images so we can use them properly
+    const avatarBuffers = [];
+    for (let i = 0; i < avatarUrls.length; i++) {
+      try {
+        console.log(`Downloading avatar from URL: ${avatarUrls[i]}`);
+        const avatarResponse = await axios.get(avatarUrls[i], { responseType: 'arraybuffer' });
+        avatarBuffers.push(Buffer.from(avatarResponse.data));
+      } catch (err) {
+        console.error(`Error downloading avatar ${i+1}:`, err);
+        // Continue with the avatars we were able to download
+      }
+    }
+    
     // Create a descriptive prompt for the image-to-image model
-    const compositePrompt = `Modify this image to include the people from the provided profile pictures. Original prompt: ${originalPrompt}`;
+    const compositePrompt = `Transform this image: include the people from the profile pictures as characters in the scene. ${originalPrompt}`;
     
-    // Prepare the form data with the base image and avatars
-    const formData = new FormData();
-    formData.append('input_image', baseImageBase64);
-    formData.append('prompt', compositePrompt);
+    console.log(`Using prompt for image-to-image: ${compositePrompt}`);
     
-    // Add all avatar URLs as reference images
-    avatarUrls.forEach((avatarUrl, index) => {
-      formData.append(`reference_image_${index+1}`, avatarUrl);
-    });
+    // Use img2img endpoint in Stable Diffusion instead
+    const payload = {
+      inputs: {
+        image: baseImageBase64,
+        prompt: compositePrompt,
+        negative_prompt: "deformed, bad anatomy, disfigured, poorly drawn face, mutation, mutated, extra limb, ugly, missing limb",
+        strength: 0.75,
+        guidance_scale: 7.5,
+      }
+    };
 
-    // Use an image-to-image model that can incorporate reference images
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/lllyasviel/sd-controlnet-depth',
-      formData,
+      'https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5',
+      payload,
       {
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'multipart/form-data'
+          'Content-Type': 'application/json'
         },
         responseType: 'arraybuffer',
         timeout: 120000 // 2 minute timeout for the composite image
@@ -425,6 +440,7 @@ async function addAvatarsToImage(baseImagePath, avatarUrls, originalPrompt) {
     console.error('Error adding avatars to image:', error);
     if (error.response) {
       console.error('Error status:', error.response.status);
+      console.error('Error URL:', error.config?.url || 'unknown URL');
       try {
         const errorData = Buffer.from(error.response.data).toString('utf8');
         console.error('API error response:', errorData);
