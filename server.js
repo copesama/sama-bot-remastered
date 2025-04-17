@@ -342,7 +342,7 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
     const payload = { inputs: fullPrompt };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/ByteDance/Hyper-SD',
+      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-3-medium',
       payload,
       {
         headers: {
