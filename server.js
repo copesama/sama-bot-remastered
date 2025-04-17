@@ -127,6 +127,7 @@ async function generateSinglePlayerGame(prompt) {
             - Extract user data from cookie:
               const userData = JSON.parse(decodeURIComponent(document.cookie.split('; ').find(row => row.startsWith('gameUserData=')).split('=')[1]));
             - Use userData.username and userData.avatar where appropriate
+            - MUST always DISPLAY the user's username and avatar (from gameUserData cookie) somewhere visible in the game interface
             
             Include comprehensive error handling and clear user feedback.
             The final game MUST be completely playable as a single-player experience.`
@@ -148,6 +149,7 @@ async function generateSinglePlayerGame(prompt) {
             2. Simple UI showing score/progress and basic instructions
             3. Win/lose conditions where appropriate
             4. A footer or header with a styled "Powered by Luck Off" link to https://luckoff.chat/
+            5. Always display the user's username and avatar (from gameUserData cookie) in the game interface
             
             CODE STRUCTURE:
             1. Initialize game variables first
@@ -787,6 +789,7 @@ client.on('messageCreate', async (message) => {
           { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your game.' },
           { name: 'Share Your Game', value: 'Share the Game ID with friends so they can try your game!' },
           { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
+          { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`!enhance ${gameId}\`` },
           { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
         )
         .setFooter({ text: 'Generated using AI • To play, use !playgame command' })
