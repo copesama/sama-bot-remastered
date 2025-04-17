@@ -56,7 +56,7 @@ app.use(cookieParser());
 const voiceConnections = new Map();
 const audioPlayers = new Map();
 
-// Track users who are waiting to provide an image prompt
+// Keep track of users waiting to provide image prompts
 const usersWaitingForImagePrompt = new Map();
 
 // Game access with user authentication
@@ -332,6 +332,58 @@ function extractHtmlFromResponse(response) {
 </html>`;
 }
 
+// Function to generate image using Hugging Face API
+async function generateImageWithAvatars(prompt, avatarUrls) {
+  try {
+    console.log(`Generating image with prompt: ${prompt} and ${avatarUrls.length} avatars`);
+    
+    // Prepare data to send to Hugging Face API
+    const payload = {
+      inputs: {
+        prompt: prompt,
+        avatarUrls: avatarUrls
+      }
+    };
+
+    const response = await axios.post(
+      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',
+      payload,
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        responseType: 'arraybuffer',
+        timeout: 60000 // 1 minute timeout
+      }
+    );
+
+    // Generate unique ID for the image file
+    const imageId = shortid.generate();
+    const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
+
+    // Save the image file
+    fs.writeFileSync(imagePath, Buffer.from(response.data));
+    console.log(`Image saved to ${imagePath}`);
+
+    return { imageId, imagePath };
+  } catch (error) {
+    console.error('Error generating image:', error);
+    
+    if (error.response) {
+      console.error('Error status:', error.response.status);
+      try {
+        const errorData = Buffer.from(error.response.data).toString('utf8');
+        console.error('API error response:', errorData);
+      } catch (e) {
+        console.error('Could not parse error response data');
+      }
+    }
+    
+    throw error;
+  }
+}
+
 // Track users who are in "edit mode"
 const usersInEditMode = new Map();
 
@@ -443,73 +495,6 @@ async function enhanceGame(gameId, originalHtml) {
   }
 }
 
-// Function to download avatar from a URL to a local file
-async function downloadAvatar(url, filepath) {
-  try {
-    const response = await axios({
-      url,
-      method: 'GET',
-      responseType: 'arraybuffer'
-    });
-    fs.writeFileSync(filepath, Buffer.from(response.data));
-    return filepath;
-  } catch (error) {
-    console.error(`Error downloading avatar from ${url}:`, error);
-    throw error;
-  }
-}
-
-// Function to generate an image using Hugging Face API
-async function generateImageWithHuggingFace(prompt, avatarPaths) {
-  try {
-    const formData = new FormData();
-    formData.append('prompt', prompt);
-    
-    // Add avatars to form data
-    avatarPaths.forEach((path, index) => {
-      formData.append(`avatar_${index}`, fs.createReadStream(path));
-    });
-    
-    console.log(`Sending image generation request with prompt: ${prompt}`);
-    
-    const response = await axios.post(
-      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',
-      formData,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          ...formData.getHeaders()
-        },
-        responseType: 'arraybuffer'
-      }
-    );
-    
-    // Generate unique ID for the image file
-    const imageId = shortid.generate();
-    const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
-    
-    // Save the image
-    fs.writeFileSync(imagePath, Buffer.from(response.data));
-    console.log(`Image saved to ${imagePath}`);
-    
-    return imagePath;
-  } catch (error) {
-    console.error('Error generating image with Hugging Face:', error);
-    
-    // Handle specific API errors
-    if (error.response) {
-      try {
-        const errorData = Buffer.from(error.response.data).toString('utf8');
-        console.error('Hugging Face API error response:', errorData);
-      } catch (e) {
-        console.error('Could not parse error response data');
-      }
-    }
-    
-    throw error;
-  }
-}
-
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -518,105 +503,6 @@ client.once('ready', () => {
 client.on('messageCreate', async (message) => {
   // Ignore messages from bots
   if (message.author.bot) return;
-
-  // Check if the user is waiting to provide an image prompt
-  if (usersWaitingForImagePrompt.has(message.author.id)) {
-    const { mentionedUsers, loadingMessage } = usersWaitingForImagePrompt.get(message.author.id);
-    const imagePrompt = message.content;
-    
-    // Clear waiting state for this user
-    usersWaitingForImagePrompt.delete(message.author.id);
-    
-    // Update the loading message to indicate image generation has started
-    await loadingMessage.edit('🖼️ Generating your image... This might take up to a minute!');
-    
-    try {
-      // Download avatars for each mentioned user
-      const avatarPaths = [];
-      for (const user of mentionedUsers) {
-        const avatarUrl = user.displayAvatarURL({ format: 'png', size: 256 });
-        const avatarPath = path.join(IMAGES_DIR, `avatar-${user.id}.png`);
-        await downloadAvatar(avatarUrl, avatarPath);
-        avatarPaths.push(avatarPath);
-      }
-      
-      // Generate the image using Hugging Face
-      const generatedImagePath = await generateImageWithHuggingFace(imagePrompt, avatarPaths);
-      
-      // Create an embed for the generated image
-      const imageEmbed = new EmbedBuilder()
-        .setColor('#FF5733')
-        .setTitle('🖼️ Your AI-Generated Image')
-        .setDescription(`**Prompt:** ${imagePrompt}`)
-        .setImage(`attachment://generated-image.png`)
-        .setFooter({ text: 'Generated using Hugging Face API' })
-        .setTimestamp();
-      
-      // Send the image with the embed
-      await message.channel.send({
-        embeds: [imageEmbed],
-        files: [{
-          attachment: generatedImagePath,
-          name: 'generated-image.png'
-        }]
-      });
-      
-      // Delete the loading message
-      await loadingMessage.delete();
-      
-      // Delete the user's prompt message to keep the channel clean
-      try {
-        await message.delete();
-      } catch (error) {
-        console.error('Error deleting message:', error);
-      }
-      
-      // Clean up the avatar and generated image files
-      setTimeout(() => {
-        try {
-          // Delete avatar files
-          for (const avatarPath of avatarPaths) {
-            fs.unlinkSync(avatarPath);
-          }
-          
-          // Delete generated image file
-          fs.unlinkSync(generatedImagePath);
-          console.log('Cleaned up temporary image files');
-        } catch (err) {
-          console.error('Error cleaning up image files:', err);
-        }
-      }, 10000); // 10 seconds delay
-      
-    } catch (error) {
-      console.error('Error generating image:', error);
-      await loadingMessage.edit('Sorry, there was an error generating your image. Please try again later.');
-    }
-    
-    return;
-  }
-
-  // Check for !generateimage command
-  if (message.content.startsWith('!generateimage')) {
-    // Check if any users are mentioned
-    const mentionedUsers = Array.from(message.mentions.users.values());
-    
-    if (mentionedUsers.length === 0) {
-      message.reply('Please mention at least one user to include their avatar in the generated image. Example: `!generateimage @User1 @User2`');
-      return;
-    }
-    
-    if (mentionedUsers.length > 5) {
-      message.reply('You can only include up to 5 users in a generated image.');
-      return;
-    }
-    
-    // Send initial response
-    const loadingMessage = await message.reply(`I'll generate an image with ${mentionedUsers.map(u => u.username).join(', ')}. Please send your image prompt in the next message.`);
-    
-    // Put the user in waiting state for image prompt
-    usersWaitingForImagePrompt.set(message.author.id, { mentionedUsers, loadingMessage });
-    return;
-  }
 
   // Check if the user is in edit mode and waiting for an edit prompt
   if (usersInEditMode.has(message.author.id)) {
@@ -993,6 +879,94 @@ client.on('messageCreate', async (message) => {
     
     // Send the embed
     await message.reply({ embeds: [multiplayerEmbed] });
+    return;
+  }
+
+  // Check for !generateimage command with mentions
+  if (message.content.startsWith('!generateimage')) {
+    // Extract mentioned users from the message
+    const mentionedUsers = Array.from(message.mentions.users.values());
+    
+    if (mentionedUsers.length === 0) {
+      message.reply('Please mention at least one user to include their avatar in the image. Example: `!generateimage @username1 @username2`');
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply(`I found ${mentionedUsers.length} mentioned user(s). Now, please describe the scenario for the image in your next message.`);
+    
+    // Put the user in wait-for-prompt mode
+    usersWaitingForImagePrompt.set(message.author.id, { mentionedUsers, loadingMessage });
+    return;
+  }
+
+  // Check if the user is waiting to provide an image prompt
+  if (usersWaitingForImagePrompt.has(message.author.id)) {
+    const { mentionedUsers, loadingMessage } = usersWaitingForImagePrompt.get(message.author.id);
+    const imagePrompt = message.content;
+    
+    // Clear prompt wait for this user
+    usersWaitingForImagePrompt.delete(message.author.id);
+    
+    // Update the loading message to indicate image generation has started
+    await loadingMessage.edit('🎨 Generating your custom image... This might take a minute!');
+    
+    try {
+      // Collect avatar URLs from mentioned users
+      const avatarUrls = mentionedUsers.map(user => user.displayAvatarURL({ format: 'png', size: 512 }));
+      
+      // Generate the image
+      const { imageId, imagePath } = await generateImageWithAvatars(imagePrompt, avatarUrls);
+      
+      // Create an embed with the image information
+      const imageEmbed = new EmbedBuilder()
+        .setColor('#ff6600')
+        .setTitle('🎨 Your Custom Image is Ready!')
+        .setDescription(`**Image prompt:** ${imagePrompt}`)
+        .setImage(`attachment://${imageId}.png`)
+        .setFooter({ text: 'Generated using AI with Discord avatars' })
+        .setTimestamp();
+      
+      // Send the image in the channel
+      await message.channel.send({ 
+        content: `${message.author} Here's your generated image:`,
+        embeds: [imageEmbed],
+        files: [{ attachment: imagePath, name: `${imageId}.png` }]
+      });
+      
+      // Edit the loading message
+      await loadingMessage.edit('✅ Image generated successfully!');
+      
+      // Delete the prompt message to keep the channel clean
+      try {
+        await message.delete();
+      } catch (error) {
+        console.error('Error deleting message:', error);
+      }
+      
+      // Delete the temporary image file after sending
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(imagePath);
+          console.log(`Deleted image file: ${imagePath}`);
+        } catch (err) {
+          console.error(`Error deleting image file: ${err}`);
+        }
+      }, 5000); // 5 seconds delay
+      
+    } catch (error) {
+      console.error('Error:', error);
+      
+      // Provide more helpful error message
+      let errorMessage = 'Sorry, there was an error generating your image. Please try again later.';
+      
+      if (error.message.includes('timeout')) {
+        errorMessage = 'Sorry, image generation timed out. Please try a simpler prompt or try again later.';
+      }
+      
+      await loadingMessage.edit(errorMessage);
+    }
+    
     return;
   }
 });
