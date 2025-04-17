@@ -337,13 +337,9 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
   try {
     console.log(`Generating image with prompt: ${prompt} and ${avatarUrls.length} avatars`);
     
-    // Prepare data to send to Hugging Face API
-    const payload = {
-      inputs: {
-        prompt: prompt,
-        avatarUrls: avatarUrls
-      }
-    };
+    // Build a single prompt string that includes the avatar URLs
+    const fullPrompt = `${prompt}. Please incorporate these user avatars into the scene: ${avatarUrls.join(', ')}`;
+    const payload = { inputs: fullPrompt };
 
     const response = await axios.post(
       'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-3.5-large',
