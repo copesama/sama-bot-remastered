@@ -11,8 +11,6 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
-const YouTube = require('youtube-sr');
-const ytdl = require('ytdl-core');
 
 // Initialize Discord client
 const client = new Client({
@@ -821,65 +819,6 @@ client.on('messageCreate', async (message) => {
     // Send the embed
     await message.reply({ embeds: [multiplayerEmbed] });
     return;
-  }
-
-  // !outofcontext command: stream 5 random vids (5s each) from a channel URL
-  if (message.content.startsWith('!outofcontext ')) {
-    const url = message.content.split(' ')[1];
-    const voiceChannel = message.member?.voice?.channel;
-    if (!voiceChannel) {
-      return message.reply('You need to join a voice channel first!');
-    }
-    let channelId;
-    try {
-      const parsed = new URL(url);
-      channelId = parsed.pathname.split('/').pop();
-    } catch {
-      return message.reply('Invalid YouTube channel URL.');
-    }
-    // fetch videos
-    let vids;
-    try {
-      // lookup channel entity directly from URL
-      const channelEntity = await YouTube.getChannel(url);
-      if (!channelEntity) throw new Error('Channel not found');
-      vids = await channelEntity.videos({ limit: 50 });
-      if (!vids.length) throw new Error('No videos found');
-    } catch (err) {
-      console.error('youtube-sr error fetching videos:', err);
-      return message.reply('Could not fetch videos from that channel.');
-    }
-    // choose 5 random
-    const pick = [];
-    while (pick.length < 5 && vids.length) {
-      const i = Math.floor(Math.random() * vids.length);
-      pick.push(vids.splice(i,1)[0]);
-    }
-    // connect
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator
-    });
-    const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
-    connection.subscribe(player);
-    // sequentially play 5s clips
-    for (const vid of pick) {
-      const stream = ytdl(vid.url, { filter: 'audioonly' });
-      const resource = createAudioResource(stream);
-      player.play(resource);
-      await new Promise(res => {
-        const timeout = setTimeout(() => res(), 5000);
-        player.once(AudioPlayerStatus.Idle, () => {
-          clearTimeout(timeout);
-          res();
-        });
-      });
-    }
-    // cleanup
-    player.stop();
-    connection.destroy();
-    return message.reply('✅ Played 5 out‑of‑context clips!');
   }
 });
 
