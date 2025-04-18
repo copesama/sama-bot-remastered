@@ -942,23 +942,26 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
   try {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
-    // Prepare the prompt for image description
-    const promptForDescription = `Generate a portrait-style image description for a scene featuring ${characterNames.join(', ')}:
-
-${chunk}
-
-The image should focus on one clear scene where characters' faces are clearly visible and positioned prominently, as if posing for a portrait. Include details about character positioning, lighting, mood, and setting. Keep it between 10-30 words and do not use character names directly.`;
+    // Create a shorter chunk if the original is too long (BART has input limits)
+    const truncatedChunk = chunk.length > 1000 ? chunk.substring(0, 1000) + "..." : chunk;
+    
+    // Prepare a more direct prompt for BART - it needs clearer instructions than generative models
+    const promptForDescription = `Summarize this story chunk into an image description for a portrait scene with ${characterNames.length} characters:
+${truncatedChunk}
+Make the description focus on a clear portrait-style scene where characters are facing the viewer with visible faces.`;
     
     // Use Hugging Face API with facebook/bart-large-cnn model for summarization
     const payload = {
       inputs: promptForDescription,
       parameters: {
-        max_length: 50,  // Keep descriptions concise
-        min_length: 10,  // Ensure we get at least a short phrase
-        do_sample: false // Use greedy decoding for more predictable outputs
+        max_length: 50,  
+        min_length: 10,
+        do_sample: true, // Enable sampling for more varied outputs
+        temperature: 0.7  // Add some randomness but keep coherent
       }
     };
 
+    console.log("Sending request to Hugging Face API for description");
     const response = await axios.post(
       'https://api-inference.huggingface.co/models/facebook/bart-large-cnn',
       payload,
@@ -966,50 +969,71 @@ The image should focus on one clear scene where characters' faces are clearly vi
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 60000 // 60 second timeout
       }
     );
 
-    // Extract the description from the response
+    console.log("Received response from Hugging Face API:", JSON.stringify(response.data).substring(0, 200));
+    
+    // Extract the description from the response based on different possible response formats
     let description;
     if (response.data && response.data.generated_text) {
       description = response.data.generated_text.trim();
-    } else if (Array.isArray(response.data) && response.data.length > 0) {
+    } else if (Array.isArray(response.data) && response.data.length > 0 && response.data[0].generated_text) {
       description = response.data[0].generated_text.trim();
+    } else if (typeof response.data === 'string') {
+      description = response.data.trim();
     } else {
+      console.error("Unexpected response format from Hugging Face API:", JSON.stringify(response.data).substring(0, 200));
       throw new Error('Unexpected response format from Hugging Face API');
     }
     
-    // Post-process the description to ensure it's properly formatted for image generation
+    // Process the description to make it more suitable for image generation
     description = description
-      .replace(/^["']|["']$/g, '') // Remove quotes if present
-      .replace(/^(generates?|creates?|shows?|displays?|depicts?)\s+an?\s+image\s+of\s+/i, '') // Remove common prefixes
+      .replace(/^["']|["']$/g, '') // Remove quotes
+      .replace(/^(A|An|The)\s+(image|photo|portrait|picture)\s+of\s+/i, '') // Remove common prefixes
+      .replace(/^(In this image|This image shows|The image depicts|We see)/i, '')
       .replace(/\s*\.\s*$/, ''); // Remove trailing period
     
-    console.log(`Generated image description: ${description}`);
+    console.log(`Generated raw image description: ${description}`);
     
-    // If the description is too long, truncate it but try to keep complete sentences
-    if (description.length > 30) {
-      const sentences = description.match(/[^.!?]+[.!?]+/g) || [description];
-      description = '';
-      for (const sentence of sentences) {
-        if ((description + sentence).length <= 30) {
-          description += sentence;
-        } else {
-          break;
-        }
-      }
-      // If we still don't have a description (possibly because the first sentence was too long)
-      if (!description) {
-        description = sentences[0].substring(0, 30);
-      }
+    // If the description is too generic or doesn't focus on portrait aspects, enhance it
+    if (!description.toLowerCase().includes('portrait') && 
+        !description.toLowerCase().includes('face') && 
+        !description.toLowerCase().includes('facial')) {
+      
+      description += `, in a portrait-style composition with faces clearly visible`;
     }
     
+    // Keep description to a reasonable length (10-50 words)
+    const words = description.split(/\s+/);
+    if (words.length > 50) {
+      description = words.slice(0, 50).join(' ');
+    } else if (words.length < 10) {
+      // If description is too short, add some portrait details
+      description += ` - portrait-style with clear facial detail`;
+    }
+    
+    console.log(`Final processed image description: ${description}`);
     return description;
+    
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
-    // Return a fallback description based on character names if extraction fails
-    return `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`;
+    
+    // Provide a more varied fallback description
+    const fallbackDescriptions = [
+      `A portrait composition showing ${characterNames.length} figures with clearly visible faces`,
+      `Close-up portrait scene featuring ${characterNames.join(' and ')} looking directly at viewer`,
+      `Dramatic portrait with ${characterNames.length} characters facing forward with detailed facial expressions`,
+      `Intimate portrait scene with ${characterNames.join(' and ')} positioned at eye level`,
+      `Carefully framed portrait showing ${characterNames.length} figures with faces prominently displayed`
+    ];
+    
+    // Choose a random fallback description
+    const fallback = fallbackDescriptions[Math.floor(Math.random() * fallbackDescriptions.length)];
+    console.log(`Using varied fallback description: ${fallback}`);
+    return fallback;
   }
 }
 
