@@ -961,7 +961,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
             - Include details about character positioning and their relative placement to each other
             - Capture the setting, atmosphere, and mood
             - Be specific about visual elements (colors, lighting, positioning)
-            - Keep the description between 30-70 words
+            - Keep the description between 10-30 words
             - Do NOT include character names directly - describe them visually instead
             - Respond ONLY with the description - no explanations or other text`
           },
@@ -1063,6 +1063,9 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
     
     console.log(`Split story into ${storyChunks.length} chunks for processing`);
     
+    // Track which chunks failed so we can retry or send them without images
+    const failedChunks = [];
+    
     // Process each chunk: extract description, generate image, send with text
     for (let i = 0; i < storyChunks.length; i++) {
       const chunk = storyChunks[i];
@@ -1111,6 +1114,9 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
       } catch (error) {
         console.error(`Error processing chunk ${chunkNumber}:`, error);
         
+        // Add to failed chunks list
+        failedChunks.push({ index: i, chunkNumber, chunk });
+        
         // If image generation fails, send just the text
         await message.channel.send({
           content: `**Part ${chunkNumber} of ${storyChunks.length}:**\n\n${chunk}\n\n*(Image generation failed for this part)*`
@@ -1121,12 +1127,50 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
+    // Ensure that all chunks were sent - if any failed image generation, we've already sent text versions
+    
+    // Final verification - send ending message with story summary
+    const summaryEmbed = new EmbedBuilder()
+      .setColor('#9966cc')
+      .setTitle('📚 Story Complete!')
+      .setDescription(`Your story "${storyPrompt}" featuring ${characterUsers.map(user => user.username).join(', ')} is now complete.`)
+      .addFields(
+        { name: 'Story Stats', value: `${storyChunks.length} parts\n${story.length} characters`, inline: true },
+        { name: 'Image Generation', value: `${storyChunks.length - failedChunks.length}/${storyChunks.length} successful`, inline: true }
+      )
+      .setFooter({ text: 'Generated using AI • Story with images created just for you' })
+      .setTimestamp();
+    
+    await message.channel.send({ 
+      content: `${message.author} Story generation complete!`,
+      embeds: [summaryEmbed]
+    });
+    
     // Final update to loading message
     await loadingMessage.edit('✅ Story with images generated successfully!');
     
   } catch (error) {
     console.error('Error in generateAndSendStoryWithImages:', error);
-    await loadingMessage.edit('Sorry, there was an error generating your story with images. Please try again later.');
+    
+    // If the main process fails, try to send the full story without images as a fallback
+    try {
+      const characterNames = characterUsers.map(user => user.username);
+      const story = await generateStory(storyPrompt, characterNames);
+      
+      // Split the story into manageable chunks for Discord
+      const MAX_MESSAGE_LENGTH = 1900;
+      for (let i = 0; i < story.length; i += MAX_MESSAGE_LENGTH) {
+        const chunk = story.substring(i, i + MAX_MESSAGE_LENGTH);
+        await message.channel.send(chunk);
+      }
+      
+      await message.channel.send(`${message.author} I was unable to generate images for your story, but I've sent the complete text version. Enjoy!`);
+      await loadingMessage.edit('⚠️ Story generated with text only (image generation failed).');
+      
+    } catch (fallbackError) {
+      console.error('Error in fallback story delivery:', fallbackError);
+      await loadingMessage.edit('Sorry, there was an error generating your story with images. Please try again later.');
+    }
   }
 }
 
