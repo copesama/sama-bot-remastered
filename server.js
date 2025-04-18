@@ -942,74 +942,70 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
   try {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
-    // Create a shorter chunk if the original is too long
-    const truncatedChunk = chunk.length > 1000 ? chunk.substring(0, 1000) + "..." : chunk;
-    
-    // Create a prompt for Mistral model
-    const promptForDescription = `<s>[INST] Given a section of a story featuring characters (${characterNames.join(', ')}), create a vivid scene description for an image:
+    // Create the prompt for Llama 3.2
+    const systemPrompt = `You are an expert at extracting vivid scene descriptions from text. Given a chunk of a story, 
+    create a concise, detailed visual description that captures the most significant scene or moment from the text. 
+    This description will be used to generate an accompanying image with character faces replaced by profile pictures.
 
-Story excerpt:
-${truncatedChunk}
+    REQUIREMENTS:
+    - Focus on describing ONE clear, vivid scene from the text
+    - Frame the scene like a portrait where characters' faces are clearly visible
+    - Position characters' heads/faces prominently in the scene, ideally facing forward
+    - Specify that characters should have clearly visible faces/heads (these will be replaced with avatars)
+    - Include details about character positioning and their relative placement to each other
+    - Capture the setting, atmosphere, and mood
+    - Be specific about visual elements (colors, lighting, positioning)
+    - Keep the description between 10-30 words
+    - Do NOT include character names directly - describe them visually instead
+    - Respond ONLY with the description - no explanations or other text`;
 
-Your task is to:
-- Create a concise, detailed visual description of the most significant scene from this text
-- Focus on ONE clear scene where characters' faces are prominently visible
-- Frame the scene like a portrait where characters' faces are clearly visible
-- Position characters' heads/faces prominently, ideally facing forward
-- Include details about character positioning and their relative placement
-- Capture the setting, atmosphere, and mood
-- Keep the description between 10-30 words
-- Do NOT include character names directly - describe them visually instead
-- Respond ONLY with the description - no explanations or other text [/INST]</s>`;
-    
-    // Using Hugging Face API with Mistral-Small-3.1-24B-Instruct-2503 model
-    const payload = {
-      inputs: promptForDescription,
+    const userPrompt = `Here's a chunk of a story featuring characters: ${characterNames.join(', ')}
+
+${chunk}
+
+Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads.`;
+
+    // Format the prompt for Llama 3.2 Instruct format
+    const fullPrompt = `<|system|>
+${systemPrompt}
+<|user|>
+${userPrompt}
+<|assistant|>`;
+
+    // Use Hugging Face API for inference
+    const payload = { 
+      inputs: fullPrompt,
       parameters: {
         max_new_tokens: 100,
         temperature: 0.7,
-        top_p: 0.9,
-        return_full_text: false
+        top_p: 0.95
       }
     };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/mistralai/Mistral-Small-3.1-24B-Instruct-2503',
+      'https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct',
       payload,
       {
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
           'Content-Type': 'application/json'
-        },
-        timeout: 30000 // 30 second timeout
+        }
       }
     );
 
     // Extract the description from the response
     let description = '';
-    if (response.data && response.data.generated_text) {
-      description = response.data.generated_text.trim();
-    } else if (Array.isArray(response.data) && response.data.length > 0) {
-      description = response.data[0].generated_text.trim();
+    if (response.data && response.data[0] && response.data[0].generated_text) {
+      // Extract just the assistant's response part
+      const fullText = response.data[0].generated_text;
+      const assistantResponse = fullText.split('<|assistant|>')[1] || fullText;
+      
+      // Clean up any remaining tags and get just the description
+      description = assistantResponse
+        .replace(/<\|.*?\|>/g, '')  // Remove any leftover tags
+        .trim();
     } else {
-      console.error("Unexpected response format from Hugging Face API:", JSON.stringify(response.data).substring(0, 200));
-      throw new Error('Unexpected response format from Hugging Face API');
-    }
-    
-    // Clean up the description - strip any response decorators Mistral might add
-    description = description
-      .replace(/^["']|["']$/g, '') // Remove quotes
-      .replace(/^(\s*Description:\s*)/i, '') // Remove "Description:" prefix
-      .replace(/^(A|An|The)\s+(image|photo|portrait|picture)\s+of\s+/i, '') // Remove common prefixes
-      .replace(/\s*\.\s*$/, '') // Remove trailing period
-      .replace(/^\<.*?\>|\<\/.*?\>$/g, '') // Remove any HTML-like tags
-      .replace(/^Here's the description:?\s*/i, '') // Remove prefatory statements
-      .trim();
-    
-    // Ensure the description is within the desired word count
-    const words = description.split(/\s+/);
-    if (words.length > 30) {
-      description = words.slice(0, 30).join(' ');
+      description = `Portrait scene featuring ${characterNames.join(' and ')} with clearly visible faces`;
     }
     
     console.log(`Generated image description: ${description}`);
@@ -1018,103 +1014,20 @@ Your task is to:
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
     
-    // If there's an error with the model size, try with a fallback model
+    // If we get a specific error about the model still loading, we can wait and retry
     if (error.response && error.response.data && error.response.data.error && 
-        error.response.data.error.includes('model') && error.response.data.error.includes('too large')) {
-      console.log('Model too large, trying with fallback model...');
-      try {
-        return await extractDescriptionWithFallbackModel(chunk, characterNames);
-      } catch (fallbackError) {
-        console.error('Error with fallback model:', fallbackError);
-      }
+        error.response.data.error.includes('Model is loading')) {
+      console.log('Model is still loading, waiting 5 seconds and retrying...');
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+      return extractDescriptionFromStoryChunk(chunk, characterNames); // Retry
     }
     
     // Return a fallback description based on character names if extraction fails
-    const fallbackDescriptions = [
-      `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`,
-      `Close-up portrait view of ${characterNames.length} figures with detailed facial expressions in dramatic lighting`,
-      `Group portrait showing ${characterNames.length} people facing forward, artistically framed with atmospheric background`,
-      `Intimate portrait composition with ${characterNames.length} characters with prominent faces in natural setting`
-    ];
-    
-    // Select a random fallback description
-    const fallback = fallbackDescriptions[Math.floor(Math.random() * fallbackDescriptions.length)];
-    console.log(`Using fallback description: ${fallback}`);
-    return fallback;
+    return `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`;
   }
 }
 
-// Fallback function if the main model is too large
-async function extractDescriptionWithFallbackModel(chunk, characterNames) {
-  console.log('Using fallback model for description extraction');
-  
-  // Craft a prompt for a smaller model
-  const truncatedChunk = chunk.length > 800 ? chunk.substring(0, 800) + "..." : chunk;
-  const promptForDescription = `<s>[INST] Create a concise visual description for an image based on this story excerpt featuring ${characterNames.join(', ')}:
-
-${truncatedChunk}
-
-Make the description:
-- Focus on a single portrait-style scene
-- Emphasize character faces and positioning
-- 10-30 words in length
-- Without using character names directly
-- Only provide the description, nothing else [/INST]</s>`;
-  
-  // Use a smaller Mistral model instead
-  const payload = {
-    inputs: promptForDescription,
-    parameters: {
-      max_new_tokens: 100,
-      temperature: 0.7,
-      top_p: 0.9,
-      return_full_text: false
-    }
-  };
-
-  const response = await axios.post(
-    'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2',
-    payload,
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
-    }
-  );
-
-  // Process the response
-  let description = '';
-  if (response.data && response.data.generated_text) {
-    description = response.data.generated_text.trim();
-  } else if (Array.isArray(response.data) && response.data.length > 0) {
-    description = response.data[0].generated_text.trim();
-  } else {
-    throw new Error('Unexpected response format from fallback model');
-  }
-  
-  // Clean up the description
-  description = description
-    .replace(/^["']|["']$/g, '')
-    .replace(/^(\s*Description:\s*)/i, '')
-    .replace(/^(A|An|The)\s+(image|photo|portrait|picture)\s+of\s+/i, '')
-    .replace(/\s*\.\s*$/, '')
-    .replace(/^\<.*?\>|\<\/.*?\>$/g, '')
-    .replace(/^Here's the description:?\s*/i, '')
-    .trim();
-  
-  // Ensure the description is within the desired word count
-  const words = description.split(/\s+/);
-  if (words.length > 30) {
-    description = words.slice(0, 30).join(' ');
-  }
-  
-  console.log(`Generated image description with fallback model: ${description}`);
-  return description;
-}
-
-// Function to generate and send story with images
+// New function to generate and send story with images
 async function generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage) {
   try {
     // Get character names from the mentioned users
