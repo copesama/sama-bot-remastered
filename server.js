@@ -647,7 +647,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         try {
           // Apply a slight scaling factor to ensure avatar completely covers the white circle
           // This helps avoid any gaps between the avatar and the original white circle
-          const scalingFactor = 1.2; // 5% larger than the detected circle
+          const scalingFactor = 1.4; // 5% larger than the detected circle
           const exactDiameter = Math.floor(radius * 2);
           const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
           
