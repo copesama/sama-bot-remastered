@@ -942,48 +942,31 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
   try {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
-    // Create the prompt for Llama 3.2
-    const systemPrompt = `You are an expert at extracting vivid scene descriptions from text. Given a chunk of a story, 
-    create a concise, detailed visual description that captures the most significant scene or moment from the text. 
-    This description will be used to generate an accompanying image with character faces replaced by profile pictures.
+    // Create the prompt for GPT-2
+    // Since GPT-2 has different characteristics from more advanced models,
+    // we'll create a more direct and specific prompt to guide it
+    const prompt = `Generate an image description for this scene:
+Characters: ${characterNames.join(', ')}
 
-    REQUIREMENTS:
-    - Focus on describing ONE clear, vivid scene from the text
-    - Frame the scene like a portrait where characters' faces are clearly visible
-    - Position characters' heads/faces prominently in the scene, ideally facing forward
-    - Specify that characters should have clearly visible faces/heads (these will be replaced with avatars)
-    - Include details about character positioning and their relative placement to each other
-    - Capture the setting, atmosphere, and mood
-    - Be specific about visual elements (colors, lighting, positioning)
-    - Keep the description between 10-30 words
-    - Do NOT include character names directly - describe them visually instead
-    - Respond ONLY with the description - no explanations or other text`;
+Scene from story:
+${chunk.substring(0, 500)}
 
-    const userPrompt = `Here's a chunk of a story featuring characters: ${characterNames.join(', ')}
+Image description with faces clearly visible, portrait-style framing, characters facing forward:`;
 
-${chunk}
-
-Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads.`;
-
-    // Format the prompt for Llama 3.2 Instruct format
-    const fullPrompt = `<|system|>
-${systemPrompt}
-<|user|>
-${userPrompt}
-<|assistant|>`;
-
-    // Use Hugging Face API for inference
+    // Use Hugging Face API for inference with GPT-2
     const payload = { 
-      inputs: fullPrompt,
+      inputs: prompt,
       parameters: {
-        max_new_tokens: 100,
+        max_new_tokens: 50,
         temperature: 0.7,
-        top_p: 0.95
+        top_p: 0.95,
+        do_sample: true,
+        return_full_text: false
       }
     };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct',
+      'https://api-inference.huggingface.co/models/openai-community/gpt2',
       payload,
       {
         headers: {
@@ -996,19 +979,31 @@ ${userPrompt}
     // Extract the description from the response
     let description = '';
     if (response.data && response.data[0] && response.data[0].generated_text) {
-      // Extract just the assistant's response part
-      const fullText = response.data[0].generated_text;
-      const assistantResponse = fullText.split('<|assistant|>')[1] || fullText;
+      // Get the generated description
+      description = response.data[0].generated_text.trim();
       
-      // Clean up any remaining tags and get just the description
-      description = assistantResponse
-        .replace(/<\|.*?\|>/g, '')  // Remove any leftover tags
-        .trim();
+      // Limit the description to 30 words max as specified in requirements
+      const words = description.split(/\s+/);
+      if (words.length > 30) {
+        description = words.slice(0, 30).join(' ');
+      }
+      
+      // Make sure it ends with proper punctuation
+      if (!description.match(/[.!?]$/)) {
+        description += '.';
+      }
     } else {
-      description = `Portrait scene featuring ${characterNames.join(' and ')} with clearly visible faces`;
+      description = `Portrait scene featuring ${characterNames.join(' and ')} with clearly visible faces, forward-facing`;
     }
     
     console.log(`Generated image description: ${description}`);
+    
+    // Post-process to ensure it fits our requirements
+    // If the description is too short or lacks specific details, enhance it
+    if (description.split(' ').length < 10 || 
+        !description.toLowerCase().includes('face') && !description.toLowerCase().includes('head')) {
+      description += ` Characters positioned with clearly visible faces, portrait-style framing.`;
+    }
     
     return description;
   } catch (error) {
