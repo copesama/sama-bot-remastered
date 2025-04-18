@@ -643,58 +643,76 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         }
         
-        // Use the exact size of the detected circle to make sure avatars fit perfectly
-        const exactDiameter = Math.floor(radius * 2);
-        
-        // Resize the avatar to fit the circle precisely - Using exact dimensions
-        avatarImage.resize({ w: exactDiameter, h: exactDiameter });
-        
-        // Create a circular mask with the exact same dimensions as the circle
-        const mask = new Jimp({ width: exactDiameter, height: exactDiameter, color: 0x00000000 });
-        
-        // Create a circular mask with precise boundary matching
-        for (let y = 0; y < exactDiameter; y++) {
-          for (let x = 0; x < exactDiameter; x++) {
-            // Calculate distance from center using the exact radius
-            const centerPoint = exactDiameter / 2;
-            const distanceFromCenter = Math.sqrt(Math.pow(x - centerPoint, 2) + Math.pow(y - centerPoint, 2));
-            
-            // Only set pixels within the circle boundary, using a slightly softer edge
-            // for better blending with the background image
-            if (distanceFromCenter <= centerPoint && 
-                x >= 0 && x < exactDiameter && 
-                y >= 0 && y < exactDiameter) {
-              mask.setPixelColor(0xFFFFFFFF, x, y);
+        // Improved approach for fitting avatars to white circles
+        try {
+          // Apply a slight scaling factor to ensure avatar completely covers the white circle
+          // This helps avoid any gaps between the avatar and the original white circle
+          const scalingFactor = 1.05; // 5% larger than the detected circle
+          const exactDiameter = Math.floor(radius * 2);
+          const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
+          
+          // Resize the avatar with the scaled size to ensure full coverage
+          avatarImage.resize({ w: scaledDiameter, h: scaledDiameter });
+          
+          // Create a circular mask matching the exact circle size
+          const mask = new Jimp({ width: scaledDiameter, height: scaledDiameter, color: 0x00000000 });
+          
+          // Create a circular mask with precise edges
+          const maskCenter = scaledDiameter / 2;
+          const maskRadius = maskCenter;
+          
+          for (let y = 0; y < scaledDiameter; y++) {
+            for (let x = 0; x < scaledDiameter; x++) {
+              const distanceFromCenter = Math.sqrt(Math.pow(x - maskCenter, 2) + Math.pow(y - maskCenter, 2));
+              if (distanceFromCenter <= maskRadius) {
+                // Set pixel to solid white if inside the circle
+                mask.setPixelColor(0xFFFFFFFF, x, y);
+              }
             }
           }
-        }
-        
-        // Apply the circular mask to the avatar
-        avatarImage.mask(mask, 0, 0);
-        
-        // Calculate position to place the avatar (centered on the white circle)
-        // Use a more precise calculation to ensure exact centering
-        const avatarX = Math.round(centerX - exactDiameter / 2);
-        const avatarY = Math.round(centerY - exactDiameter / 2);
-        
-        // Add boundary checks before compositing to avoid out-of-bounds errors
-        if (avatarX >= 0 && avatarY >= 0 && 
-            avatarX + exactDiameter <= baseImage.width && 
-            avatarY + exactDiameter <= baseImage.height) {
           
-          // Composite the avatar onto the base image
-          baseImage.composite(avatarImage, avatarX, avatarY, {
-            mode: Jimp.BLEND_SOURCE_OVER,
-            opacitySource: 1,
-            opacityDest: 1
-          });
+          // Apply the circular mask to the avatar
+          avatarImage.mask(mask, 0, 0);
           
-          console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with radius ${radius}`);
-        } else {
-          console.error(`Avatar ${i+1} placement out of bounds. Skipping.`);
+          // Calculate the position so the masked avatar perfectly covers the white circle
+          // We need to account for the scaling factor when positioning
+          const offsetAdjustment = (scaledDiameter - exactDiameter) / 2;
+          const avatarX = Math.round(centerX - (scaledDiameter / 2));
+          const avatarY = Math.round(centerY - (scaledDiameter / 2));
+          
+          // Add boundary checks before compositing
+          if (avatarX >= -offsetAdjustment && avatarY >= -offsetAdjustment && 
+              avatarX + scaledDiameter <= baseImage.width + offsetAdjustment && 
+              avatarY + scaledDiameter <= baseImage.height + offsetAdjustment) {
+            
+            // Composite the avatar onto the base image
+            baseImage.composite(avatarImage, avatarX, avatarY, {
+              mode: Jimp.BLEND_SOURCE_OVER,
+              opacitySource: 1,
+              opacityDest: 1
+            });
+            
+            console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with adjusted diameter ${scaledDiameter}`);
+          } else {
+            console.warn(`Avatar ${i+1} placement partially out of bounds. Using fallback positioning.`);
+            
+            // Fallback: place avatar at a valid position near the center of the image
+            const safeX = Math.max(0, Math.min(avatarX, baseImage.width - scaledDiameter));
+            const safeY = Math.max(0, Math.min(avatarY, baseImage.height - scaledDiameter));
+            
+            baseImage.composite(avatarImage, safeX, safeY, {
+              mode: Jimp.BLEND_SOURCE_OVER,
+              opacitySource: 1,
+              opacityDest: 1
+            });
+            
+            console.log(`Placed avatar ${i+1} at safe position (${safeX},${safeY})`);
+          }
+        } catch (error) {
+          console.error(`Error processing avatar ${i+1}:`, error);
         }
-      } catch (error) {
-        console.error(`Error processing avatar ${i+1}:`, error);
+      } catch (outerError) {
+        console.error(`Error in avatar preparation for avatar ${i+1}:`, outerError);
       }
     }
     
