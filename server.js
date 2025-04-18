@@ -345,7 +345,7 @@ async function generateBaseImage(prompt, numAvatars) {
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
     IMPORTANT REQUIREMENTS FOR THE CIRCLES:
-    - Each white circle must be at between ${circleSizeMinPercent}% and ${circleSizeMaxPercent}% of the image size
+    - Each white circle must be at least ${circleSizeMaxPercent}% of the image size
     - Circles must be very clearly visible with clean, defined edges
     - Position circles where heads would normally be in the scene
     - Make sure circles are perfectly round, not oval or irregular
@@ -961,7 +961,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
             - Include details about character positioning and their relative placement to each other
             - Capture the setting, atmosphere, and mood
             - Be specific about visual elements (colors, lighting, positioning)
-            - Keep the description between 10-30 words
+            - Keep the description between 10-20 words
             - Do NOT include character names directly - describe them visually instead
             - Respond ONLY with the description - no explanations or other text`
           },
