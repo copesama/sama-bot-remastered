@@ -973,7 +973,7 @@ Image description:`;
     };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/deepseek-ai/DeepSeek-R1',  // Default model, but will be customized based on user input
+      'https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta',  // Default model, but will be customized based on user input
       payload,
       {
         headers: {
