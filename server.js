@@ -336,7 +336,7 @@ function extractHtmlFromResponse(response) {
 async function generateBaseImage(prompt, numAvatars) {
   try {
     // Calculate a reasonable percentage for the image generation prompt
-    const circleSizePercent = 20; // We use 10% as minimum detection threshold, so request 20% for safety
+    const circleSizePercent = 15; // We use 10% as minimum detection threshold, so request 20% for safety
     
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
@@ -394,11 +394,11 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
   try {
     console.log(`Step 2: Placing ${avatarUrls.length} avatars into white circles`);
     
-    // Load the base image
-    const Jimp = require('jimp');
+    // Load the base image - Updated Jimp import and read method
+    const { Jimp, intToRGBA } = require('jimp');
     const baseImage = await Jimp.read(baseImagePath);
-    const baseWidth = baseImage.getWidth();
-    const baseHeight = baseImage.getHeight();
+    const baseWidth = baseImage.width;
+    const baseHeight = baseImage.height;
     
     // Function to detect white circles in the image
     const findWhiteCircles = async (image) => {
@@ -411,9 +411,9 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
       console.log(`Using minimum circle radius threshold: ${circleMinRadius} pixels`);
       
       // Scan the image to find white areas that might be circles
-      for (let y = 0; y < image.getHeight(); y += 10) { // Sample every 10 pixels for performance
-        for (let x = 0; x < image.getWidth(); x += 10) {
-          const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(x, y));
+      for (let y = 0; y < image.height; y += 10) { // Sample every 10 pixels for performance
+        for (let x = 0; x < image.width; x += 10) {
+          const { r, g, b } = intToRGBA(image.getPixelColor(x, y));
           
           // If we find a white pixel
           if (r > threshold && g > threshold && b > threshold) {
@@ -422,15 +422,15 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             
             // Find horizontal edges (approximate)
             for (let testX = x; testX >= 0; testX -= 5) {
-              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(testX, y));
+              const { r, g, b } = intToRGBA(image.getPixelColor(testX, y));
               if (r < threshold || g < threshold || b < threshold) {
                 leftEdge = testX + 5;
                 break;
               }
             }
             
-            for (let testX = x; testX < image.getWidth(); testX += 5) {
-              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(testX, y));
+            for (let testX = x; testX < image.width; testX += 5) {
+              const { r, g, b } = intToRGBA(image.getPixelColor(testX, y));
               if (r < threshold || g < threshold || b < threshold) {
                 rightEdge = testX - 5;
                 break;
@@ -439,15 +439,15 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             
             // Find vertical edges (approximate)
             for (let testY = y; testY >= 0; testY -= 5) {
-              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(x, testY));
+              const { r, g, b } = intToRGBA(image.getPixelColor(x, testY));
               if (r < threshold || g < threshold || b < threshold) {
                 topEdge = testY + 5;
                 break;
               }
             }
             
-            for (let testY = y; testY < image.getHeight(); testY += 5) {
-              const { r, g, b } = Jimp.intToRGBA(image.getPixelColor(x, testY));
+            for (let testY = y; testY < image.height; testY += 5) {
+              const { r, g, b } = intToRGBA(image.getPixelColor(x, testY));
               if (r < threshold || g < threshold || b < threshold) {
                 bottomEdge = testY - 5;
                 break;
@@ -483,7 +483,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
                   circles.push({ centerX, centerY, radius });
                   console.log(`Found potential circle at (${Math.round(centerX)},${Math.round(centerY)}) with radius ${Math.round(radius)} and roundness ${roundnessRatio.toFixed(2)}`);
                   // Skip ahead to avoid finding the same circle again
-                  x = Math.min(rightEdge + radius, image.getWidth() - 1);
+                  x = Math.min(rightEdge + radius, image.width - 1);
                 }
               }
             }
@@ -582,8 +582,12 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           // If we still get webp despite requesting png, we need to convert it
           if (contentType && contentType.includes('webp')) {
             console.log(`Avatar ${i+1} is in WebP format, using fallback circle`);
-            // Create a colored circle instead as a fallback
-            avatarImage = new Jimp(radius * 2, radius * 2, Jimp.cssColorToHex(`hsl(${i * 30 % 360}, 70%, 60%)`));
+            // Create a colored circle instead as a fallback - Updated constructor
+            avatarImage = new Jimp({ 
+              width: radius * 2, 
+              height: radius * 2, 
+              color: `hsl(${i * 30 % 360}, 70%, 60%)` 
+            });
             // Add a simple text label in the center of the circle (first letter of the URL)
             const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
             // Use some identifier from the URL or a simple number
@@ -608,9 +612,13 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         } catch (avatarError) {
           console.error(`Error downloading/processing avatar ${i+1}:`, avatarError);
-          // Create a fallback colored circle with a number
+          // Create a fallback colored circle with a number - Updated constructor
           console.log(`Using fallback circle for avatar ${i+1}`);
-          avatarImage = new Jimp(radius * 2, radius * 2, Jimp.cssColorToHex(`hsl(${i * 30 % 360}, 70%, 60%)`));
+          avatarImage = new Jimp({ 
+            width: radius * 2, 
+            height: radius * 2, 
+            color: `hsl(${i * 30 % 360}, 70%, 60%)` 
+          });
           
           // Add a number in the center of the circle
           try {
@@ -635,11 +643,11 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         }
         
-        // Resize the avatar to fit the circle
-        avatarImage.resize(radius * 2, radius * 2);
+        // Resize the avatar to fit the circle - Updated resize method
+        avatarImage.resize({ width: radius * 2, height: radius * 2 });
         
-        // Create a circular mask for the avatar
-        const mask = new Jimp(radius * 2, radius * 2, 0x00000000);
+        // Create a circular mask for the avatar - Updated constructor
+        const mask = new Jimp({ width: radius * 2, height: radius * 2, color: 0x00000000 });
         for (let y = 0; y < radius * 2; y++) {
           for (let x = 0; x < radius * 2; x++) {
             const distanceFromCenter = Math.sqrt(Math.pow(x - radius, 2) + Math.pow(y - radius, 2));
@@ -673,8 +681,8 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     const imageId = shortid.generate();
     const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
     
-    // Save the final composite image
-    await baseImage.writeAsync(imagePath);
+    // Save the final composite image - Updated write method
+    await baseImage.write(imagePath);
     console.log(`Final composite image saved to ${imagePath}`);
     
     return { imageId, imagePath };
