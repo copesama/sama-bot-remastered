@@ -336,12 +336,13 @@ function extractHtmlFromResponse(response) {
 async function generateBaseImage(prompt, numAvatars) {
   try {
     // Calculate a reasonable percentage for the image generation prompt
-    const circleSizePercent = 15; // We use 10% as minimum detection threshold, so request 20% for safety
+    const circleSizeMinPercent = 10;
+    const circleSizeMaxPercent = 15;
     
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
     IMPORTANT REQUIREMENTS FOR THE CIRCLES:
-    - Each white circle must be at least ${circleSizePercent}% of the image size
+    - Each white circle must be at between ${circleSizeMinPercent}% and ${circleSizeMaxPercent}% of the image size
     - Circles must be very clearly visible with clean, defined edges
     - Position circles where heads would normally be in the scene
     - Make sure circles are perfectly round, not oval or irregular
