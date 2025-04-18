@@ -335,8 +335,8 @@ function extractHtmlFromResponse(response) {
 // Function to generate image using Hugging Face API (step 1: text-to-image with white circles)
 async function generateBaseImage(prompt, numAvatars) {
   try {
-    // Calculate a reasonable percentage for the image generation prompt
-    const circleSizePercent = 15; // We use 10% as minimum detection threshold, so request 20% for safety
+    // Increase circle size percentage for better avatar coverage
+    const circleSizePercent = 15; // Increased from 15% to 20% for better visibility
     
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
@@ -400,10 +400,10 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     const baseWidth = baseImage.width;
     const baseHeight = baseImage.height;
     
-    // Function to detect white circles in the image
+    // Function to detect white circles in the image with improved accuracy
     const findWhiteCircles = async (image) => {
       const circles = [];
-      const threshold = 230; // RGB threshold for "white" pixels
+      const threshold = 220; // Slightly lower threshold to detect more of the white area
       
       // Increase the minimum circle size from 5% to 10% of image dimension for stricter filtering
       const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.1; // Minimum circle size (10% of image dimension)
@@ -411,8 +411,8 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
       console.log(`Using minimum circle radius threshold: ${circleMinRadius} pixels`);
       
       // Scan the image to find white areas that might be circles
-      for (let y = 0; y < image.height; y += 10) { // Sample every 10 pixels for performance
-        for (let x = 0; x < image.width; x += 10) {
+      for (let y = 0; y < image.height; y += 8) { // Sample more frequently for better accuracy
+        for (let x = 0; x < image.width; x += 8) {
           const { r, g, b } = intToRGBA(image.getPixelColor(x, y));
           
           // If we find a white pixel
@@ -420,48 +420,48 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             // Expand from this point to find the approximate circle
             let leftEdge = x, rightEdge = x, topEdge = y, bottomEdge = y;
             
-            // Find horizontal edges (approximate)
-            for (let testX = x; testX >= 0; testX -= 5) {
+            // Find horizontal edges (approximate) with finer step size
+            for (let testX = x; testX >= 0; testX -= 3) {
               const { r, g, b } = intToRGBA(image.getPixelColor(testX, y));
               if (r < threshold || g < threshold || b < threshold) {
-                leftEdge = testX + 5;
+                leftEdge = testX + 3;
                 break;
               }
             }
             
-            for (let testX = x; testX < image.width; testX += 5) {
+            for (let testX = x; testX < image.width; testX += 3) {
               const { r, g, b } = intToRGBA(image.getPixelColor(testX, y));
               if (r < threshold || g < threshold || b < threshold) {
-                rightEdge = testX - 5;
+                rightEdge = testX - 3;
                 break;
               }
             }
             
-            // Find vertical edges (approximate)
-            for (let testY = y; testY >= 0; testY -= 5) {
+            // Find vertical edges (approximate) with finer step size
+            for (let testY = y; testY >= 0; testY -= 3) {
               const { r, g, b } = intToRGBA(image.getPixelColor(x, testY));
               if (r < threshold || g < threshold || b < threshold) {
-                topEdge = testY + 5;
+                topEdge = testY + 3;
                 break;
               }
             }
             
-            for (let testY = y; testY < image.height; testY += 5) {
+            for (let testY = y; testY < image.height; testY += 3) {
               const { r, g, b } = intToRGBA(image.getPixelColor(x, testY));
               if (r < threshold || g < threshold || b < threshold) {
-                bottomEdge = testY - 5;
+                bottomEdge = testY - 3;
                 break;
               }
             }
             
-            // Calculate approximate circle dimensions
+            // Calculate more precise circle dimensions
             const centerX = (leftEdge + rightEdge) / 2;
             const centerY = (topEdge + bottomEdge) / 2;
             const radiusX = (rightEdge - leftEdge) / 2;
             const radiusY = (bottomEdge - topEdge) / 2;
             
-            // Average the radii for a more accurate circle
-            const radius = (radiusX + radiusY) / 2;
+            // Use the larger radius to ensure full coverage
+            const radius = Math.max(radiusX, radiusY);
             
             // Check if it's big enough to be a circle we want
             if (radius > circleMinRadius) {
@@ -469,18 +469,34 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
               // If the ratio is too far from 1.0, it's not a good circle
               const roundnessRatio = Math.min(radiusX, radiusY) / Math.max(radiusX, radiusY);
               
-              if (roundnessRatio > 0.7) { // Allow slight elliptical shapes but not too stretched
+              if (roundnessRatio > 0.65) { // Slightly more lenient to detect more circles
                 // Check if we already found a circle too close to this one
                 const isNewCircle = !circles.some(circle => {
                   const distance = Math.sqrt(
                     Math.pow(circle.centerX - centerX, 2) + 
                     Math.pow(circle.centerY - centerY, 2)
                   );
-                  return distance < (radius * 1.5); // Increased distance threshold to better avoid duplicates
+                  return distance < (radius * 1.5); // Distance threshold
                 });
                 
                 if (isNewCircle) {
-                  circles.push({ centerX, centerY, radius });
+                  // Store the white pixels for this circle for removal later
+                  const whitePixels = [];
+                  // Scan a square around the center to find all white pixels
+                  const scanRadius = Math.ceil(radius * 1.2); // Scan slightly larger area
+                  for (let sy = Math.max(0, centerY - scanRadius); sy < Math.min(image.height, centerY + scanRadius); sy++) {
+                    for (let sx = Math.max(0, centerX - scanRadius); sx < Math.min(image.width, centerX + scanRadius); sx++) {
+                      const { r, g, b } = intToRGBA(image.getPixelColor(sx, sy));
+                      if (r > threshold && g > threshold && b > threshold) {
+                        const distanceFromCenter = Math.sqrt(Math.pow(sx - centerX, 2) + Math.pow(sy - centerY, 2));
+                        if (distanceFromCenter <= radius * 1.1) { // Include slightly larger area
+                          whitePixels.push({ x: sx, y: sy });
+                        }
+                      }
+                    }
+                  }
+                  
+                  circles.push({ centerX, centerY, radius, whitePixels });
                   console.log(`Found potential circle at (${Math.round(centerX)},${Math.round(centerY)}) with radius ${Math.round(radius)} and roundness ${roundnessRatio.toFixed(2)}`);
                   // Skip ahead to avoid finding the same circle again
                   x = Math.min(rightEdge + radius, image.width - 1);
@@ -537,7 +553,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     
     // Download and place each avatar
     for (let i = 0; i < avatarUrls.length && i < circles.length; i++) {
-      const { centerX, centerY, radius } = circles[i];
+      const { centerX, centerY, radius, whitePixels } = circles[i];
       
       try {
         // Ensure we're requesting a PNG format from Discord instead of WebP
@@ -645,16 +661,15 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         
         // Improved approach for fitting avatars to white circles
         try {
-          // Apply a slight scaling factor to ensure avatar completely covers the white circle
-          // This helps avoid any gaps between the avatar and the original white circle
-          const scalingFactor = 1.05; // 5% larger than the detected circle
+          // Use a more aggressive scaling factor to ensure complete coverage
+          const scalingFactor = 1.15; // Increased from 1.05 to 1.15 (15% larger)
           const exactDiameter = Math.floor(radius * 2);
           const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
           
           // Resize the avatar with the scaled size to ensure full coverage
           avatarImage.resize({ w: scaledDiameter, h: scaledDiameter });
           
-          // Create a circular mask matching the exact circle size
+          // Create a circular mask matching the exact circle size but slightly larger
           const mask = new Jimp({ width: scaledDiameter, height: scaledDiameter, color: 0x00000000 });
           
           // Create a circular mask with precise edges
@@ -675,15 +690,14 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           avatarImage.mask(mask, 0, 0);
           
           // Calculate the position so the masked avatar perfectly covers the white circle
-          // We need to account for the scaling factor when positioning
-          const offsetAdjustment = (scaledDiameter - exactDiameter) / 2;
+          // Ensure perfect centering over the original white circle
           const avatarX = Math.round(centerX - (scaledDiameter / 2));
           const avatarY = Math.round(centerY - (scaledDiameter / 2));
           
           // Add boundary checks before compositing
-          if (avatarX >= -offsetAdjustment && avatarY >= -offsetAdjustment && 
-              avatarX + scaledDiameter <= baseImage.width + offsetAdjustment && 
-              avatarY + scaledDiameter <= baseImage.height + offsetAdjustment) {
+          if (avatarX >= -20 && avatarY >= -20 && 
+              avatarX + scaledDiameter <= baseImage.width + 20 && 
+              avatarY + scaledDiameter <= baseImage.height + 20) {
             
             // Composite the avatar onto the base image
             baseImage.composite(avatarImage, avatarX, avatarY, {
@@ -693,6 +707,48 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             });
             
             console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with adjusted diameter ${scaledDiameter}`);
+            
+            // Additional step: Paint over any remaining white pixels from the original circle
+            if (whitePixels && whitePixels.length > 0) {
+              console.log(`Cleaning up ${whitePixels.length} potential white pixels for circle ${i+1}`);
+              for (const pixel of whitePixels) {
+                const { r, g, b, a } = intToRGBA(baseImage.getPixelColor(pixel.x, pixel.y));
+                // Check if it's still very white (needs to be painted over)
+                if (r > 220 && g > 220 && b > 220) {
+                  // Sample a nearby non-white pixel to use as replacement color
+                  let replacementColor = 0xFF000000; // Default to transparent
+                  
+                  // Try to find a good replacement color from nearby non-white pixels
+                  const sampleDistance = 5;
+                  const samples = [];
+                  
+                  for (let sy = -sampleDistance; sy <= sampleDistance; sy += 2) {
+                    for (let sx = -sampleDistance; sx <= sampleDistance; sx += 2) {
+                      const sampleX = pixel.x + sx;
+                      const sampleY = pixel.y + sy;
+                      
+                      if (sampleX >= 0 && sampleX < baseImage.width && 
+                          sampleY >= 0 && sampleY < baseImage.height) {
+                        const sampleColor = baseImage.getPixelColor(sampleX, sampleY);
+                        const { r, g, b } = intToRGBA(sampleColor);
+                        // If it's not white, it's a good candidate
+                        if (r < 200 || g < 200 || b < 200) {
+                          samples.push(sampleColor);
+                        }
+                      }
+                    }
+                  }
+                  
+                  if (samples.length > 0) {
+                    // Use the average of sampled colors
+                    replacementColor = samples[Math.floor(Math.random() * samples.length)];
+                  }
+                  
+                  // Paint over the white pixel
+                  baseImage.setPixelColor(replacementColor, pixel.x, pixel.y);
+                }
+              }
+            }
           } else {
             console.warn(`Avatar ${i+1} placement partially out of bounds. Using fallback positioning.`);
             
