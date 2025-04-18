@@ -942,31 +942,38 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
   try {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
-    // Create the prompt for GPT-2
-    // Since GPT-2 has different characteristics from more advanced models,
-    // we'll create a more direct and specific prompt to guide it
-    const prompt = `Generate an image description for this scene:
-Characters: ${characterNames.join(', ')}
+    // Create a prompt that includes the requirements for the image description
+    const prompt = `Create a vivid scene description for an image based on this story excerpt featuring characters: ${characterNames.join(', ')}
 
-Scene from story:
-${chunk.substring(0, 500)}
+Story excerpt:
+${chunk.substring(0, 800)}
 
-Image description with faces clearly visible, portrait-style framing, characters facing forward:`;
+Requirements:
+- Focus on ONE clear scene with characters' faces clearly visible
+- Frame like a portrait with heads/faces prominently positioned
+- Characters should ideally face forward
+- Include details about character positioning
+- Capture the setting, atmosphere, and mood
+- Be specific about visual elements (colors, lighting)
+- Keep description between 10-30 words
+- Do NOT use character names directly
 
-    // Use Hugging Face API for inference with GPT-2
-    const payload = { 
+Image description:`;
+
+    // Use Hugging Face API for text generation
+    const payload = {
       inputs: prompt,
       parameters: {
-        max_new_tokens: 50,
+        max_new_tokens: 100,
         temperature: 0.7,
-        top_p: 0.95,
+        top_p: 0.9,
         do_sample: true,
         return_full_text: false
       }
     };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/openai-community/gpt2',
+      'https://api-inference.huggingface.co/models/deepseek-ai/DeepSeek-R1',  // Default model, but will be customized based on user input
       payload,
       {
         headers: {
@@ -978,43 +985,56 @@ Image description with faces clearly visible, portrait-style framing, characters
 
     // Extract the description from the response
     let description = '';
-    if (response.data && response.data[0] && response.data[0].generated_text) {
-      // Get the generated description
-      description = response.data[0].generated_text.trim();
-      
-      // Limit the description to 30 words max as specified in requirements
+    
+    // Process the API response - structure depends on the model
+    if (response.data && typeof response.data === 'object') {
+      // Handle structured response (most models)
+      if (Array.isArray(response.data) && response.data[0] && response.data[0].generated_text) {
+        description = response.data[0].generated_text.trim();
+      } else if (response.data.generated_text) {
+        description = response.data.generated_text.trim();
+      }
+    } else if (typeof response.data === 'string') {
+      // Some models might return plain text
+      description = response.data.trim();
+    }
+    
+    // If we got a valid description, process it
+    if (description) {
+      // Limit the description to 30 words as per requirements
       const words = description.split(/\s+/);
       if (words.length > 30) {
         description = words.slice(0, 30).join(' ');
       }
       
-      // Make sure it ends with proper punctuation
+      // Make sure the description ends with proper punctuation
       if (!description.match(/[.!?]$/)) {
         description += '.';
       }
+      
+      console.log(`Generated image description: ${description}`);
     } else {
-      description = `Portrait scene featuring ${characterNames.join(' and ')} with clearly visible faces, forward-facing`;
-    }
-    
-    console.log(`Generated image description: ${description}`);
-    
-    // Post-process to ensure it fits our requirements
-    // If the description is too short or lacks specific details, enhance it
-    if (description.split(' ').length < 10 || 
-        !description.toLowerCase().includes('face') && !description.toLowerCase().includes('head')) {
-      description += ` Characters positioned with clearly visible faces, portrait-style framing.`;
+      // Fallback if the response doesn't contain a proper description
+      description = `Portrait scene featuring ${characterNames.join(' and ')} with faces clearly visible, forward-facing in natural setting`;
+      console.log(`Using fallback description: ${description}`);
     }
     
     return description;
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
     
-    // If we get a specific error about the model still loading, we can wait and retry
-    if (error.response && error.response.data && error.response.data.error && 
-        error.response.data.error.includes('Model is loading')) {
-      console.log('Model is still loading, waiting 5 seconds and retrying...');
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-      return extractDescriptionFromStoryChunk(chunk, characterNames); // Retry
+    // If we get a model loading error, wait and retry once
+    if (error.response && error.response.data && 
+        typeof error.response.data === 'object' && 
+        error.response.data.error && 
+        error.response.data.error.includes('loading')) {
+      console.log('Model is still loading, waiting 3 seconds and retrying...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      try {
+        return await extractDescriptionFromStoryChunk(chunk, characterNames);
+      } catch (retryError) {
+        console.error('Error on retry:', retryError);
+      }
     }
     
     // Return a fallback description based on character names if extraction fails
