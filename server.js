@@ -648,10 +648,17 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         
         // Create a circular mask for the avatar - Updated constructor
         const mask = new Jimp({ width: radius * 2, height: radius * 2, color: 0x00000000 });
-        for (let y = 0; y < radius * 2; y++) {
-          for (let x = 0; x < radius * 2; x++) {
+        
+        // Create a circular mask with safer boundary checks
+        const maskDiameter = radius * 2;
+        for (let y = 0; y < maskDiameter; y++) {
+          for (let x = 0; x < maskDiameter; x++) {
+            // Calculate distance from center
             const distanceFromCenter = Math.sqrt(Math.pow(x - radius, 2) + Math.pow(y - radius, 2));
-            if (distanceFromCenter <= radius) {
+            // Only set pixels within both the circle and the image boundaries
+            if (distanceFromCenter <= radius && 
+                x >= 0 && x < maskDiameter && 
+                y >= 0 && y < maskDiameter) {
               mask.setPixelColor(0xFFFFFFFF, x, y); // Set white (opaque) for the circle area
             }
           }
