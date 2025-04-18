@@ -339,8 +339,8 @@ function extractHtmlFromResponse(response) {
 async function generateBaseImage(prompt, numAvatars) {
   try {
     // Calculate a reasonable percentage for the image generation prompt
-    const circleSizeMinPercent = 10;
-    const circleSizeMaxPercent = 15;
+    const circleSizeMinPercent = 15;
+    const circleSizeMaxPercent = 20;
     
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
@@ -942,52 +942,68 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
   try {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model: 'google/gemini-2.0-flash-exp:free',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an expert at extracting vivid scene descriptions from text. Given a chunk of a story, 
-            create a concise, detailed visual description that captures the most significant scene or moment from the text. 
-            This description will be used to generate an accompanying image with character faces replaced by profile pictures.
-
-            REQUIREMENTS:
-            - Focus on describing ONE clear, vivid scene from the text
-            - Frame the scene like a portrait where characters' faces are clearly visible
-            - Position characters' heads/faces prominently in the scene, ideally facing forward
-            - Specify that characters should have clearly visible faces/heads (these will be replaced with avatars)
-            - Include details about character positioning and their relative placement to each other
-            - Capture the setting, atmosphere, and mood
-            - Be specific about visual elements (colors, lighting, positioning)
-            - Keep the description between 10-30 words
-            - Do NOT include character names directly - describe them visually instead
-            - Respond ONLY with the description - no explanations or other text`
-          },
-          {
-            role: 'user',
-            content: `Here's a chunk of a story featuring characters: ${characterNames.join(', ')}
+    // Prepare the prompt for image description
+    const promptForDescription = `Generate a portrait-style image description for a scene with ${characterNames.join(', ')}:
 
 ${chunk}
 
-Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads.`
-          }
-        ],
-        temperature: 0.7
+The description should be concise (10-30 words), focus on one clear scene where characters' faces are clearly visible and positioned prominently, as if posing for a portrait or selfie. Include details about lighting, mood, and setting. Do not use character names directly.`;
+    
+    // Use Hugging Face API with facebook/bart-large-cnn model for summarization
+    const payload = {
+      inputs: promptForDescription,
+      parameters: {
+        max_length: 60,  // Keep descriptions concise
+        min_length: 10,  // Ensure we get at least a short phrase
+        do_sample: false // Use greedy decoding for more predictable outputs
+      }
+    };
 
-      },
+    const response = await axios.post(
+      'https://api-inference.huggingface.co/models/facebook/bart-large-cnn',
+      payload,
       {
         headers: {
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
           'Content-Type': 'application/json'
         }
       }
     );
 
     // Extract the description from the response
-    const description = response.data.choices[0].message.content.trim();
+    let description;
+    if (response.data && response.data.generated_text) {
+      description = response.data.generated_text.trim();
+    } else if (Array.isArray(response.data) && response.data.length > 0) {
+      description = response.data[0].generated_text.trim();
+    } else {
+      throw new Error('Unexpected response format from Hugging Face API');
+    }
+    
+    // Post-process the description to ensure it's properly formatted for image generation
+    description = description
+      .replace(/^["']|["']$/g, '') // Remove quotes if present
+      .replace(/^(generates?|creates?|shows?|displays?|depicts?)\s+an?\s+image\s+of\s+/i, '') // Remove common prefixes
+      .replace(/\s*\.\s*$/, ''); // Remove trailing period
+    
     console.log(`Generated image description: ${description}`);
+    
+    // If the description is too long, truncate it but try to keep complete sentences
+    if (description.length > 70) {
+      const sentences = description.match(/[^.!?]+[.!?]+/g) || [description];
+      description = '';
+      for (const sentence of sentences) {
+        if ((description + sentence).length <= 70) {
+          description += sentence;
+        } else {
+          break;
+        }
+      }
+      // If we still don't have a description (possibly because the first sentence was too long)
+      if (!description) {
+        description = sentences[0].substring(0, 70) + '...';
+      }
+    }
     
     return description;
   } catch (error) {
