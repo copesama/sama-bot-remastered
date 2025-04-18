@@ -643,8 +643,8 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         }
         
-        // Resize the avatar to fit the circle - Updated resize method
-        avatarImage.resize({ width: radius * 2, height: radius * 2 });
+        // Resize the avatar to fit the circle - FIXED: using w/h instead of width/height
+        avatarImage.resize({ w: radius * 2, h: radius * 2 });
         
         // Create a circular mask for the avatar - Updated constructor
         const mask = new Jimp({ width: radius * 2, height: radius * 2, color: 0x00000000 });
