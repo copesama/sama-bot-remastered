@@ -11,8 +11,6 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
-const { Player } = require('discord-player');
-const YouTube = require('youtube-sr').default;
 
 // Initialize Discord client
 const client = new Client({
@@ -23,9 +21,6 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates, // Add voice state intent to track voice channels
   ]
 });
-
-// Initialize Discord Player after client initialization
-const player = new Player(client);
 
 // Initialize Express app for serving games
 const app = express();
@@ -653,7 +648,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         try {
           // Apply a slight scaling factor to ensure avatar completely covers the white circle
           // This helps avoid any gaps between the avatar and the original white circle
-          const scalingFactor = 1.4; // 40% larger than the detected circle
+          const scalingFactor = 1.4; // 5% larger than the detected circle
           const exactDiameter = Math.floor(radius * 2);
           const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
           
@@ -1351,90 +1346,6 @@ client.on('messageCreate', async (message) => {
     }
     
     return;
-  }
-
-  // Check for !outofcontext command
-  if (message.content.startsWith('!outofcontext')) {
-    const channelUrl = message.content.slice('!outofcontext'.length).trim();
-    
-    if (!channelUrl) {
-      message.reply('Please provide a YouTube channel URL. Example: `!outofcontext https://www.youtube.com/c/ChannelName`');
-      return;
-    }
-
-    // Check if user is in a voice channel
-    const voiceChannel = message.member?.voice?.channel;
-    if (!voiceChannel) {
-      message.reply('You need to join a voice channel first!');
-      return;
-    }
-
-    const loadingMessage = await message.reply('🎬 Searching for random videos...');
-
-    try {
-      // Search for channel videos
-      const videos = await YouTube.search(channelUrl, {
-        limit: 50, // Get more videos to randomly select from
-        type: 'video'
-      });
-
-      if (!videos.length) {
-        await loadingMessage.edit('No videos found for this channel.');
-        return;
-      }
-
-      // Randomly select 5 videos
-      const selectedVideos = videos
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 5)
-        .map(video => ({
-          url: `https://www.youtube.com/watch?v=${video.id}`,
-          title: video.title
-        }));
-
-      // Update loading message
-      await loadingMessage.edit('🎵 Found videos! Playing 5-second clips...');
-
-      // Play each video clip
-      for (let i = 0; i < selectedVideos.length; i++) {
-        const video = selectedVideos[i];
-        try {
-          const queue = player.nodes.create(message.guild);
-          if (!queue.connection) {
-            await queue.connect(voiceChannel);
-          }
-
-          await queue.play(video.url, {
-            nodeOptions: {
-              metadata: message,
-              bufferingTimeout: 15000,
-              leaveOnStop: false
-            }
-          });
-
-          // Wait 5 seconds then stop
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          queue.node.stop();
-
-          // Update progress
-          await loadingMessage.edit(`✅ Played ${i + 1}/5: ${video.title}`);
-        } catch (error) {
-          console.error(`Error playing video ${i + 1}:`, error);
-          await loadingMessage.edit(`❌ Error playing video ${i + 1}: ${video.title}`);
-        }
-      }
-
-      // Cleanup
-      const queue = player.nodes.get(message.guild);
-      if (queue) {
-        queue.delete();
-      }
-
-      await loadingMessage.edit('✅ Finished playing all clips!');
-    } catch (error) {
-      console.error('Error in !outofcontext command:', error);
-      await loadingMessage.edit('Sorry, there was an error processing your request.');
-    }
   }
 });
 
