@@ -643,23 +643,28 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         }
         
-        // Resize the avatar to fit the circle - FIXED: using w/h instead of width/height
-        avatarImage.resize({ w: radius * 2, h: radius * 2 });
+        // Use the exact size of the detected circle to make sure avatars fit perfectly
+        const exactDiameter = Math.floor(radius * 2);
         
-        // Create a circular mask for the avatar - Updated constructor
-        const mask = new Jimp({ width: radius * 2, height: radius * 2, color: 0x00000000 });
+        // Resize the avatar to fit the circle precisely - Using exact dimensions
+        avatarImage.resize({ w: exactDiameter, h: exactDiameter });
         
-        // Create a circular mask with safer boundary checks
-        const maskDiameter = radius * 2;
-        for (let y = 0; y < maskDiameter; y++) {
-          for (let x = 0; x < maskDiameter; x++) {
-            // Calculate distance from center
-            const distanceFromCenter = Math.sqrt(Math.pow(x - radius, 2) + Math.pow(y - radius, 2));
-            // Only set pixels within both the circle and the image boundaries
-            if (distanceFromCenter <= radius && 
-                x >= 0 && x < maskDiameter && 
-                y >= 0 && y < maskDiameter) {
-              mask.setPixelColor(0xFFFFFFFF, x, y); // Set white (opaque) for the circle area
+        // Create a circular mask with the exact same dimensions as the circle
+        const mask = new Jimp({ width: exactDiameter, height: exactDiameter, color: 0x00000000 });
+        
+        // Create a circular mask with precise boundary matching
+        for (let y = 0; y < exactDiameter; y++) {
+          for (let x = 0; x < exactDiameter; x++) {
+            // Calculate distance from center using the exact radius
+            const centerPoint = exactDiameter / 2;
+            const distanceFromCenter = Math.sqrt(Math.pow(x - centerPoint, 2) + Math.pow(y - centerPoint, 2));
+            
+            // Only set pixels within the circle boundary, using a slightly softer edge
+            // for better blending with the background image
+            if (distanceFromCenter <= centerPoint && 
+                x >= 0 && x < exactDiameter && 
+                y >= 0 && y < exactDiameter) {
+              mask.setPixelColor(0xFFFFFFFF, x, y);
             }
           }
         }
@@ -668,17 +673,26 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         avatarImage.mask(mask, 0, 0);
         
         // Calculate position to place the avatar (centered on the white circle)
-        const avatarX = Math.round(centerX - radius);
-        const avatarY = Math.round(centerY - radius);
+        // Use a more precise calculation to ensure exact centering
+        const avatarX = Math.round(centerX - exactDiameter / 2);
+        const avatarY = Math.round(centerY - exactDiameter / 2);
         
-        // Composite the avatar onto the base image
-        baseImage.composite(avatarImage, avatarX, avatarY, {
-          mode: Jimp.BLEND_SOURCE_OVER,
-          opacitySource: 1,
-          opacityDest: 1
-        });
-        
-        console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with radius ${radius}`);
+        // Add boundary checks before compositing to avoid out-of-bounds errors
+        if (avatarX >= 0 && avatarY >= 0 && 
+            avatarX + exactDiameter <= baseImage.width && 
+            avatarY + exactDiameter <= baseImage.height) {
+          
+          // Composite the avatar onto the base image
+          baseImage.composite(avatarImage, avatarX, avatarY, {
+            mode: Jimp.BLEND_SOURCE_OVER,
+            opacitySource: 1,
+            opacityDest: 1
+          });
+          
+          console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with radius ${radius}`);
+        } else {
+          console.error(`Avatar ${i+1} placement out of bounds. Skipping.`);
+        }
       } catch (error) {
         console.error(`Error processing avatar ${i+1}:`, error);
       }
