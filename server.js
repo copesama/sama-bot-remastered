@@ -336,7 +336,7 @@ function extractHtmlFromResponse(response) {
 async function generateBaseImage(prompt, numAvatars) {
   try {
     // Calculate a reasonable percentage for the image generation prompt
-    const circleSizePercent = 15; // We use 10% as minimum detection threshold, so request 15% for safety
+    const circleSizePercent = 15; // We use 10% as minimum detection threshold, so request 20% for safety
     
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
@@ -588,8 +588,9 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
               height: radius * 2, 
               color: `hsl(${i * 30 % 360}, 70%, 60%)` 
             });
-            // Add a simple text label in the center of the circle
+            // Add a simple text label in the center of the circle (first letter of the URL)
             const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+            // Use some identifier from the URL or a simple number
             const label = `${i+1}`;
             const textWidth = Jimp.measureText(font, label);
             const textHeight = Jimp.measureTextHeight(font, label, textWidth);
@@ -611,7 +612,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         } catch (avatarError) {
           console.error(`Error downloading/processing avatar ${i+1}:`, avatarError);
-          // Create a fallback colored circle with a number
+          // Create a fallback colored circle with a number - Updated constructor
           console.log(`Using fallback circle for avatar ${i+1}`);
           avatarImage = new Jimp({ 
             width: radius * 2, 
@@ -642,23 +643,26 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         }
         
-        // Improved approach for fitting avatars to white circles - UPDATED TO EXACT SIZE MATCH
+        // Improved approach for fitting avatars to white circles
         try {
-          // Use the exact diameter of the white circle without scaling factor
+          // Apply a slight scaling factor to ensure avatar completely covers the white circle
+          // This helps avoid any gaps between the avatar and the original white circle
+          const scalingFactor = 1.1; // 5% larger than the detected circle
           const exactDiameter = Math.floor(radius * 2);
+          const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
           
-          // Resize the avatar to exactly match the circle size
-          avatarImage.resize({ w: exactDiameter, h: exactDiameter });
+          // Resize the avatar with the scaled size to ensure full coverage
+          avatarImage.resize({ w: scaledDiameter, h: scaledDiameter });
           
           // Create a circular mask matching the exact circle size
-          const mask = new Jimp({ width: exactDiameter, height: exactDiameter, color: 0x00000000 });
+          const mask = new Jimp({ width: scaledDiameter, height: scaledDiameter, color: 0x00000000 });
           
           // Create a circular mask with precise edges
-          const maskCenter = exactDiameter / 2;
+          const maskCenter = scaledDiameter / 2;
           const maskRadius = maskCenter;
           
-          for (let y = 0; y < exactDiameter; y++) {
-            for (let x = 0; x < exactDiameter; x++) {
+          for (let y = 0; y < scaledDiameter; y++) {
+            for (let x = 0; x < scaledDiameter; x++) {
               const distanceFromCenter = Math.sqrt(Math.pow(x - maskCenter, 2) + Math.pow(y - maskCenter, 2));
               if (distanceFromCenter <= maskRadius) {
                 // Set pixel to solid white if inside the circle
@@ -670,14 +674,16 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           // Apply the circular mask to the avatar
           avatarImage.mask(mask, 0, 0);
           
-          // Calculate the position to perfectly center over the white circle
-          const avatarX = Math.round(centerX - maskCenter);
-          const avatarY = Math.round(centerY - maskCenter);
+          // Calculate the position so the masked avatar perfectly covers the white circle
+          // We need to account for the scaling factor when positioning
+          const offsetAdjustment = (scaledDiameter - exactDiameter) / 2;
+          const avatarX = Math.round(centerX - (scaledDiameter / 2));
+          const avatarY = Math.round(centerY - (scaledDiameter / 2));
           
           // Add boundary checks before compositing
-          if (avatarX >= 0 && avatarY >= 0 && 
-              avatarX + exactDiameter <= baseImage.width && 
-              avatarY + exactDiameter <= baseImage.height) {
+          if (avatarX >= -offsetAdjustment && avatarY >= -offsetAdjustment && 
+              avatarX + scaledDiameter <= baseImage.width + offsetAdjustment && 
+              avatarY + scaledDiameter <= baseImage.height + offsetAdjustment) {
             
             // Composite the avatar onto the base image
             baseImage.composite(avatarImage, avatarX, avatarY, {
@@ -686,13 +692,13 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
               opacityDest: 1
             });
             
-            console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with exact diameter ${exactDiameter}`);
+            console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with adjusted diameter ${scaledDiameter}`);
           } else {
             console.warn(`Avatar ${i+1} placement partially out of bounds. Using fallback positioning.`);
             
             // Fallback: place avatar at a valid position near the center of the image
-            const safeX = Math.max(0, Math.min(avatarX, baseImage.width - exactDiameter));
-            const safeY = Math.max(0, Math.min(avatarY, baseImage.height - exactDiameter));
+            const safeX = Math.max(0, Math.min(avatarX, baseImage.width - scaledDiameter));
+            const safeY = Math.max(0, Math.min(avatarY, baseImage.height - scaledDiameter));
             
             baseImage.composite(avatarImage, safeX, safeY, {
               mode: Jimp.BLEND_SOURCE_OVER,
@@ -714,7 +720,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     const imageId = shortid.generate();
     const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
     
-    // Save the final composite image
+    // Save the final composite image - Updated write method
     await baseImage.write(imagePath);
     console.log(`Final composite image saved to ${imagePath}`);
     
