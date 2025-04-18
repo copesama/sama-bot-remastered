@@ -943,17 +943,17 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
     // Prepare the prompt for image description
-    const promptForDescription = `Generate a portrait-style image description for a scene with ${characterNames.join(', ')}:
+    const promptForDescription = `Generate a portrait-style image description for a scene featuring ${characterNames.join(', ')}:
 
 ${chunk}
 
-The description should be concise (10-30 words), focus on one clear scene where characters' faces are clearly visible and positioned prominently, as if posing for a portrait or selfie. Include details about lighting, mood, and setting. Do not use character names directly.`;
+The image should focus on one clear scene where characters' faces are clearly visible and positioned prominently, as if posing for a portrait. Include details about character positioning, lighting, mood, and setting. Keep it between 10-30 words and do not use character names directly.`;
     
     // Use Hugging Face API with facebook/bart-large-cnn model for summarization
     const payload = {
       inputs: promptForDescription,
       parameters: {
-        max_length: 60,  // Keep descriptions concise
+        max_length: 50,  // Keep descriptions concise
         min_length: 10,  // Ensure we get at least a short phrase
         do_sample: false // Use greedy decoding for more predictable outputs
       }
@@ -989,11 +989,11 @@ The description should be concise (10-30 words), focus on one clear scene where 
     console.log(`Generated image description: ${description}`);
     
     // If the description is too long, truncate it but try to keep complete sentences
-    if (description.length > 70) {
+    if (description.length > 30) {
       const sentences = description.match(/[^.!?]+[.!?]+/g) || [description];
       description = '';
       for (const sentence of sentences) {
-        if ((description + sentence).length <= 70) {
+        if ((description + sentence).length <= 30) {
           description += sentence;
         } else {
           break;
@@ -1001,7 +1001,7 @@ The description should be concise (10-30 words), focus on one clear scene where 
       }
       // If we still don't have a description (possibly because the first sentence was too long)
       if (!description) {
-        description = sentences[0].substring(0, 70) + '...';
+        description = sentences[0].substring(0, 30);
       }
     }
     
