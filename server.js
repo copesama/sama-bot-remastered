@@ -937,6 +937,196 @@ REQUIREMENTS:
   }
 }
 
+// New function to extract a description from a story chunk for image generation
+async function extractDescriptionFromStoryChunk(chunk, characterNames) {
+  try {
+    console.log(`Extracting image description from chunk of length: ${chunk.length}`);
+    
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert at extracting vivid scene descriptions from text. Given a chunk of a story, 
+            create a concise, detailed visual description that captures the most significant scene or moment from the text. 
+            This description will be used to generate an accompanying image.
+
+            REQUIREMENTS:
+            - Focus on describing ONE clear, vivid scene from the text
+            - Include the physical description of characters if mentioned
+            - Capture the setting, atmosphere, and mood
+            - Be specific about visual elements (colors, lighting, positioning)
+            - Keep the description between 30-70 words
+            - Do NOT include character names directly - describe them visually instead
+            - Respond ONLY with the description - no explanations or other text`
+          },
+          {
+            role: 'user',
+            content: `Here's a chunk of a story featuring characters: ${characterNames.join(', ')}
+
+${chunk}
+
+Extract a vivid scene description for an image generator. Focus on the most visually interesting moment.`
+          }
+        ],
+        temperature: 0.7
+
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Extract the description from the response
+    const description = response.data.choices[0].message.content.trim();
+    console.log(`Generated image description: ${description}`);
+    
+    return description;
+  } catch (error) {
+    console.error('Error extracting description from story chunk:', error);
+    // Return a fallback description based on character names if extraction fails
+    return `A scene featuring ${characterNames.join(' and ')} in a dramatic moment`;
+  }
+}
+
+// New function to generate and send story with images
+async function generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage) {
+  try {
+    // Get character names from the mentioned users
+    const characterNames = characterUsers.map(user => user.username);
+    
+    // Generate the complete story
+    const story = await generateStory(storyPrompt, characterNames);
+    
+    // Create an embed for the story intro
+    const storyEmbed = new EmbedBuilder()
+      .setColor('#9966cc')
+      .setTitle('📚 Your Custom Story is Ready!')
+      .setDescription(`**Scenario:** ${storyPrompt}\n\n**Featuring:** ${characterUsers.map(user => user.username).join(', ')}`)
+      .addFields(
+        { name: 'Story Length', value: `${story.length} characters`, inline: true },
+        { name: 'Characters', value: `${characterUsers.length} characters`, inline: true },
+        { name: 'With Images', value: 'Each part of the story includes a custom generated image', inline: true }
+      )
+      .setFooter({ text: 'Generated using AI • Story with images created just for you' })
+      .setTimestamp();
+    
+    // Send the story intro
+    const introMessage = await message.channel.send({ 
+      content: `${message.author} Here's your generated story with images:`,
+      embeds: [storyEmbed]
+    });
+
+    // Update loading message
+    await loadingMessage.edit('📝 Story generated! Now creating images for each part of the story... This will take a few more minutes.');
+    
+    // Break story into chunks if needed (for both readability and image generation)
+    const MAX_MESSAGE_LENGTH = 1800; // Slightly shorter to accommodate image embeds
+    let storyChunks = [];
+    
+    if (story.length <= MAX_MESSAGE_LENGTH) {
+      // Story fits in a single message
+      storyChunks = [story];
+    } else {
+      // Find natural breaking points (paragraphs) to split the story
+      const paragraphs = story.split(/\n\n+/);
+      let currentChunk = '';
+      
+      for (const paragraph of paragraphs) {
+        // If adding this paragraph would exceed the limit, save current chunk and start a new one
+        if (currentChunk.length + paragraph.length + 2 > MAX_MESSAGE_LENGTH && currentChunk.length > 0) {
+          storyChunks.push(currentChunk);
+          currentChunk = paragraph;
+        } else {
+          // Add paragraph to current chunk
+          if (currentChunk.length > 0) {
+            currentChunk += '\n\n' + paragraph;
+          } else {
+            currentChunk = paragraph;
+          }
+        }
+      }
+      
+      // Add the last chunk if there's anything left
+      if (currentChunk.length > 0) {
+        storyChunks.push(currentChunk);
+      }
+    }
+    
+    console.log(`Split story into ${storyChunks.length} chunks for processing`);
+    
+    // Process each chunk: extract description, generate image, send with text
+    for (let i = 0; i < storyChunks.length; i++) {
+      const chunk = storyChunks[i];
+      const chunkNumber = i + 1;
+      
+      // Update progress
+      await loadingMessage.edit(`📝 Creating image ${chunkNumber}/${storyChunks.length} for your story...`);
+      
+      try {
+        // Extract a description for the image from this chunk
+        const imageDescription = await extractDescriptionFromStoryChunk(chunk, characterNames);
+        
+        // Get avatar URLs from the character users
+        const avatarUrls = characterUsers.map(user => 
+          user.displayAvatarURL({ format: 'png', size: 512 })
+        );
+        
+        // Generate image using the existing function
+        const { imageId, imagePath } = await generateImageWithAvatars(imageDescription, avatarUrls);
+        
+        // Create an embed for the image
+        const imageEmbed = new EmbedBuilder()
+          .setColor('#ff6600')
+          .setTitle(`📖 Part ${chunkNumber} of ${storyChunks.length}`)
+          .setDescription(imageDescription)
+          .setImage(`attachment://${imageId}.png`)
+          .setFooter({ text: `Story image ${chunkNumber}/${storyChunks.length} • Generated with AI` });
+        
+        // Send the text chunk with its image
+        await message.channel.send({
+          content: chunk,
+          embeds: [imageEmbed],
+          files: [{ attachment: imagePath, name: `${imageId}.png` }]
+        });
+        
+        // Clean up the image file after sending (with a delay to ensure it's sent properly)
+        setTimeout(() => {
+          try {
+            fs.unlinkSync(imagePath);
+            console.log(`Deleted image file: ${imagePath}`);
+          } catch (err) {
+            console.error(`Error deleting image file: ${err}`);
+          }
+        }, 5000); // 5 seconds delay
+        
+      } catch (error) {
+        console.error(`Error processing chunk ${chunkNumber}:`, error);
+        
+        // If image generation fails, send just the text
+        await message.channel.send({
+          content: `**Part ${chunkNumber} of ${storyChunks.length}:**\n\n${chunk}\n\n*(Image generation failed for this part)*`
+        });
+      }
+      
+      // Add a small delay between sending chunks to avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    // Final update to loading message
+    await loadingMessage.edit('✅ Story with images generated successfully!');
+    
+  } catch (error) {
+    console.error('Error in generateAndSendStoryWithImages:', error);
+    await loadingMessage.edit('Sorry, there was an error generating your story with images. Please try again later.');
+  }
+}
+
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -1009,49 +1199,9 @@ client.on('messageCreate', async (message) => {
     usersWaitingForStoryPrompt.delete(message.author.id);
     
     // Update the loading message to indicate story generation has started
-    await loadingMessage.edit('📝 Generating your custom story... This might take a few minutes as I craft a detailed narrative!');
+    await loadingMessage.edit('📝 Generating your custom story with images... This might take several minutes as I craft a detailed narrative with visuals!');
     
     try {
-      // Get character names from the mentioned users
-      const characterNames = characterUsers.map(user => user.username);
-      
-      // Generate the story
-      const story = await generateStory(storyPrompt, characterNames);
-      
-      // Create an embed for the story intro
-      const storyEmbed = new EmbedBuilder()
-        .setColor('#9966cc')
-        .setTitle('📚 Your Custom Story is Ready!')
-        .setDescription(`**Scenario:** ${storyPrompt}\n\n**Featuring:** ${characterUsers.map(user => user.username).join(', ')}`)
-        .addFields(
-          { name: 'Story Length', value: `${story.length} characters`, inline: true },
-          { name: 'Characters', value: `${characterUsers.length} characters`, inline: true }
-        )
-        .setFooter({ text: 'Generated using AI • Story created just for you' })
-        .setTimestamp();
-      
-      // Send the story intro
-      const introMessage = await message.channel.send({ 
-        content: `${message.author} Here's your generated story:`,
-        embeds: [storyEmbed]
-      });
-      
-      // Send the actual story content in chunks if needed
-      const MAX_MESSAGE_LENGTH = 2000;
-      if (story.length <= MAX_MESSAGE_LENGTH) {
-        // Story fits in a single message
-        await message.channel.send(story);
-      } else {
-        // Break story into chunks for sending
-        for (let i = 0; i < story.length; i += MAX_MESSAGE_LENGTH) {
-          const chunk = story.substring(i, i + MAX_MESSAGE_LENGTH);
-          await message.channel.send(chunk);
-        }
-      }
-      
-      // Edit the loading message
-      await loadingMessage.edit('✅ Story generated successfully!');
-      
       // Delete the prompt message to keep the channel clean
       try {
         await message.delete();
@@ -1059,14 +1209,17 @@ client.on('messageCreate', async (message) => {
         console.error('Error deleting message:', error);
       }
       
+      // Use the new function to generate and send the story with images
+      await generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage);
+      
     } catch (error) {
-      console.error('Error generating story:', error);
+      console.error('Error processing story with images:', error);
       
       // Provide more helpful error message
-      let errorMessage = 'Sorry, there was an error generating your story. Please try again later.';
+      let errorMessage = 'Sorry, there was an error generating your story with images. Please try again later.';
       
       if (error.message && error.message.includes('timeout')) {
-        errorMessage = 'Sorry, story generation timed out. Please try a simpler prompt or try again later.';
+        errorMessage = 'Sorry, story or image generation timed out. Please try a simpler prompt or try again later.';
       }
       
       await loadingMessage.edit(errorMessage);
