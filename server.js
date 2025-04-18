@@ -943,37 +943,38 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
     // Create a shorter chunk if the original is too long
-    const truncatedChunk = chunk.length > 800 ? chunk.substring(0, 800) + "..." : chunk;
+    const truncatedChunk = chunk.length > 1000 ? chunk.substring(0, 1000) + "..." : chunk;
     
-    // Craft a prompt for a smaller model (using Mistral-7B instead of DeepSeek which is too large)
-    const promptForDescription = `Context: Given a section of a story featuring characters (${characterNames.join(', ')}), create a vivid scene description for an image.
+    // Create a prompt for Mistral model
+    const promptForDescription = `<s>[INST] Given a section of a story featuring characters (${characterNames.join(', ')}), create a vivid scene description for an image:
 
 Story excerpt:
 ${truncatedChunk}
 
-Task: Create a concise, detailed visual description of the most significant scene from this text. The description:
-- Should focus on ONE clear scene where characters' faces are prominently visible
-- Should specify that characters are positioned for a portrait-style image
-- Must be 10-30 words in length
-- Should NOT use character names directly
-- Should include details about setting, atmosphere, and relative character positions
-
-Description:`;
+Your task is to:
+- Create a concise, detailed visual description of the most significant scene from this text
+- Focus on ONE clear scene where characters' faces are prominently visible
+- Frame the scene like a portrait where characters' faces are clearly visible
+- Position characters' heads/faces prominently, ideally facing forward
+- Include details about character positioning and their relative placement
+- Capture the setting, atmosphere, and mood
+- Keep the description between 10-30 words
+- Do NOT include character names directly - describe them visually instead
+- Respond ONLY with the description - no explanations or other text [/INST]</s>`;
     
-    // Use Hugging Face API with a smaller model (Mistral-7B) that fits within API limits
+    // Using Hugging Face API with Mistral-Small-3.1-24B-Instruct-2503 model
     const payload = {
       inputs: promptForDescription,
       parameters: {
         max_new_tokens: 100,
         temperature: 0.7,
         top_p: 0.9,
-        do_sample: true,
         return_full_text: false
       }
     };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2',
+      'https://api-inference.huggingface.co/models/mistralai/Mistral-Small-3.1-24B-Instruct-2503',
       payload,
       {
         headers: {
@@ -995,13 +996,15 @@ Description:`;
       throw new Error('Unexpected response format from Hugging Face API');
     }
     
-    // Clean up the description
+    // Clean up the description - strip any response decorators Mistral might add
     description = description
       .replace(/^["']|["']$/g, '') // Remove quotes
-      .replace(/^(\s*Description:\s*)/i, '') // Remove "Description:" prefix if present
+      .replace(/^(\s*Description:\s*)/i, '') // Remove "Description:" prefix
       .replace(/^(A|An|The)\s+(image|photo|portrait|picture)\s+of\s+/i, '') // Remove common prefixes
       .replace(/\s*\.\s*$/, '') // Remove trailing period
-      .replace(/^\<.*?\>|\<\/.*?\>$/g, ''); // Remove any HTML-like tags that might appear in Mistral's output
+      .replace(/^\<.*?\>|\<\/.*?\>$/g, '') // Remove any HTML-like tags
+      .replace(/^Here's the description:?\s*/i, '') // Remove prefatory statements
+      .trim();
     
     // Ensure the description is within the desired word count
     const words = description.split(/\s+/);
@@ -1014,6 +1017,17 @@ Description:`;
     return description;
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
+    
+    // If there's an error with the model size, try with a fallback model
+    if (error.response && error.response.data && error.response.data.error && 
+        error.response.data.error.includes('model') && error.response.data.error.includes('too large')) {
+      console.log('Model too large, trying with fallback model...');
+      try {
+        return await extractDescriptionWithFallbackModel(chunk, characterNames);
+      } catch (fallbackError) {
+        console.error('Error with fallback model:', fallbackError);
+      }
+    }
     
     // Return a fallback description based on character names if extraction fails
     const fallbackDescriptions = [
@@ -1030,7 +1044,77 @@ Description:`;
   }
 }
 
-// New function to generate and send story with images
+// Fallback function if the main model is too large
+async function extractDescriptionWithFallbackModel(chunk, characterNames) {
+  console.log('Using fallback model for description extraction');
+  
+  // Craft a prompt for a smaller model
+  const truncatedChunk = chunk.length > 800 ? chunk.substring(0, 800) + "..." : chunk;
+  const promptForDescription = `<s>[INST] Create a concise visual description for an image based on this story excerpt featuring ${characterNames.join(', ')}:
+
+${truncatedChunk}
+
+Make the description:
+- Focus on a single portrait-style scene
+- Emphasize character faces and positioning
+- 10-30 words in length
+- Without using character names directly
+- Only provide the description, nothing else [/INST]</s>`;
+  
+  // Use a smaller Mistral model instead
+  const payload = {
+    inputs: promptForDescription,
+    parameters: {
+      max_new_tokens: 100,
+      temperature: 0.7,
+      top_p: 0.9,
+      return_full_text: false
+    }
+  };
+
+  const response = await axios.post(
+    'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2',
+    payload,
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    }
+  );
+
+  // Process the response
+  let description = '';
+  if (response.data && response.data.generated_text) {
+    description = response.data.generated_text.trim();
+  } else if (Array.isArray(response.data) && response.data.length > 0) {
+    description = response.data[0].generated_text.trim();
+  } else {
+    throw new Error('Unexpected response format from fallback model');
+  }
+  
+  // Clean up the description
+  description = description
+    .replace(/^["']|["']$/g, '')
+    .replace(/^(\s*Description:\s*)/i, '')
+    .replace(/^(A|An|The)\s+(image|photo|portrait|picture)\s+of\s+/i, '')
+    .replace(/\s*\.\s*$/, '')
+    .replace(/^\<.*?\>|\<\/.*?\>$/g, '')
+    .replace(/^Here's the description:?\s*/i, '')
+    .trim();
+  
+  // Ensure the description is within the desired word count
+  const words = description.split(/\s+/);
+  if (words.length > 30) {
+    description = words.slice(0, 30).join(' ');
+  }
+  
+  console.log(`Generated image description with fallback model: ${description}`);
+  return description;
+}
+
+// Function to generate and send story with images
 async function generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage) {
   try {
     // Get character names from the mentioned users
