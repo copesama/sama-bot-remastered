@@ -942,101 +942,56 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
   try {
     console.log(`Extracting image description from chunk of length: ${chunk.length}`);
     
-    // Create a prompt that includes the requirements for the image description
-    const prompt = `Create a vivid scene description for an image based on this story excerpt featuring characters: ${characterNames.join(', ')}
-
-Story excerpt:
-${chunk.substring(0, 800)}
-
-Requirements:
-- Focus on ONE clear scene with characters' faces clearly visible
-- Frame like a portrait with heads/faces prominently positioned
-- Characters should ideally face forward
-- Include details about character positioning
-- Capture the setting, atmosphere, and mood
-- Be specific about visual elements (colors, lighting)
-- Keep description between 10-30 words
-- Do NOT use character names directly
-
-Image description:`;
-
-    // Use Hugging Face API for text generation
-    const payload = {
-      inputs: prompt,
-      parameters: {
-        max_new_tokens: 100,
-        temperature: 0.7,
-        top_p: 0.9,
-        do_sample: true,
-        return_full_text: false
-      }
-    };
-
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta',  // Default model, but will be customized based on user input
-      payload,
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert at extracting vivid scene descriptions from text. Given a chunk of a story, 
+            create a concise, detailed visual description that captures the most significant scene or moment from the text. 
+            This description will be used to generate an accompanying image with character faces replaced by profile pictures.
+
+            REQUIREMENTS:
+            - Focus on describing ONE clear, vivid scene from the text
+            - Frame the scene like a portrait where characters' faces are clearly visible
+            - Position characters' heads/faces prominently in the scene, ideally facing forward
+            - Specify that characters should have clearly visible faces/heads (these will be replaced with avatars)
+            - Include details about character positioning and their relative placement to each other
+            - Capture the setting, atmosphere, and mood
+            - Be specific about visual elements (colors, lighting, positioning)
+            - Keep the description between 10-30 words
+            - Do NOT include character names directly - describe them visually instead
+            - Respond ONLY with the description - no explanations or other text`
+          },
+          {
+            role: 'user',
+            content: `Here's a chunk of a story featuring characters: ${characterNames.join(', ')}
+
+${chunk}
+
+Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads.`
+          }
+        ],
+        temperature: 0.7
+
+      },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
           'Content-Type': 'application/json'
         }
       }
     );
 
     // Extract the description from the response
-    let description = '';
-    
-    // Process the API response - structure depends on the model
-    if (response.data && typeof response.data === 'object') {
-      // Handle structured response (most models)
-      if (Array.isArray(response.data) && response.data[0] && response.data[0].generated_text) {
-        description = response.data[0].generated_text.trim();
-      } else if (response.data.generated_text) {
-        description = response.data.generated_text.trim();
-      }
-    } else if (typeof response.data === 'string') {
-      // Some models might return plain text
-      description = response.data.trim();
-    }
-    
-    // If we got a valid description, process it
-    if (description) {
-      // Limit the description to 30 words as per requirements
-      const words = description.split(/\s+/);
-      if (words.length > 30) {
-        description = words.slice(0, 30).join(' ');
-      }
-      
-      // Make sure the description ends with proper punctuation
-      if (!description.match(/[.!?]$/)) {
-        description += '.';
-      }
-      
-      console.log(`Generated image description: ${description}`);
-    } else {
-      // Fallback if the response doesn't contain a proper description
-      description = `Portrait scene featuring ${characterNames.join(' and ')} with faces clearly visible, forward-facing in natural setting`;
-      console.log(`Using fallback description: ${description}`);
-    }
+    const description = response.data.choices[0].message.content.trim();
+    console.log(`Generated image description: ${description}`);
     
     return description;
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
-    
-    // If we get a model loading error, wait and retry once
-    if (error.response && error.response.data && 
-        typeof error.response.data === 'object' && 
-        error.response.data.error && 
-        error.response.data.error.includes('loading')) {
-      console.log('Model is still loading, waiting 3 seconds and retrying...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      try {
-        return await extractDescriptionFromStoryChunk(chunk, characterNames);
-      } catch (retryError) {
-        console.error('Error on retry:', retryError);
-      }
-    }
-    
     // Return a fallback description based on character names if extraction fails
     return `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`;
   }
