@@ -951,11 +951,14 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
             role: 'system',
             content: `You are an expert at extracting vivid scene descriptions from text. Given a chunk of a story, 
             create a concise, detailed visual description that captures the most significant scene or moment from the text. 
-            This description will be used to generate an accompanying image.
+            This description will be used to generate an accompanying image with character faces replaced by profile pictures.
 
             REQUIREMENTS:
             - Focus on describing ONE clear, vivid scene from the text
-            - Include the physical description of characters if mentioned
+            - Frame the scene like a portrait where characters' faces are clearly visible
+            - Position characters' heads/faces prominently in the scene, ideally facing forward
+            - Specify that characters should have clearly visible faces/heads (these will be replaced with avatars)
+            - Include details about character positioning and their relative placement to each other
             - Capture the setting, atmosphere, and mood
             - Be specific about visual elements (colors, lighting, positioning)
             - Keep the description between 30-70 words
@@ -968,7 +971,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
 
 ${chunk}
 
-Extract a vivid scene description for an image generator. Focus on the most visually interesting moment.`
+Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads.`
           }
         ],
         temperature: 0.7
@@ -990,7 +993,7 @@ Extract a vivid scene description for an image generator. Focus on the most visu
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
     // Return a fallback description based on character names if extraction fails
-    return `A scene featuring ${characterNames.join(' and ')} in a dramatic moment`;
+    return `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`;
   }
 }
 
