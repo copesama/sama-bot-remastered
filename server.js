@@ -945,7 +945,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
     // Create a shorter chunk if the original is too long
     const truncatedChunk = chunk.length > 800 ? chunk.substring(0, 800) + "..." : chunk;
     
-    // Craft a prompt for the DeepSeek-R1-Distill-Llama-8B model
+    // Craft a prompt for a smaller model (using Mistral-7B instead of DeepSeek which is too large)
     const promptForDescription = `Context: Given a section of a story featuring characters (${characterNames.join(', ')}), create a vivid scene description for an image.
 
 Story excerpt:
@@ -960,7 +960,7 @@ Task: Create a concise, detailed visual description of the most significant scen
 
 Description:`;
     
-    // Use Hugging Face API with deepseek-ai/DeepSeek-R1-Distill-Llama-8B model
+    // Use Hugging Face API with a smaller model (Mistral-7B) that fits within API limits
     const payload = {
       inputs: promptForDescription,
       parameters: {
@@ -973,7 +973,7 @@ Description:`;
     };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/deepseek-ai/DeepSeek-R1-Distill-Llama-8B',
+      'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2',
       payload,
       {
         headers: {
@@ -1000,7 +1000,8 @@ Description:`;
       .replace(/^["']|["']$/g, '') // Remove quotes
       .replace(/^(\s*Description:\s*)/i, '') // Remove "Description:" prefix if present
       .replace(/^(A|An|The)\s+(image|photo|portrait|picture)\s+of\s+/i, '') // Remove common prefixes
-      .replace(/\s*\.\s*$/, ''); // Remove trailing period
+      .replace(/\s*\.\s*$/, '') // Remove trailing period
+      .replace(/^\<.*?\>|\<\/.*?\>$/g, ''); // Remove any HTML-like tags that might appear in Mistral's output
     
     // Ensure the description is within the desired word count
     const words = description.split(/\s+/);
