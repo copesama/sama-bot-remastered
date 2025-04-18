@@ -59,6 +59,9 @@ const audioPlayers = new Map();
 // Keep track of users waiting to provide image prompts
 const usersWaitingForImagePrompt = new Map();
 
+// Keep track of users waiting to provide story prompts
+const usersWaitingForStoryPrompt = new Map();
+
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
   const gameId = req.params.gameId;
@@ -869,6 +872,71 @@ async function enhanceGame(gameId, originalHtml) {
   }
 }
 
+// Function to generate a story using OpenRouter API
+async function generateStory(prompt, characterNames) {
+  try {
+    console.log(`Generating story with prompt: ${prompt}`);
+    console.log(`Characters: ${characterNames.join(', ')}`);
+    
+    // Create an enhanced prompt that includes instructions to feature the characters
+    const enhancedPrompt = `Write a creative and engaging story based on the following scenario: ${prompt}
+
+CHARACTERS TO INCLUDE:
+${characterNames.map((name, index) => `- ${name}`).join('\n')}
+
+REQUIREMENTS:
+- Feature all the listed characters prominently in the story
+- Give each character meaningful dialogue and actions
+- Create an interesting plot with a beginning, middle, and satisfying conclusion
+- Write in an engaging narrative style with descriptive language
+- The story should be well-structured and 1000-2000 words in length
+- Divide the story into clear paragraphs with natural breaks`;
+
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'sophosympatheia/rogue-rose-103b-v0.2:free',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert creative writer skilled in crafting engaging stories featuring specific characters. Create an immersive narrative that includes all provided character names and follows the scenario described by the user. Your writing should be vivid, with natural dialogue, good pacing, and a satisfying conclusion.'
+          },
+          {
+            role: 'user',
+            content: enhancedPrompt
+          }
+        ],
+        temperature: 0.8
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+
+        }
+      }
+    );
+
+    // Extract story content from response
+    const story = response.data.choices[0].message.content;
+    
+    return story;
+  } catch (error) {
+    console.error('Error generating story:', error);
+    
+    if (error.response) {
+      console.error('Error status:', error.response.status);
+      try {
+        console.error('API error response:', error.response.data);
+      } catch (e) {
+        console.error('Could not parse error response data');
+      }
+    }
+    
+    throw error;
+  }
+}
+
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -932,6 +1000,81 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  // Check if the user is waiting to provide a story prompt
+  if (usersWaitingForStoryPrompt.has(message.author.id)) {
+    const { characterUsers, loadingMessage } = usersWaitingForStoryPrompt.get(message.author.id);
+    const storyPrompt = message.content;
+    
+    // Clear story prompt wait for this user
+    usersWaitingForStoryPrompt.delete(message.author.id);
+    
+    // Update the loading message to indicate story generation has started
+    await loadingMessage.edit('📝 Generating your custom story... This might take a few minutes as I craft a detailed narrative!');
+    
+    try {
+      // Get character names from the mentioned users
+      const characterNames = characterUsers.map(user => user.username);
+      
+      // Generate the story
+      const story = await generateStory(storyPrompt, characterNames);
+      
+      // Create an embed for the story intro
+      const storyEmbed = new EmbedBuilder()
+        .setColor('#9966cc')
+        .setTitle('📚 Your Custom Story is Ready!')
+        .setDescription(`**Scenario:** ${storyPrompt}\n\n**Featuring:** ${characterUsers.map(user => user.username).join(', ')}`)
+        .addFields(
+          { name: 'Story Length', value: `${story.length} characters`, inline: true },
+          { name: 'Characters', value: `${characterUsers.length} characters`, inline: true }
+        )
+        .setFooter({ text: 'Generated using AI • Story created just for you' })
+        .setTimestamp();
+      
+      // Send the story intro
+      const introMessage = await message.channel.send({ 
+        content: `${message.author} Here's your generated story:`,
+        embeds: [storyEmbed]
+      });
+      
+      // Send the actual story content in chunks if needed
+      const MAX_MESSAGE_LENGTH = 2000;
+      if (story.length <= MAX_MESSAGE_LENGTH) {
+        // Story fits in a single message
+        await message.channel.send(story);
+      } else {
+        // Break story into chunks for sending
+        for (let i = 0; i < story.length; i += MAX_MESSAGE_LENGTH) {
+          const chunk = story.substring(i, i + MAX_MESSAGE_LENGTH);
+          await message.channel.send(chunk);
+        }
+      }
+      
+      // Edit the loading message
+      await loadingMessage.edit('✅ Story generated successfully!');
+      
+      // Delete the prompt message to keep the channel clean
+      try {
+        await message.delete();
+      } catch (error) {
+        console.error('Error deleting message:', error);
+      }
+      
+    } catch (error) {
+      console.error('Error generating story:', error);
+      
+      // Provide more helpful error message
+      let errorMessage = 'Sorry, there was an error generating your story. Please try again later.';
+      
+      if (error.message && error.message.includes('timeout')) {
+        errorMessage = 'Sorry, story generation timed out. Please try a simpler prompt or try again later.';
+      }
+      
+      await loadingMessage.edit(errorMessage);
+    }
+    
+    return;
+  }
+
   // Check for !playgame command
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
@@ -972,6 +1115,24 @@ client.on('messageCreate', async (message) => {
     // Send directly in the channel
     await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
     
+    return;
+  }
+
+  // Check for !generatestory command with mentions
+  if (message.content.startsWith('!generatestory')) {
+    // Extract mentioned users from the message
+    const characterUsers = Array.from(message.mentions.users.values());
+    
+    if (characterUsers.length === 0) {
+      message.reply('Please mention at least one user to include as a character in the story. Example: `!generatestory @username1 @username2`');
+      return;
+    }
+    
+    // Send initial response
+    const loadingMessage = await message.reply(`I found ${characterUsers.length} character(s): ${characterUsers.map(user => user.username).join(', ')}. Now, please describe the scenario for the story in your next message.`);
+    
+    // Put the user in wait-for-prompt mode
+    usersWaitingForStoryPrompt.set(message.author.id, { characterUsers, loadingMessage });
     return;
   }
 
