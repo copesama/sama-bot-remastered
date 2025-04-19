@@ -649,9 +649,9 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         
         // Improved approach for fitting avatars to white circles
         try {
-          // Apply a larger scaling factor to ensure avatar completely covers the white circle
-          // Increased from 1.5 to 1.8 to better cover non-circular shapes
-          const scalingFactor = 1.8;
+          // Apply a slight scaling factor to ensure avatar completely covers the white circle
+          // This helps avoid any gaps between the avatar and the original white circle
+          const scalingFactor = 1.6; // 5% larger than the detected circle
           const exactDiameter = Math.floor(radius * 2);
           const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
           
@@ -720,10 +720,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
       }
     }
     
-    // NEW: Add a cleanup pass to detect and remove any remaining white circle parts
-    console.log('Performing white circle cleanup pass...');
-    await cleanupRemainingWhiteCircles(baseImage, circles);
-    
     // Generate unique ID for the final image file
     const imageId = shortid.generate();
     const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
@@ -737,73 +733,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
     console.error('Error placing avatars in circles:', error);
     throw error;
   }
-}
-
-// NEW: Helper function to clean up any remaining white circle parts
-async function cleanupRemainingWhiteCircles(image, circles) {
-  const { intToRGBA } = require('jimp');
-  const whiteThreshold = 230; // RGB threshold for "white" pixels
-  
-  // For each circle placement, check surrounding area for residual white pixels
-  for (const { centerX, centerY, radius } of circles) {
-    // Add a buffer zone around each circle to ensure we catch all white pixels
-    const searchRadius = Math.floor(radius * 1.5);
-    const startX = Math.max(0, Math.floor(centerX - searchRadius));
-    const startY = Math.max(0, Math.floor(centerY - searchRadius));
-    const endX = Math.min(image.width - 1, Math.floor(centerX + searchRadius));
-    const endY = Math.min(image.height - 1, Math.floor(centerY + searchRadius));
-    
-    // Scan the area around the circle position
-    for (let y = startY; y <= endY; y++) {
-      for (let x = startX; x <= endX; x++) {
-        const { r, g, b } = intToRGBA(image.getPixelColor(x, y));
-        
-        // If this is a white pixel
-        if (r > whiteThreshold && g > whiteThreshold && b > whiteThreshold) {
-          // Calculate distance from circle center
-          const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
-          
-          // If the white pixel is near but outside the exact circle (residual white)
-          if (distance > radius * 0.8 && distance < radius * 1.3) {
-            // Sample nearby non-white pixels to find a good replacement color
-            let replacementColor = null;
-            
-            // Try to find a non-white neighbor to sample color from
-            for (let dy = -5; dy <= 5 && !replacementColor; dy++) {
-              for (let dx = -5; dx <= 5 && !replacementColor; dx++) {
-                const nx = x + dx;
-                const ny = y + dy;
-                
-                // Skip out of bounds or the exact pixel we're checking
-                if (nx < 0 || ny < 0 || nx >= image.width || ny >= image.height || (dx === 0 && dy === 0)) {
-                  continue;
-                }
-                
-                const neighborColor = image.getPixelColor(nx, ny);
-                const { r: nr, g: ng, b: nb } = intToRGBA(neighborColor);
-                
-                // If this neighbor is not white, use its color
-                if (nr < whiteThreshold || ng < whiteThreshold || nb < whiteThreshold) {
-                  replacementColor = neighborColor;
-                  break;
-                }
-              }
-            }
-            
-            // If we found a non-white color nearby, use it - otherwise use a neutral gray
-            if (replacementColor) {
-              image.setPixelColor(replacementColor, x, y);
-            } else {
-              // Use a neutral color if no suitable neighbor was found
-              image.setPixelColor(0x808080FF, x, y);
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  console.log('White circle cleanup completed');
 }
 
 // Updated function to generate image with avatars (two-step process)
