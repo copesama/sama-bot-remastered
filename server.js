@@ -15,6 +15,9 @@ const FormData = require('form-data');
 // Import the finance news module - update to include the initFinanceNews function
 const { handleFinanceNewsCommand, initFinanceNews } = require('./commands/financeNews');
 
+// Import the quiz generator module
+const { handleQuizCommand } = require('./commands/quizGenerator');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -1277,6 +1280,20 @@ client.on('messageCreate', async (message) => {
       await loadingMessage.edit(errorMessage);
     }
     
+    return;
+  }
+
+  // Check for !generatequiz command
+  if (message.content.startsWith('!generatequiz')) {
+    const prompt = message.content.slice('!generatequiz'.length).trim();
+    
+    if (!prompt) {
+      message.reply('Please provide a topic for the quiz. Example: `!generatequiz solar system` or `!generatequiz world history`');
+      return;
+    }
+    
+    // Handle the quiz generation
+    await handleQuizCommand(message, prompt);
     return;
   }
 
