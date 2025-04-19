@@ -34,15 +34,41 @@ class FinanceNews {
    */
   async fetchAndPostFinanceNews() {
     try {
-      console.log('Fetching finance news from Yahoo Finance...');
-      const newsArticles = await this.fetchYahooFinanceNews();
+      console.log('Fetching finance news...');
+      
+      // Try to fetch from multiple sources with fallbacks
+      let newsArticles = [];
+      
+      try {
+        // First try Yahoo Finance
+        newsArticles = await this.fetchYahooFinanceNews();
+        console.log(`Found ${newsArticles.length} articles from Yahoo Finance`);
+      } catch (yahooError) {
+        console.error('Error fetching from Yahoo Finance, trying fallback source:', yahooError);
+        
+        // Fallback to MarketWatch
+        try {
+          newsArticles = await this.fetchMarketWatchNews();
+          console.log(`Found ${newsArticles.length} articles from MarketWatch fallback`);
+        } catch (marketwatchError) {
+          console.error('Error fetching from MarketWatch fallback:', marketwatchError);
+          
+          // Second fallback to Investing.com
+          try {
+            newsArticles = await this.fetchInvestingComNews();
+            console.log(`Found ${newsArticles.length} articles from Investing.com fallback`);
+          } catch (investingError) {
+            console.error('Error fetching from all news sources:', investingError);
+          }
+        }
+      }
       
       if (!newsArticles || newsArticles.length === 0) {
-        console.log('No finance news articles found');
+        console.log('No finance news articles found from any source');
         return;
       }
       
-      console.log(`Found ${newsArticles.length} finance news articles`);
+      console.log(`Proceeding with ${newsArticles.length} finance news articles`);
       
       // Prepare content for summarization
       const newsContent = newsArticles
@@ -61,47 +87,148 @@ class FinanceNews {
   }
 
   /**
-   * Fetch the latest finance news from Yahoo Finance
+   * Fetch the latest finance news from Yahoo Finance with improved error handling
    * @returns {Promise<Array>} Array of news articles
    */
   async fetchYahooFinanceNews() {
     try {
-      // Fetch the Yahoo Finance front page
-      const response = await axios.get('https://finance.yahoo.com/', {
+      // Use a more robust configuration for the request
+      const response = await axios.get('https://finance.yahoo.com/news/', {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        timeout: 10000, // 10 second timeout
+        maxContentLength: 10 * 1024 * 1024, // 10MB max response size
+        decompress: true, // Handle gzip/deflate
       });
       
       const $ = cheerio.load(response.data);
       const articles = [];
       
-      // Extract articles from the main page
-      $('li.js-stream-content').each((i, element) => {
+      // Try multiple selectors to account for potential Yahoo Finance layout changes
+      const contentSelectors = [
+        'li.js-stream-content', 
+        'div.Cf', 
+        'div.NewsArticle',
+        'ul.My\\(0\\) > li'
+      ];
+      
+      for (const selector of contentSelectors) {
+        $(selector).each((i, element) => {
+          if (articles.length >= 15) return false; // Limit to 15 articles total
+          
+          // Try different title selectors
+          const titleSelectors = ['h3', 'h2', '.headline', 'a > div > div'];
+          let title = null;
+          
+          for (const titleSelector of titleSelectors) {
+            const titleElement = $(element).find(titleSelector).first();
+            if (titleElement.length) {
+              title = titleElement.text().trim();
+              if (title) break;
+            }
+          }
+          
+          if (!title) return; // Skip if no title found
+          
+          // Try different link selectors
+          const linkSelectors = ['a', 'a.js-content-viewer'];
+          let url = null;
+          
+          for (const linkSelector of linkSelectors) {
+            const linkElement = $(element).find(linkSelector).first();
+            if (linkElement.length) {
+              url = linkElement.attr('href');
+              if (url) break;
+            }
+          }
+          
+          // Fix relative URLs
+          if (url && url.startsWith('/')) {
+            url = 'https://finance.yahoo.com' + url;
+          }
+          
+          // Extract short summary if available
+          const summarySelectors = ['p', '.summary', '.description'];
+          let summary = null;
+          
+          for (const summarySelector of summarySelectors) {
+            const summaryElement = $(element).find(summarySelector).first();
+            if (summaryElement.length) {
+              summary = summaryElement.text().trim();
+              if (summary) break;
+            }
+          }
+          
+          if (title && url) {
+            // Check for duplicates before adding
+            if (!articles.some(article => article.title === title)) {
+              articles.push({
+                title,
+                url,
+                summary: summary || ''
+              });
+            }
+          }
+        });
+        
+        // If we found articles using this selector, no need to try others
+        if (articles.length > 0) {
+          break;
+        }
+      }
+      
+      return articles;
+      
+    } catch (error) {
+      console.error('Error fetching Yahoo Finance news:', error);
+      throw error; // Propagate error for fallback handling
+    }
+  }
+  
+  /**
+   * Fetch the latest finance news from MarketWatch as a fallback
+   * @returns {Promise<Array>} Array of news articles
+   */
+  async fetchMarketWatchNews() {
+    try {
+      const response = await axios.get('https://www.marketwatch.com/latest-news', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5'
+        },
+        timeout: 10000,
+      });
+      
+      const $ = cheerio.load(response.data);
+      const articles = [];
+      
+      // MarketWatch latest news articles
+      $('.article__content').each((i, element) => {
         if (i >= 15) return false; // Limit to 15 articles
         
-        const titleElement = $(element).find('h3');
+        const titleElement = $(element).find('.article__headline');
         const title = titleElement.text().trim();
         
         if (!title) return; // Skip if no title
         
-        const linkElement = $(element).find('a').first();
+        const linkElement = $(element).find('a.link').first();
         let url = linkElement.attr('href');
         
-        // Fix relative URLs
-        if (url && url.startsWith('/')) {
-          url = 'https://finance.yahoo.com' + url;
-        }
-        
         // Extract short summary if available
-        const summaryElement = $(element).find('p');
+        const summaryElement = $(element).find('.article__summary');
         const summary = summaryElement.text().trim();
         
         if (title && url) {
           articles.push({
             title,
             url,
-            summary
+            summary: summary || ''
           });
         }
       });
@@ -109,13 +236,109 @@ class FinanceNews {
       return articles;
       
     } catch (error) {
-      console.error('Error fetching Yahoo Finance news:', error);
-      return [];
+      console.error('Error fetching MarketWatch news:', error);
+      throw error; // Propagate error for next fallback
     }
+  }
+  
+  /**
+   * Fetch the latest finance news from Investing.com as a second fallback
+   * @returns {Promise<Array>} Array of news articles
+   */
+  async fetchInvestingComNews() {
+    try {
+      const response = await axios.get('https://www.investing.com/news/latest-news', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5'
+        },
+        timeout: 10000,
+      });
+      
+      const $ = cheerio.load(response.data);
+      const articles = [];
+      
+      // Investing.com latest news articles
+      $('.largeTitle article').each((i, element) => {
+        if (i >= 15) return false; // Limit to 15 articles
+        
+        const titleElement = $(element).find('.title');
+        const title = titleElement.text().trim();
+        
+        if (!title) return; // Skip if no title
+        
+        const linkElement = titleElement.find('a').first();
+        let url = linkElement.attr('href');
+        
+        // Fix relative URLs
+        if (url && url.startsWith('/')) {
+          url = 'https://www.investing.com' + url;
+        }
+        
+        // No summary available on this page
+        
+        if (title && url) {
+          articles.push({
+            title,
+            url,
+            summary: 'No summary available'
+          });
+        }
+      });
+      
+      return articles;
+      
+    } catch (error) {
+      console.error('Error fetching Investing.com news:', error);
+      
+      // Last fallback - return manually created market data
+      return this.createFallbackMarketData();
+    }
+  }
+  
+  /**
+   * Create fallback market data when all sources fail
+   * @returns {Array} Array of basic market data articles
+   */
+  createFallbackMarketData() {
+    console.log('Using hardcoded fallback market data');
+    
+    // Get today's date
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+    
+    return [
+      {
+        title: `Market Summary for ${dateStr}`,
+        url: 'https://finance.yahoo.com/quote/%5EGSPC/',
+        summary: 'S&P 500 index data for today'
+      },
+      {
+        title: `Dow Jones Industrial Average - ${dateStr}`,
+        url: 'https://finance.yahoo.com/quote/%5EDJI/',
+        summary: 'DJIA performance summary'
+      },
+      {
+        title: `NASDAQ Composite - ${dateStr}`,
+        url: 'https://finance.yahoo.com/quote/%5EIXIC/',
+        summary: 'NASDAQ market activity'
+      },
+      {
+        title: `Global Markets Overview - ${dateStr}`,
+        url: 'https://finance.yahoo.com/world-indices/',
+        summary: 'Overview of global market indices'
+      },
+      {
+        title: `Commodities Report - ${dateStr}`,
+        url: 'https://finance.yahoo.com/commodities/',
+        summary: 'Latest commodity prices including oil, gold and silver'
+      }
+    ];
   }
 
   /**
-   * Summarize finance news using OpenRouter API
+   * Summarize finance news using OpenRouter API with improved error handling
    * @param {string} newsContent Content to summarize
    * @returns {Promise<string>} Summarized content
    */
@@ -147,13 +370,15 @@ class FinanceNews {
               content: `Here are today's top financial news articles. Please analyze them and provide a well-organized daily financial market summary:\n\n${newsContent}`
             }
           ],
-          temperature: 0.3
+          temperature: 0.3,
+          max_tokens: 1500
         },
         {
           headers: {
             'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 30000 // 30 second timeout
         }
       );
 
@@ -166,8 +391,42 @@ class FinanceNews {
       if (error.response) {
         console.error('API error details:', error.response.data);
       }
-      return 'Error generating finance news summary. Please check the logs for details.';
+      
+      // Return a simple fallback summary
+      return this.createFallbackSummary();
     }
+  }
+  
+  /**
+   * Create a fallback summary when AI summarization fails
+   * @returns {string} Basic finance summary
+   */
+  createFallbackSummary() {
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+    return `# Financial Market Summary - ${dateStr}
+
+## Market Overview
+* Markets are experiencing regular trading activities
+* Please check the links below for specific index performances
+* Economic data releases continue to influence market sentiment
+
+## Notable Sectors
+* Technology, Healthcare, and Financial sectors remain key areas to watch
+* Commodity prices continue to impact related industries
+
+## Key Takeaways
+* Stay informed on major index movements
+* Watch for significant earnings announcements
+* Monitor central bank communications for policy signals
+
+*Note: This is a system-generated summary due to technical difficulties with our regular finance news summarization. Please check the links below for detailed market information.*`;
   }
 
   /**
