@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 // Add voice-related imports
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
 const axios = require('axios');
@@ -11,9 +11,8 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
-
 // Import the finance news module
-const financeNews = require('./finance-news');
+const financeNews = require('./financenews');
 
 // Initialize Discord client
 const client = new Client({
@@ -1181,8 +1180,8 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   
-  // Initialize finance news scheduler when bot is ready
-  financeNews.initScheduledNews(client);
+  // Initialize finance news module when the bot is ready
+  financeNews.initializeFinanceNews(client);
 });
 
 client.on('messageCreate', async (message) => {
@@ -1281,72 +1280,9 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !financenews command - admin only
-  if (message.content.toLowerCase() === '!financenews') {
-    // Check if the user has admin permissions
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      message.reply('❌ You need administrator permissions to set up finance news.');
-      return;
-    }
-    
-    try {
-      // Register the channel for finance news
-      financeNews.registerChannel(message.guild.id, message.channel.id);
-      
-      const newsEmbed = new EmbedBuilder()
-        .setColor('#00cc99')
-        .setTitle('📈 Finance News Channel Setup')
-        .setDescription(`This channel has been successfully configured to receive daily finance market updates at 8:00 AM.`)
-        .addFields(
-          { name: 'Channel', value: `<#${message.channel.id}>` },
-          { name: 'Next Update', value: 'Tomorrow at 8:00 AM' },
-          { name: 'Manual Update', value: 'Use `!financenow` to trigger an immediate news update.' },
-          { name: 'Disable Updates', value: 'Use `!financestop` to disable daily updates.' }
-        )
-        .setFooter({ text: 'Finance updates powered by Yahoo Finance • Summarized with AI' })
-        .setTimestamp();
-      
-      await message.channel.send({ embeds: [newsEmbed] });
-      
-      // Send a first update immediately
-      await message.channel.send('Generating the first finance news update now...');
-      financeNews.sendFinanceNews(client);
-      
-    } catch (error) {
-      console.error('Error setting up finance news:', error);
-      message.reply('Sorry, there was an error setting up finance news. Please try again later.');
-    }
-    
-    return;
-  }
-  
-  // Command to trigger immediate finance news update - admin only
-  if (message.content.toLowerCase() === '!financenow') {
-    // Check if the user has admin permissions
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      message.reply('❌ You need administrator permissions to trigger finance news updates.');
-      return;
-    }
-    
-    await message.reply('📊 Generating finance news update. This might take a minute...');
-    financeNews.sendFinanceNews(client);
-    return;
-  }
-  
-  // Command to stop finance news in this server - admin only
-  if (message.content.toLowerCase() === '!financestop') {
-    // Check if the user has admin permissions
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      message.reply('❌ You need administrator permissions to stop finance news updates.');
-      return;
-    }
-    
-    const success = financeNews.unregisterChannel(message.guild.id);
-    if (success) {
-      await message.reply('✅ Finance news updates have been disabled for this server.');
-    } else {
-      await message.reply('❓ Finance news was not configured for this server.');
-    }
+  // Check for !financenews command
+  if (message.content.trim() === '!financenews') {
+    await financeNews.handleFinanceNewsCommand(message);
     return;
   }
 
