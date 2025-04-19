@@ -345,7 +345,7 @@ async function generateBaseImage(prompt, numAvatars) {
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 
     IMPORTANT REQUIREMENTS FOR THE CIRCLES:
-    - Each white circle must be at least ${circleSizeMaxPercent}% of the image size
+    - Each white circle must be at least ${circleSizeMinPercent}% of the image size
     - Circles must be very clearly visible with clean, defined edges
     - Position circles where heads would normally be in the scene
     - Make sure circles are perfectly round, not oval or irregular
@@ -410,7 +410,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
       const threshold = 230; // RGB threshold for "white" pixels
       
       // Increase the minimum circle size from 5% to 10% of image dimension for stricter filtering
-      const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.1; // Minimum circle size (10% of image dimension)
+      const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.05; // Minimum circle size (10% of image dimension)
       
       console.log(`Using minimum circle radius threshold: ${circleMinRadius} pixels`);
       
@@ -651,7 +651,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         try {
           // Apply a slight scaling factor to ensure avatar completely covers the white circle
           // This helps avoid any gaps between the avatar and the original white circle
-          const scalingFactor = 2; // 5% larger than the detected circle
+          const scalingFactor = 1.5; // 5% larger than the detected circle
           const exactDiameter = Math.floor(radius * 2);
           const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
           
