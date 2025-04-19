@@ -11,6 +11,8 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
+// Import the finance news module
+const FinanceNews = require('./finance-news');
 
 // Initialize Discord client
 const client = new Client({
@@ -1177,6 +1179,12 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
+  
+  // Initialize Finance News feature when bot is ready
+  const financeNews = new FinanceNews(client).init();
+  
+  // Set a property on the client to make the feature accessible elsewhere
+  client.financeNews = financeNews;
 });
 
 client.on('messageCreate', async (message) => {
@@ -1704,6 +1712,28 @@ client.on('messageCreate', async (message) => {
       }
       
       await loadingMessage.edit(errorMessage);
+    }
+    
+    return;
+  }
+
+  // New command for manually triggering finance news
+  if (message.content === '!financenews') {
+    // Check if user has admin permissions
+    if (!message.member.permissions.has('ADMINISTRATOR')) {
+      message.reply('You need administrator permissions to manually trigger finance news updates.');
+      return;
+    }
+    
+    const loadingMessage = await message.reply('📊 Fetching and summarizing today\'s financial news... This might take a minute!');
+    
+    try {
+      // Manually trigger the finance news update
+      await client.financeNews.fetchAndPostFinanceNews();
+      await loadingMessage.edit('✅ Financial news summary has been posted to the #finance-news channel!');
+    } catch (error) {
+      console.error('Error manually triggering finance news:', error);
+      await loadingMessage.edit('❌ Error generating finance news summary. Please check the logs for details.');
     }
     
     return;
