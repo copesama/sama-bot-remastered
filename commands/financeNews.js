@@ -1,5 +1,85 @@
 const axios = require('axios');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+const schedule = require('node-schedule');
+
+// Path for storing channel configuration
+const CONFIG_DIR = path.join(__dirname, '..', 'config');
+const FINANCE_CONFIG_PATH = path.join(CONFIG_DIR, 'finance_channels.json');
+
+// Create config directory if it doesn't exist
+if (!fs.existsSync(CONFIG_DIR)) {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+}
+
+// Store subscribed channels (guildId -> channelId)
+let subscribedChannels = new Map();
+let dailyNewsJob = null;
+let cachedNewsArticles = null;
+let lastFetchDate = null;
+
+/**
+ * Loads subscribed channels from the configuration file
+ */
+function loadSubscribedChannels() {
+  try {
+    if (fs.existsSync(FINANCE_CONFIG_PATH)) {
+      const data = JSON.parse(fs.readFileSync(FINANCE_CONFIG_PATH, 'utf8'));
+      subscribedChannels = new Map(Object.entries(data));
+      console.log(`Loaded ${subscribedChannels.size} finance news subscriptions`);
+    }
+  } catch (error) {
+    console.error('Error loading finance channel subscriptions:', error);
+    subscribedChannels = new Map();
+  }
+}
+
+/**
+ * Saves subscribed channels to the configuration file
+ */
+function saveSubscribedChannels() {
+  try {
+    const data = Object.fromEntries(subscribedChannels);
+    fs.writeFileSync(FINANCE_CONFIG_PATH, JSON.stringify(data, null, 2));
+    console.log(`Saved ${subscribedChannels.size} finance news subscriptions`);
+  } catch (error) {
+    console.error('Error saving finance channel subscriptions:', error);
+  }
+}
+
+/**
+ * Subscribe a channel to daily finance news
+ * @param {string} guildId - Discord server ID
+ * @param {string} channelId - Channel ID to receive news
+ * @returns {boolean} - Success status
+ */
+function subscribeChannel(guildId, channelId) {
+  subscribedChannels.set(guildId, channelId);
+  saveSubscribedChannels();
+  return true;
+}
+
+/**
+ * Unsubscribe a channel from daily finance news
+ * @param {string} guildId - Discord server ID
+ * @returns {boolean} - Success status
+ */
+function unsubscribeChannel(guildId) {
+  const wasSubscribed = subscribedChannels.has(guildId);
+  subscribedChannels.delete(guildId);
+  saveSubscribedChannels();
+  return wasSubscribed;
+}
+
+/**
+ * Check if a guild is subscribed to finance news
+ * @param {string} guildId - Discord server ID
+ * @returns {string|null} - Channel ID if subscribed, null otherwise
+ */
+function getSubscribedChannel(guildId) {
+  return subscribedChannels.get(guildId) || null;
+}
 
 /**
  * Fetches finance news from NewsAPI
@@ -8,6 +88,14 @@ const { EmbedBuilder } = require('discord.js');
  * @returns {Promise<Array>} - Array of news articles
  */
 async function fetchFinanceNews(apiKey, limit = 10) {
+  // Check if we already have fresh news (less than 6 hours old)
+  const now = new Date();
+  if (cachedNewsArticles && lastFetchDate && 
+      (now.getTime() - lastFetchDate.getTime() < 6 * 60 * 60 * 1000)) {
+    console.log('Using cached finance news');
+    return cachedNewsArticles;
+  }
+
   try {
     // Get the current date in YYYY-MM-DD format for the API
     const today = new Date();
@@ -26,7 +114,10 @@ async function fetchFinanceNews(apiKey, limit = 10) {
 
     // Check if we got valid results
     if (response.data && response.data.articles && response.data.articles.length > 0) {
-      return response.data.articles.slice(0, limit);
+      // Cache the results
+      cachedNewsArticles = response.data.articles.slice(0, limit);
+      lastFetchDate = new Date();
+      return cachedNewsArticles;
     } else {
       console.log('No finance news found or API limit reached');
       return [];
@@ -98,14 +189,131 @@ function createNewsEmbed(newsArticles) {
 }
 
 /**
+ * Schedule a job to send daily finance news to all subscribed channels
+ * @param {Object} client - Discord client
+ * @param {string} apiKey - NewsAPI API key
+ */
+function scheduleDailyNews(client, apiKey) {
+  // Cancel any existing job
+  if (dailyNewsJob) {
+    dailyNewsJob.cancel();
+  }
+  
+  // Schedule job to run at 8:30 AM (market opening time for major markets)
+  // This is a good time for daily financial updates before trading day starts
+  dailyNewsJob = schedule.scheduleJob('0 30 8 * * *', async function() {
+    try {
+      console.log('Running scheduled finance news update');
+      // Only fetch news once
+      const newsArticles = await fetchFinanceNews(apiKey, 8);
+      
+      if (newsArticles.length === 0) {
+        console.log('No finance news to send for daily update');
+        return;
+      }
+      
+      const newsEmbed = createNewsEmbed(newsArticles);
+      
+      // Send to all subscribed channels
+      let successCount = 0;
+      let failCount = 0;
+      
+      for (const [guildId, channelId] of subscribedChannels.entries()) {
+        try {
+          const channel = await client.channels.fetch(channelId);
+          if (channel && channel.isTextBased()) {
+            await channel.send({ 
+              content: '📈 Here are today\'s top financial news headlines:', 
+              embeds: [newsEmbed] 
+            });
+            successCount++;
+          } else {
+            console.log(`Cannot send to channel ${channelId} in guild ${guildId} - not a text channel`);
+            failCount++;
+          }
+        } catch (error) {
+          console.error(`Error sending news to guild ${guildId}, channel ${channelId}:`, error);
+          failCount++;
+        }
+      }
+      
+      console.log(`Daily finance news sent to ${successCount} channels (${failCount} failed)`);
+    } catch (error) {
+      console.error('Error in scheduled finance news job:', error);
+    }
+  });
+  
+  console.log('Daily finance news scheduled for 8:30 AM');
+}
+
+/**
+ * Initialize the finance news system
+ * @param {Object} client - Discord client
+ * @param {string} apiKey - NewsAPI API key
+ */
+function initFinanceNews(client, apiKey) {
+  // Load subscribed channels
+  loadSubscribedChannels();
+  
+  // Schedule daily news
+  scheduleDailyNews(client, apiKey);
+  
+  console.log('Finance news system initialized');
+}
+
+/**
  * Handles the finance news command
  * @param {Object} message - Discord message object
  * @param {string} apiKey - NewsAPI API key
- * @param {number} limit - Maximum number of news articles to display
+ * @param {Object} client - Discord client object
  */
-async function handleFinanceNewsCommand(message, apiKey, limit = 8) {
+async function handleFinanceNewsCommand(message, apiKey, client) {
   try {
-    // Send initial loading message
+    // Check if the command is a subscription management command
+    const parts = message.content.toLowerCase().split(' ');
+    
+    // Admin commands for channel subscription
+    if (parts.length > 1) {
+      // Check if user has admin permissions
+      const hasPermission = message.member && message.member.permissions.has(PermissionFlagsBits.Administrator);
+      
+      if (!hasPermission) {
+        await message.reply('You need administrator permissions to manage finance news subscriptions.');
+        return;
+      }
+      
+      const action = parts[1];
+      
+      if (action === 'subscribe') {
+        // Subscribe this channel to daily updates
+        subscribeChannel(message.guild.id, message.channel.id);
+        await message.reply('✅ This channel will now receive daily financial news updates at 8:30 AM.');
+        return;
+      } 
+      else if (action === 'unsubscribe') {
+        // Unsubscribe this server from daily updates
+        const wasSubscribed = unsubscribeChannel(message.guild.id);
+        if (wasSubscribed) {
+          await message.reply('✅ This server will no longer receive daily financial news updates.');
+        } else {
+          await message.reply('This server is not currently subscribed to daily financial news.');
+        }
+        return;
+      }
+      else if (action === 'status') {
+        // Check subscription status
+        const subscribedChannelId = getSubscribedChannel(message.guild.id);
+        if (subscribedChannelId) {
+          const channelMention = `<#${subscribedChannelId}>`;
+          await message.reply(`This server is subscribed to daily financial news in channel ${channelMention}.`);
+        } else {
+          await message.reply('This server is not currently subscribed to daily financial news.');
+        }
+        return;
+      }
+    }
+    
+    // If not a subscription command, treat as a regular news request
     const loadingMessage = await message.reply('📊 Fetching the latest financial news headlines...');
     
     // Check if API key is available
@@ -115,7 +323,7 @@ async function handleFinanceNewsCommand(message, apiKey, limit = 8) {
     }
     
     // Fetch finance news
-    const newsArticles = await fetchFinanceNews(apiKey, limit);
+    const newsArticles = await fetchFinanceNews(apiKey, 8);
     
     // Create and send the embed
     const newsEmbed = createNewsEmbed(newsArticles);
@@ -134,13 +342,9 @@ async function handleFinanceNewsCommand(message, apiKey, limit = 8) {
       }
     }
     
-    // Try to edit the loading message if it exists
+    // Send error message
     try {
-      if (message._loadingMessage) {
-        await message._loadingMessage.edit(errorMessage);
-      } else {
-        await message.reply(errorMessage);
-      }
+      await message.reply(errorMessage);
     } catch (e) {
       console.error('Error sending error message:', e);
       await message.channel.send(errorMessage).catch(console.error);
@@ -151,5 +355,9 @@ async function handleFinanceNewsCommand(message, apiKey, limit = 8) {
 module.exports = {
   fetchFinanceNews,
   createNewsEmbed,
-  handleFinanceNewsCommand
+  handleFinanceNewsCommand,
+  initFinanceNews,
+  getSubscribedChannel,
+  subscribeChannel,
+  unsubscribeChannel
 };

@@ -12,8 +12,8 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
 
-// Import the finance news module
-const { handleFinanceNewsCommand } = require('./commands/financeNews');
+// Import the finance news module - update to include the initFinanceNews function
+const { handleFinanceNewsCommand, initFinanceNews } = require('./commands/financeNews');
 
 // Initialize Discord client
 const client = new Client({
@@ -1146,8 +1146,7 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
     
     await message.channel.send({ 
       content: `${message.author} Story generation complete!`,
-      embeds: [summaryEmbed]
-    });
+      embeds: [summaryEmbed] });
     
     // Final update to loading message
     await loadingMessage.edit('✅ Story with images generated successfully!');
@@ -1180,6 +1179,9 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
+  
+  // Initialize the finance news system with the Discord client
+  initFinanceNews(client, process.env.NEWSAPI_KEY);
 });
 
 client.on('messageCreate', async (message) => {
@@ -1278,19 +1280,10 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !financenews command
+  // Check for !financenews command - update this section
   if (message.content.startsWith('!financenews')) {
-    // Extract any additional parameters if needed
-    const args = message.content.split(' ').slice(1);
-    let limit = 8; // Default number of news items
-
-    // Check if user specified a limit
-    if (args.length > 0 && !isNaN(args[0]) && parseInt(args[0]) > 0) {
-      limit = Math.min(parseInt(args[0]), 10); // Enforce maximum of 10 items
-    }
-    
-    // Call the finance news handler with NewsAPI key from environment variables
-    await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, limit);
+    // Call the finance news handler with NewsAPI key and the client
+    await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
   }
 
