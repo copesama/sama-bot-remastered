@@ -16,7 +16,7 @@ const FormData = require('form-data');
 const { handleFinanceNewsCommand, initFinanceNews } = require('./commands/financeNews');
 
 // Import the quiz generator module
-const { handleQuizCommand } = require('./commands/quizGenerator');
+const { handleQuizCommand, clearUserQuiz } = require('./commands/quizGenerator');
 
 // Initialize Discord client
 const client = new Client({
@@ -67,6 +67,9 @@ const usersWaitingForImagePrompt = new Map();
 
 // Keep track of users waiting to provide story prompts
 const usersWaitingForStoryPrompt = new Map();
+
+// Track users who are in "edit mode"
+const usersInEditMode = new Map();
 
 // Game access with user authentication
 app.get('/game/:gameId', (req, res) => {
@@ -767,8 +770,6 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
   }
 }
 
-// Track users who are in "edit mode"
-const usersInEditMode = new Map();
 
 // Function to edit an existing game
 async function editGame(gameId, editPrompt, originalHtml) {
@@ -1283,24 +1284,16 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !generatequiz command
-  if (message.content.startsWith('!generatequiz')) {
-    const prompt = message.content.slice('!generatequiz'.length).trim();
-    
-    if (!prompt) {
-      message.reply('Please provide a topic for the quiz. Example: `!generatequiz solar system` or `!generatequiz world history`');
-      return;
-    }
-    
-    // Handle the quiz generation
-    await handleQuizCommand(message, prompt);
-    return;
-  }
-
   // Check for !financenews command - update this section
   if (message.content.startsWith('!financenews')) {
     // Call the finance news handler with NewsAPI key and the client
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
+    return;
+  }
+
+  // Check for !generatequiz command
+  if (message.content.startsWith('!generatequiz')) {
+    await handleQuizCommand(message);
     return;
   }
 
@@ -1737,6 +1730,12 @@ client.on('messageCreate', async (message) => {
     
     return;
   }
+});
+
+// Add a function to handle cleaning up user data when the user leaves or is disconnected
+client.on('guildMemberRemove', (member) => {
+  // Clean up any active quizzes for this user
+  clearUserQuiz(member.id);
 });
 
 // Add a function to handle cleaning up voice connections when the bot is stopped
