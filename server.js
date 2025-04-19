@@ -11,8 +11,9 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
-// Import the finance news utility
-const { fetchCNBCNews } = require('./utils/financeNews');
+
+// Import the finance news module
+const { sendFinancialNews } = require('./modules/financeNews');
 
 // Initialize Discord client
 const client = new Client({
@@ -1712,42 +1713,29 @@ client.on('messageCreate', async (message) => {
   }
 
   // Check for !financenews command
-  if (message.content.toLowerCase() === '!financenews') {
-    // Send initial loading message
-    const loadingMessage = await message.reply('📈 Fetching the latest finance headlines from CNBC...');
+  if (message.content.startsWith('!financenews')) {
+    // Parse the command for optional limit parameter
+    const args = message.content.split(' ').filter(arg => arg.trim() !== '');
+    let limit = 10; // Default to 10 news items
+    
+    // Check if there's a valid number argument
+    if (args.length > 1 && !isNaN(args[1]) && parseInt(args[1]) > 0) {
+      limit = Math.min(parseInt(args[1]), 25); // Cap at 25 to avoid excessive messages
+    }
     
     try {
-      // Fetch news headlines from CNBC
-      const headlines = await fetchCNBCNews();
+      const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
       
-      if (headlines.length === 0) {
-        await loadingMessage.edit('Sorry, no finance headlines could be found at this time.');
+      if (!apiKey) {
+        await message.reply('Error: Alpha Vantage API key is not configured. Please add it to your environment variables.');
         return;
       }
       
-      // Create an embed for the finance news
-      const newsEmbed = new EmbedBuilder()
-        .setColor('#0099ff')
-        .setTitle('📈 Today\'s Top Finance Headlines from CNBC')
-        .setDescription('Here are the latest finance headlines from CNBC:')
-        .setTimestamp()
-        .setFooter({ text: 'Source: CNBC • Updated just now' });
-      
-      // Add the headlines to the embed
-      headlines.forEach((headline, index) => {
-        const linkText = headline.link ? `[Read More](${headline.link})` : '';
-        newsEmbed.addFields({
-          name: `${index + 1}. ${headline.title}`,
-          value: linkText || 'No link available'
-        });
-      });
-      
-      // Update the loading message with the news embed
-      await loadingMessage.edit({ content: `${message.author} Here are today's finance headlines:`, embeds: [newsEmbed] });
-      
+      // Send financial news using the imported module
+      await sendFinancialNews(apiKey, message, limit);
     } catch (error) {
-      console.error('Error in finance news command:', error);
-      await loadingMessage.edit('Sorry, there was an error fetching finance news. Please try again later.');
+      console.error('Error handling finance news command:', error);
+      await message.reply('Sorry, there was an error retrieving financial news. Please try again later.');
     }
     
     return;
