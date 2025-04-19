@@ -44,16 +44,14 @@ function isAdmin(member) {
     return member.permissions.has('ADMINISTRATOR');
 }
 
-// Create a reusable browser-like headers object to avoid detection
+// Create a more generic browser-like headers object to avoid detection
 const browserHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Referer': 'https://www.google.com/',
-    'Cache-Control': 'max-age=0',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
     'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1'
+    'Upgrade-Insecure-Requests': '1',
+    'Cache-Control': 'max-age=0'
 };
 
 // Function to clean up text by removing excessive whitespace
@@ -61,11 +59,11 @@ function cleanText(text) {
     return text.replace(/\s+/g, ' ').trim();
 }
 
-// Scrape Yahoo Finance for top headlines (using a more reliable URL)
-async function getYahooFinanceNews() {
+// Scrape MSN Money for financial news
+async function getMSNMoneyNews() {
     try {
-        console.log('Fetching Yahoo Finance news...');
-        const response = await axios.get('https://finance.yahoo.com/news/', {
+        console.log('Fetching MSN Money news...');
+        const response = await axios.get('https://www.msn.com/en-us/money/markets', {
             headers: browserHeaders,
             timeout: 10000
         });
@@ -73,42 +71,38 @@ async function getYahooFinanceNews() {
         const $ = cheerio.load(response.data);
         const newsItems = [];
 
-        $('li.js-stream-content, .js-content-viewer, article, .Cf').slice(0, 12).each((index, element) => {
+        $('.cardContainer, .card, article').slice(0, 10).each((index, element) => {
             try {
-                const headlineElement = $(element).find('h3, h2, .headline, .Fw(b)');
+                const headlineElement = $(element).find('.title, h3, .cardText');
                 const headline = cleanText(headlineElement.text());
 
                 let link;
-                const parentLink = headlineElement.parent('a').attr('href');
-                const directLink = headlineElement.find('a').attr('href');
+                const cardLink = $(element).find('a').attr('href');
 
-                link = parentLink || directLink;
-
-                if (!link) {
-                    const anyLink = $(element).find('a').first().attr('href');
-                    link = anyLink;
+                if (cardLink) {
+                    if (cardLink.startsWith('/')) {
+                        link = 'https://www.msn.com' + cardLink;
+                    } else {
+                        link = cardLink;
+                    }
                 }
 
                 if (headline && link && headline.length > 15) {
-                    if (link && !link.startsWith('http')) {
-                        link = 'https://finance.yahoo.com' + link;
-                    }
-
                     newsItems.push({
                         headline: headline.substring(0, 80),
                         link,
-                        source: 'Yahoo Finance'
+                        source: 'MSN Money'
                     });
                 }
             } catch (err) {
-                console.error('Error processing Yahoo Finance item:', err.message);
+                console.error('Error processing MSN Money item:', err.message);
             }
         });
 
-        console.log(`Found ${newsItems.length} Yahoo Finance news items`);
+        console.log(`Found ${newsItems.length} MSN Money news items`);
         return newsItems;
     } catch (error) {
-        console.error('Error scraping Yahoo Finance:', error.message);
+        console.error('Error scraping MSN Money:', error.message);
         return [];
     }
 }
@@ -204,7 +198,7 @@ async function getMarketWatchNews() {
 async function getCNBCNews() {
     try {
         console.log('Fetching CNBC news...');
-        const response = await axios.get('https://www.cnbc.com/markets/', {
+        const response = await axios.get('https://www.cnbc.com/business/', {
             headers: browserHeaders,
             timeout: 10000
         });
@@ -212,9 +206,9 @@ async function getCNBCNews() {
         const $ = cheerio.load(response.data);
         const newsItems = [];
 
-        $('.Card-titleContainer, .Card-title, .Card, .MarketsBanner-storyTitle').slice(0, 10).each((index, element) => {
+        $('.Card-titleContainer, .Card-title, .Card, .MarketsBanner-storyTitle, .teaser-content').slice(0, 10).each((index, element) => {
             try {
-                const headlineElement = $(element).find('.Card-title');
+                const headlineElement = $(element).find('.Card-title, .teaser-title');
                 let headline = cleanText(headlineElement.text());
 
                 if (!headline) {
@@ -241,6 +235,31 @@ async function getCNBCNews() {
             }
         });
 
+        if (newsItems.length === 0) {
+            const fallbackResponse = await axios.get('https://www.cnbc.com/markets/', {
+                headers: browserHeaders,
+                timeout: 10000
+            });
+
+            const fallback$ = cheerio.load(fallbackResponse.data);
+            fallback$('.Card, article').slice(0, 10).each((index, element) => {
+                try {
+                    const headline = cleanText(fallback$(element).find('.Card-title').text());
+                    const link = fallback$(element).find('a').attr('href');
+
+                    if (headline && link && headline.length > 15) {
+                        newsItems.push({
+                            headline: headline.substring(0, 80),
+                            link,
+                            source: 'CNBC'
+                        });
+                    }
+                } catch (err) {
+                    console.error('Error processing CNBC fallback item:', err.message);
+                }
+            });
+        }
+
         console.log(`Found ${newsItems.length} CNBC news items`);
         return newsItems;
     } catch (error) {
@@ -249,11 +268,11 @@ async function getCNBCNews() {
     }
 }
 
-// New function: Scrape Financial Times using Google News as a proxy
-async function getFinancialTimesNews() {
+// Scrape The Street for financial news
+async function getTheStreetNews() {
     try {
-        console.log('Fetching Financial Times news via Google News...');
-        const response = await axios.get('https://news.google.com/search?q=source:Financial%20Times%20when:1d&hl=en-US', {
+        console.log('Fetching The Street financial news...');
+        const response = await axios.get('https://www.thestreet.com/', {
             headers: browserHeaders,
             timeout: 10000
         });
@@ -261,43 +280,42 @@ async function getFinancialTimesNews() {
         const $ = cheerio.load(response.data);
         const newsItems = [];
 
-        $('article').slice(0, 8).each((index, element) => {
+        $('article, .news-story').slice(0, 10).each((index, element) => {
             try {
-                const headlineElement = $(element).find('h3, h4');
+                const headlineElement = $(element).find('h3, .news-title');
                 const headline = cleanText(headlineElement.text());
 
-                const linkElement = $(element).find('a');
-                let link = linkElement.attr('href');
+                let link = $(element).find('a').attr('href');
 
                 if (headline && link && headline.length > 15) {
-                    if (link && link.startsWith('./')) {
-                        link = 'https://news.google.com' + link.substring(1);
+                    if (link && link.startsWith('/')) {
+                        link = 'https://www.thestreet.com' + link;
                     }
 
                     newsItems.push({
                         headline: headline.substring(0, 80),
                         link,
-                        source: 'Financial Times'
+                        source: 'The Street'
                     });
                 }
             } catch (err) {
-                console.error('Error processing Financial Times item:', err.message);
+                console.error('Error processing The Street item:', err.message);
             }
         });
 
-        console.log(`Found ${newsItems.length} Financial Times news items`);
+        console.log(`Found ${newsItems.length} The Street news items`);
         return newsItems;
     } catch (error) {
-        console.error('Error scraping Financial Times via Google News:', error.message);
+        console.error('Error scraping The Street:', error.message);
         return [];
     }
 }
 
-// New function: Scrape Bloomberg via Google News
-async function getBloombergNews() {
+// Get news directly from Business Insider
+async function getBusinessInsiderNews() {
     try {
-        console.log('Fetching Bloomberg news via Google News...');
-        const response = await axios.get('https://news.google.com/search?q=source:Bloomberg%20when:1d&hl=en-US', {
+        console.log('Fetching Business Insider news...');
+        const response = await axios.get('https://www.businessinsider.com/markets', {
             headers: browserHeaders,
             timeout: 10000
         });
@@ -305,34 +323,81 @@ async function getBloombergNews() {
         const $ = cheerio.load(response.data);
         const newsItems = [];
 
-        $('article').slice(0, 8).each((index, element) => {
+        $('.top-vertical-trio-item, article, .tout-title-link').slice(0, 10).each((index, element) => {
             try {
-                const headlineElement = $(element).find('h3, h4');
+                const headlineElement = $(element).find('h2, h3, .tout-title, a');
                 const headline = cleanText(headlineElement.text());
 
-                const linkElement = $(element).find('a');
-                let link = linkElement.attr('href');
+                let link;
+                if ($(element).is('a')) {
+                    link = $(element).attr('href');
+                } else {
+                    link = $(element).find('a').attr('href');
+                }
 
                 if (headline && link && headline.length > 15) {
-                    if (link && link.startsWith('./')) {
-                        link = 'https://news.google.com' + link.substring(1);
+                    if (link && link.startsWith('/')) {
+                        link = 'https://www.businessinsider.com' + link;
                     }
 
                     newsItems.push({
                         headline: headline.substring(0, 80),
                         link,
-                        source: 'Bloomberg'
+                        source: 'Business Insider'
                     });
                 }
             } catch (err) {
-                console.error('Error processing Bloomberg item:', err.message);
+                console.error('Error processing Business Insider item:', err.message);
             }
         });
 
-        console.log(`Found ${newsItems.length} Bloomberg news items`);
+        console.log(`Found ${newsItems.length} Business Insider news items`);
         return newsItems;
     } catch (error) {
-        console.error('Error scraping Bloomberg via Google News:', error.message);
+        console.error('Error scraping Business Insider:', error.message);
+        return [];
+    }
+}
+
+// Get news from Kiplinger
+async function getKiplingerNews() {
+    try {
+        console.log('Fetching Kiplinger news...');
+        const response = await axios.get('https://www.kiplinger.com/investing', {
+            headers: browserHeaders,
+            timeout: 10000
+        });
+
+        const $ = cheerio.load(response.data);
+        const newsItems = [];
+
+        $('.article-card, .article-tile, article').slice(0, 10).each((index, element) => {
+            try {
+                const headlineElement = $(element).find('h3, .card-title');
+                const headline = cleanText(headlineElement.text());
+
+                let link = $(element).find('a').attr('href');
+
+                if (headline && link && headline.length > 15) {
+                    if (link && link.startsWith('/')) {
+                        link = 'https://www.kiplinger.com' + link;
+                    }
+
+                    newsItems.push({
+                        headline: headline.substring(0, 80),
+                        link,
+                        source: 'Kiplinger'
+                    });
+                }
+            } catch (err) {
+                console.error('Error processing Kiplinger item:', err.message);
+            }
+        });
+
+        console.log(`Found ${newsItems.length} Kiplinger news items`);
+        return newsItems;
+    } catch (error) {
+        console.error('Error scraping Kiplinger:', error.message);
         return [];
     }
 }
@@ -360,27 +425,45 @@ async function getCryptoMarketData() {
             marketCap: `$${(coin.market_cap / 1000000000).toFixed(2)}B`,
             positive: coin.price_change_percentage_24h > 0
         }));
-    } catch (error) {
-        console.error('Error fetching crypto data:', error.message);
+    } catch (coinGeckoError) {
+        console.error('Error fetching crypto data from CoinGecko:', coinGeckoError.message);
 
-        return [
-            {
-                name: 'Bitcoin',
-                symbol: 'BTC',
-                price: 'Price data unavailable',
-                change24h: 'N/A',
-                marketCap: 'N/A',
-                positive: true
-            },
-            {
-                name: 'Ethereum',
-                symbol: 'ETH',
-                price: 'Price data unavailable',
-                change24h: 'N/A',
-                marketCap: 'N/A',
-                positive: true
-            }
-        ];
+        try {
+            console.log('Trying fallback to CoinCap API...');
+            const fallbackResponse = await axios.get('https://api.coincap.io/v2/assets?limit=5', {
+                timeout: 10000
+            });
+
+            return fallbackResponse.data.data.map(coin => ({
+                name: coin.name,
+                symbol: coin.symbol,
+                price: `$${parseFloat(coin.priceUsd).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+                change24h: `${parseFloat(coin.changePercent24Hr).toFixed(2)}%`,
+                marketCap: `$${(parseFloat(coin.marketCapUsd) / 1000000000).toFixed(2)}B`,
+                positive: parseFloat(coin.changePercent24Hr) > 0
+            }));
+        } catch (coincapError) {
+            console.error('Error with crypto fallback API:', coincapError.message);
+
+            return [
+                {
+                    name: 'Bitcoin',
+                    symbol: 'BTC',
+                    price: 'Price data unavailable',
+                    change24h: 'N/A',
+                    marketCap: 'N/A',
+                    positive: true
+                },
+                {
+                    name: 'Ethereum',
+                    symbol: 'ETH',
+                    price: 'Price data unavailable',
+                    change24h: 'N/A',
+                    marketCap: 'N/A',
+                    positive: true
+                }
+            ];
+        }
     }
 }
 
@@ -388,29 +471,32 @@ async function getCryptoMarketData() {
 async function getAllFinanceNews() {
     try {
         const results = await Promise.allSettled([
-            getYahooFinanceNews(),
+            getMSNMoneyNews(),
             getMarketWatchNews(),
             getCNBCNews(),
-            getFinancialTimesNews(),
-            getBloombergNews(),
+            getTheStreetNews(),
+            getBusinessInsiderNews(),
+            getKiplingerNews(),
             getCryptoMarketData()
         ]);
 
-        const yahooNews = results[0].status === 'fulfilled' ? results[0].value : [];
+        const msnNews = results[0].status === 'fulfilled' ? results[0].value : [];
         const marketWatchNews = results[1].status === 'fulfilled' ? results[1].value : [];
         const cnbcNews = results[2].status === 'fulfilled' ? results[2].value : [];
-        const ftNews = results[3].status === 'fulfilled' ? results[3].value : [];
-        const bloombergNews = results[4].status === 'fulfilled' ? results[4].value : [];
-        const cryptoData = results[5].status === 'fulfilled' ? results[5].value : [];
+        const theStreetNews = results[3].status === 'fulfilled' ? results[3].value : [];
+        const businessInsiderNews = results[4].status === 'fulfilled' ? results[4].value : [];
+        const kiplingerNews = results[5].status === 'fulfilled' ? results[5].value : [];
+        const cryptoData = results[6].status === 'fulfilled' ? results[6].value : [];
 
-        console.log(`News source success: Yahoo: ${yahooNews.length > 0}, MarketWatch: ${marketWatchNews.length > 0}, CNBC: ${cnbcNews.length > 0}, FT: ${ftNews.length > 0}, Bloomberg: ${bloombergNews.length > 0}`);
+        console.log(`News source success: MSN: ${msnNews.length > 0}, MarketWatch: ${marketWatchNews.length > 0}, CNBC: ${cnbcNews.length > 0}, TheStreet: ${theStreetNews.length > 0}, BusinessInsider: ${businessInsiderNews.length > 0}, Kiplinger: ${kiplingerNews.length > 0}`);
 
         let allNews = [
-            ...(yahooNews.length > 0 ? yahooNews : []),
+            ...(msnNews.length > 0 ? msnNews : []),
             ...(marketWatchNews.length > 0 ? marketWatchNews : []),
             ...(cnbcNews.length > 0 ? cnbcNews : []),
-            ...(ftNews.length > 0 ? ftNews : []),
-            ...(bloombergNews.length > 0 ? bloombergNews : [])
+            ...(theStreetNews.length > 0 ? theStreetNews : []),
+            ...(businessInsiderNews.length > 0 ? businessInsiderNews : []),
+            ...(kiplingerNews.length > 0 ? kiplingerNews : [])
         ];
 
         const uniqueHeadlines = new Set();
