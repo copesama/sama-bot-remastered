@@ -12,7 +12,7 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
 // Import the finance news module
-const financeNews = require('./financenews');
+const { fetchFinanceNews, createNewsEmbed } = require('./finance-news');
 
 // Initialize Discord client
 const client = new Client({
@@ -1179,9 +1179,6 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
 // Discord bot event handlers
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
-  
-  // Initialize finance news module when the bot is ready
-  financeNews.initializeFinanceNews(client);
 });
 
 client.on('messageCreate', async (message) => {
@@ -1281,8 +1278,28 @@ client.on('messageCreate', async (message) => {
   }
 
   // Check for !financenews command
-  if (message.content.trim() === '!financenews') {
-    await financeNews.handleFinanceNewsCommand(message);
+  if (message.content.startsWith('!financenews')) {
+    // Send initial loading message
+    const loadingMessage = await message.reply('📊 Fetching the latest finance news headlines...');
+    
+    try {
+      // Fetch finance news headlines
+      const newsItems = await fetchFinanceNews();
+      
+      if (newsItems.length === 0) {
+        await loadingMessage.edit('Sorry, I couldn\'t find any finance news at the moment. Please try again later.');
+        return;
+      }
+      
+      // Create and send the embed with news headlines
+      const newsEmbed = createNewsEmbed(newsItems);
+      await loadingMessage.edit({ content: `${message.author} Here are the latest finance headlines:`, embeds: [newsEmbed] });
+      
+    } catch (error) {
+      console.error('Error fetching finance news:', error);
+      await loadingMessage.edit('Sorry, there was an error fetching finance news. Please try again later.');
+    }
+    
     return;
   }
 
