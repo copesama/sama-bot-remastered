@@ -70,10 +70,26 @@ function createNewsEmbed(newsArticles) {
       // Format source information
       const source = article.source && article.source.name ? article.source.name : 'Unknown Source';
       
-      // Create a field for each news item with title and link
+      // Process the description - truncate if too long, provide a fallback if missing
+      let description = article.description || article.content || 'No summary available';
+      
+      // Remove HTML tags if present
+      description = description.replace(/<[^>]*>?/gm, '');
+      
+      // Truncate if too long (Discord field values have a 1024 character limit)
+      if (description.length > 300) {
+        description = description.substring(0, 297) + '...';
+      }
+      
+      // Format the timestamp
+      const timestamp = article.publishedAt 
+        ? new Date(article.publishedAt).toLocaleString() 
+        : 'Unknown date';
+      
+      // Create a field for each news item with title, summary, and link
       embed.addFields({ 
         name: `${index + 1}. ${article.title}`,
-        value: `[Read more](${article.url}) • Source: ${source} • ${article.publishedAt ? new Date(article.publishedAt).toLocaleString() : 'Unknown date'}`
+        value: `**Summary:** ${description}\n\n[Read more](${article.url}) • Source: ${source} • ${timestamp}`
       });
     }
   });
