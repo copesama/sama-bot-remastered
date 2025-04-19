@@ -145,13 +145,55 @@ async function sendFinanceNews(client) {
     
     // Fetch and summarize the news
     const articles = await fetchYahooFinanceNews();
-    const summary = await summarizeNews(articles);
+    
+    // If no articles found, send a fallback message
+    if (!articles || articles.length === 0) {
+      console.log('No finance articles found, sending fallback message');
+      
+      for (const [guildId, channelId] of Object.entries(guildChannels)) {
+        try {
+          const guild = client.guilds.cache.get(guildId);
+          if (!guild) continue;
+          
+          const channel = guild.channels.cache.get(channelId);
+          if (!channel) continue;
+          
+          const fallbackEmbed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('📈 Daily Finance Market Update')
+            .setDescription('No finance news articles were found today. Please check back later.')
+            .setTimestamp()
+            .setFooter({ text: 'Powered by Yahoo Finance • Summarized with AI' });
+          
+          await channel.send({ embeds: [fallbackEmbed] });
+        } catch (error) {
+          console.error(`Error sending fallback finance news to guild ${guildId}:`, error);
+        }
+      }
+      return;
+    }
+    
+    // Try to get summary
+    let summary;
+    try {
+      summary = await summarizeNews(articles);
+    } catch (error) {
+      console.error('Error during news summarization:', error);
+      summary = null;
+    }
+    
+    // Ensure we have a valid description for the embed
+    // Discord.js requires non-empty strings for descriptions
+    const defaultDescription = 'Today\'s financial market summary could not be generated. Please see the article links below for the latest news.';
+    const safeDescription = summary && summary.trim() 
+      ? (summary.length > 4096 ? summary.substring(0, 4093) + '...' : summary) 
+      : defaultDescription;
     
     // Create an embed for the news
     const newsEmbed = new EmbedBuilder()
       .setColor('#0099ff')
       .setTitle('📈 Daily Finance Market Update')
-      .setDescription(summary.length > 4096 ? summary.substring(0, 4093) + '...' : summary)
+      .setDescription(safeDescription) // Now using safe description that's never empty
       .setTimestamp()
       .setFooter({ text: 'Powered by Yahoo Finance • Summarized with AI' });
     
@@ -174,17 +216,21 @@ async function sendFinanceNews(client) {
         await channel.send({ embeds: [newsEmbed] });
         
         // Send article links as a follow-up message
-        const articleLinks = articles.map((article, index) => {
-          return `${index + 1}. [${article.title}](${article.url})`;
-        }).join('\n');
-        
-        const linksEmbed = new EmbedBuilder()
-          .setColor('#0099ff')
-          .setTitle('Today\'s Finance News Sources')
-          .setDescription(articleLinks)
-          .setFooter({ text: 'Click on article titles to read the full stories' });
-        
-        await channel.send({ embeds: [linksEmbed] });
+        if (articles.length > 0) {
+          const linksText = articles.map((article, index) => {
+            const title = article.title || 'Untitled Article';
+            const url = article.url || 'https://finance.yahoo.com';
+            return `${index + 1}. [${title}](${url})`;
+          }).join('\n');
+          
+          const linksEmbed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('Today\'s Finance News Sources')
+            .setDescription(linksText || 'No article links available') // Ensure non-empty description
+            .setFooter({ text: 'Click on article titles to read the full stories' });
+          
+          await channel.send({ embeds: [linksEmbed] });
+        }
       } catch (error) {
         console.error(`Error sending finance news to guild ${guildId}:`, error);
       }
