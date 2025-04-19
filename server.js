@@ -11,8 +11,8 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
-// Import the finance news module
-const { fetchFinanceNews, createNewsEmbed } = require('./finance-news');
+// Import the finance news utility
+const { fetchCNBCNews } = require('./utils/financeNews');
 
 // Initialize Discord client
 const client = new Client({
@@ -1277,32 +1277,6 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !financenews command
-  if (message.content.startsWith('!financenews')) {
-    // Send initial loading message
-    const loadingMessage = await message.reply('📊 Fetching the latest finance news headlines...');
-    
-    try {
-      // Fetch finance news headlines
-      const newsItems = await fetchFinanceNews();
-      
-      if (newsItems.length === 0) {
-        await loadingMessage.edit('Sorry, I couldn\'t find any finance news at the moment. Please try again later.');
-        return;
-      }
-      
-      // Create and send the embed with news headlines
-      const newsEmbed = createNewsEmbed(newsItems);
-      await loadingMessage.edit({ content: `${message.author} Here are the latest finance headlines:`, embeds: [newsEmbed] });
-      
-    } catch (error) {
-      console.error('Error fetching finance news:', error);
-      await loadingMessage.edit('Sorry, there was an error fetching finance news. Please try again later.');
-    }
-    
-    return;
-  }
-
   // Check for !playgame command
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
@@ -1732,6 +1706,48 @@ client.on('messageCreate', async (message) => {
       }
       
       await loadingMessage.edit(errorMessage);
+    }
+    
+    return;
+  }
+
+  // Check for !financenews command
+  if (message.content.toLowerCase() === '!financenews') {
+    // Send initial loading message
+    const loadingMessage = await message.reply('📈 Fetching the latest finance headlines from CNBC...');
+    
+    try {
+      // Fetch news headlines from CNBC
+      const headlines = await fetchCNBCNews();
+      
+      if (headlines.length === 0) {
+        await loadingMessage.edit('Sorry, no finance headlines could be found at this time.');
+        return;
+      }
+      
+      // Create an embed for the finance news
+      const newsEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setTitle('📈 Today\'s Top Finance Headlines from CNBC')
+        .setDescription('Here are the latest finance headlines from CNBC:')
+        .setTimestamp()
+        .setFooter({ text: 'Source: CNBC • Updated just now' });
+      
+      // Add the headlines to the embed
+      headlines.forEach((headline, index) => {
+        const linkText = headline.link ? `[Read More](${headline.link})` : '';
+        newsEmbed.addFields({
+          name: `${index + 1}. ${headline.title}`,
+          value: linkText || 'No link available'
+        });
+      });
+      
+      // Update the loading message with the news embed
+      await loadingMessage.edit({ content: `${message.author} Here are today's finance headlines:`, embeds: [newsEmbed] });
+      
+    } catch (error) {
+      console.error('Error in finance news command:', error);
+      await loadingMessage.edit('Sorry, there was an error fetching finance news. Please try again later.');
     }
     
     return;
