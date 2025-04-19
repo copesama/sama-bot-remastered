@@ -13,7 +13,7 @@ const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
 
 // Import the finance news module
-const { sendFinancialNews } = require('./modules/financeNews');
+const { handleFinanceNewsCommand } = require('./commands/financeNews');
 
 // Initialize Discord client
 const client = new Client({
@@ -1278,6 +1278,22 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  // Check for !financenews command
+  if (message.content.startsWith('!financenews')) {
+    // Extract any additional parameters if needed
+    const args = message.content.split(' ').slice(1);
+    let limit = 8; // Default number of news items
+
+    // Check if user specified a limit
+    if (args.length > 0 && !isNaN(args[0]) && parseInt(args[0]) > 0) {
+      limit = Math.min(parseInt(args[0]), 10); // Enforce maximum of 10 items
+    }
+    
+    // Call the finance news handler with NewsAPI key from environment variables
+    await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, limit);
+    return;
+  }
+
   // Check for !playgame command
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
@@ -1707,35 +1723,6 @@ client.on('messageCreate', async (message) => {
       }
       
       await loadingMessage.edit(errorMessage);
-    }
-    
-    return;
-  }
-
-  // Check for !financenews command
-  if (message.content.startsWith('!financenews')) {
-    // Parse the command for optional limit parameter
-    const args = message.content.split(' ').filter(arg => arg.trim() !== '');
-    let limit = 10; // Default to 10 news items
-    
-    // Check if there's a valid number argument
-    if (args.length > 1 && !isNaN(args[1]) && parseInt(args[1]) > 0) {
-      limit = Math.min(parseInt(args[1]), 25); // Cap at 25 to avoid excessive messages
-    }
-    
-    try {
-      const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
-      
-      if (!apiKey) {
-        await message.reply('Error: Alpha Vantage API key is not configured. Please add it to your environment variables.');
-        return;
-      }
-      
-      // Send financial news using the imported module
-      await sendFinancialNews(apiKey, message, limit);
-    } catch (error) {
-      console.error('Error handling finance news command:', error);
-      await message.reply('Sorry, there was an error retrieving financial news. Please try again later.');
     }
     
     return;
