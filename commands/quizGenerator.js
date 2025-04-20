@@ -115,19 +115,14 @@ The output must be a valid JSON array that can be directly parsed.`
  * @returns {EmbedBuilder} Discord embed for the question
  */
 function createQuestionEmbed(questionData, questionNumber, totalQuestions, prompt) {
+  const optionsText = questionData.options.map((option, index) => {
+    return `**${String.fromCharCode(65 + index)}.** ${option}`;
+  }).join('\n\n');
+
   return new EmbedBuilder()
     .setColor('#4285F4')
     .setTitle(`Quiz Question ${questionNumber} of ${totalQuestions}`)
-    .setDescription(`**Topic:** ${prompt}\n\n**${questionData.question}**`)
-    .addFields(
-      { 
-        name: 'Options',
-        value: questionData.options.map((option, index) => {
-          return `**${String.fromCharCode(65 + index)}.** ${option}`;
-        }).join('\n\n'),
-        inline: false
-      }
-    )
+    .setDescription(`**Topic:** ${prompt}\n\n**${questionData.question}**\n\n${optionsText}`)
     .setFooter({ text: `Question ${questionNumber}/${totalQuestions} • Respond by clicking a button below` });
 }
 
@@ -193,20 +188,25 @@ function createResultsEmbed(score, totalQuestions, prompt, questionResults) {
     { name: '❌ Incorrect Answers', value: incorrectAnswers.toString(), inline: true }
   );
   
-  // Add a summary of results (limited to first 5 for brevity)
-  const resultsSummary = questionResults
+  // Add a summary of only incorrect answers (limited to first 5 for brevity)
+  const incorrectResults = questionResults.filter(r => !r.correct);
+  const resultsSummary = incorrectResults
     .slice(0, 5)
     .map((result, i) => {
-      return `**Q${i + 1}:** ${result.correct ? '✅ Correct' : '❌ Incorrect'} - ${result.explanation.substring(0, 100)}${result.explanation.length > 100 ? '...' : ''}`;
+      // Find the index of this result in the original array
+      const originalIndex = questionResults.findIndex(r => r === result);
+      return `**Q${originalIndex + 1}:** ❌ ${result.explanation.substring(0, 100)}${result.explanation.length > 100 ? '...' : ''}`;
     })
     .join('\n\n');
   
-  if (resultsSummary) {
-    embed.addFields({ name: 'Questions Summary (First 5)', value: resultsSummary });
+  if (resultsSummary && incorrectResults.length > 0) {
+    embed.addFields({ name: `Incorrect Answers Summary (Up to 5)`, value: resultsSummary });
+  } else if (incorrectResults.length === 0) {
+    embed.addFields({ name: 'Incorrect Answers Summary', value: '🎉 You got all questions correct! Impressive!' });
   }
   
-  if (questionResults.length > 5) {
-    embed.setFooter({ text: `Showing results for the first 5 questions out of ${totalQuestions}` });
+  if (incorrectResults.length > 5) {
+    embed.setFooter({ text: `Showing only the first 5 incorrect answers out of ${incorrectResults.length}` });
   }
   
   return embed;
