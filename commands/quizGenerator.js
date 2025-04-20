@@ -120,13 +120,13 @@ function createQuestionEmbed(questionData, questionNumber, totalQuestions, promp
     .setTitle(`Quiz Question ${questionNumber} of ${totalQuestions}`)
     .setDescription(`**Topic:** ${prompt}\n\n**${questionData.question}**`)
     .addFields(
-      questionData.options.map((option, index) => {
-        return {
-          name: `Option ${String.fromCharCode(65 + index)}`, // A, B, C, D
-          value: option,
-          inline: true
-        };
-      })
+      { 
+        name: 'Options',
+        value: questionData.options.map((option, index) => {
+          return `**${String.fromCharCode(65 + index)}.** ${option}`;
+        }).join('\n\n'),
+        inline: false
+      }
     )
     .setFooter({ text: `Question ${questionNumber}/${totalQuestions} • Respond by clicking a button below` });
 }
