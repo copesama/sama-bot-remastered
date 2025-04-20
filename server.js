@@ -30,6 +30,9 @@ const { handleStoryCommand, generateAndSendStoryWithImages } = require('./comman
 // Import the image generator module
 const { handleImageCommand, processImagePrompt, generateImageWithAvatars } = require('./commands/imageGenerator');
 
+// Import the multiplayer game module
+const { handleMultiplayerGameCommand } = require('./commands/multiplayerGame');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -363,17 +366,7 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content.startsWith('!multigame')) {
-    const multiplayerEmbed = new EmbedBuilder()
-      .setColor('#ff9900')
-      .setTitle('🎮 Multiplayer Games - Coming Soon!')
-      .setDescription('Multiplayer game functionality is currently under development and will be available in a future update.')
-      .addFields(
-        { name: 'Available Now', value: 'In the meantime, try our single-player games with `!singlegame [prompt]`!' },
-      )
-      .setFooter({ text: 'Stay tuned for updates!' })
-      .setTimestamp();
-    
-    await message.reply({ embeds: [multiplayerEmbed] });
+    await handleMultiplayerGameCommand(message);
     return;
   }
 });
