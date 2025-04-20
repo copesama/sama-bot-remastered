@@ -1,0 +1,290 @@
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const shortid = require('shortid');
+const { EmbedBuilder } = require('discord.js');
+
+// Function to generate a story using OpenRouter API
+async function generateStory(prompt, characterNames) {
+  try {
+    console.log(`Generating story with prompt: ${prompt}`);
+    console.log(`Characters: ${characterNames.join(', ')}`);
+    
+    const enhancedPrompt = `Write a creative and engaging story based on the following scenario: ${prompt}
+
+CHARACTERS TO INCLUDE:
+${characterNames.map((name, index) => `- ${name}`).join('\n')}
+
+REQUIREMENTS:
+- Feature all the listed characters prominently in the story
+- Give each character meaningful dialogue and actions
+- Create an interesting plot with a beginning, middle, and satisfying conclusion
+- Write in an engaging narrative style with descriptive language
+- The story should be well-structured and 1000-2000 words in length
+- Divide the story into clear paragraphs with natural breaks`;
+
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'sophosympatheia/rogue-rose-103b-v0.2:free',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert creative writer skilled in crafting engaging stories featuring specific characters. Create an immersive narrative that includes all provided character names and follows the scenario described by the user. Your writing should be vivid, with natural dialogue, good pacing, and a satisfying conclusion.'
+          },
+          {
+            role: 'user',
+            content: enhancedPrompt
+          }
+        ],
+        temperature: 0.8
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+
+    const story = response.data.choices[0].message.content;
+    
+    return story;
+  } catch (error) {
+    console.error('Error generating story:', error);
+    
+    if (error.response) {
+      console.error('Error status:', error.response.status);
+      try {
+        console.error('API error response:', error.response.data);
+      } catch (e) {
+        console.error('Could not parse error response data');
+      }
+    }
+    
+    throw error;
+  }
+}
+
+// Function to extract a description from a story chunk for image generation
+async function extractDescriptionFromStoryChunk(chunk, characterNames) {
+  try {
+    console.log(`Extracting image description from chunk of length: ${chunk.length}`);
+    
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert at extracting vivid scene descriptions from text. Given a chunk of a story, 
+            create a concise, detailed visual description that captures the most significant scene or moment from the text. 
+            This description will be used to generate an accompanying image with character faces replaced by profile pictures.
+
+            REQUIREMENTS:
+            - Focus on describing ONE clear, vivid scene from the text
+            - Frame the scene like a portrait where characters' faces are clearly visible
+            - Position characters' heads/faces prominently in the scene, ideally facing forward
+            - Specify that characters should have clearly visible faces/heads (these will be replaced with avatars)
+            - Include details about character positioning and their relative placement to each other
+            - Capture the setting, atmosphere, and mood
+            - Be specific about visual elements (colors, lighting, positioning)
+            - Keep the description between 10-20 words
+            - Do NOT include character names directly - describe them visually instead
+            - Respond ONLY with the description - no explanations or other text`
+          },
+          {
+            role: 'user',
+            content: `Here's a chunk of a story featuring characters: ${characterNames.join(', ')}
+
+${chunk}
+
+Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads.`
+          }
+        ],
+        temperature: 0.7
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const description = response.data.choices[0].message.content.trim();
+    console.log(`Generated image description: ${description}`);
+    
+    return description;
+  } catch (error) {
+    console.error('Error extracting description from story chunk:', error);
+    return `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`;
+  }
+}
+
+// Function to generate and send story with images
+async function generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage, generateImageWithAvatars, IMAGES_DIR) {
+  try {
+    const characterNames = characterUsers.map(user => user.username);
+    
+    const story = await generateStory(storyPrompt, characterNames);
+    
+    const storyEmbed = new EmbedBuilder()
+      .setColor('#9966cc')
+      .setTitle('📚 Your Custom Story is Ready!')
+      .setDescription(`**Scenario:** ${storyPrompt}\n\n**Featuring:** ${characterUsers.map(user => user.username).join(', ')}`)
+      .addFields(
+        { name: 'Story Length', value: `${story.length} characters`, inline: true },
+        { name: 'Characters', value: `${characterUsers.length} characters`, inline: true },
+        { name: 'With Images', value: 'Each part of the story includes a custom generated image', inline: true }
+      )
+      .setFooter({ text: 'Generated using AI • Story with images created just for you' })
+      .setTimestamp();
+    
+    const introMessage = await message.channel.send({ 
+      content: `${message.author} Here's your generated story with images:`,
+      embeds: [storyEmbed]
+    });
+
+    await loadingMessage.edit('📝 Story generated! Now creating images for each part of the story... This will take a few more minutes.');
+    
+    const MAX_MESSAGE_LENGTH = 1800;
+    let storyChunks = [];
+    
+    if (story.length <= MAX_MESSAGE_LENGTH) {
+      storyChunks = [story];
+    } else {
+      const paragraphs = story.split(/\n\n+/);
+      let currentChunk = '';
+      
+      for (const paragraph of paragraphs) {
+        if (currentChunk.length + paragraph.length + 2 > MAX_MESSAGE_LENGTH && currentChunk.length > 0) {
+          storyChunks.push(currentChunk);
+          currentChunk = paragraph;
+        } else {
+          if (currentChunk.length > 0) {
+            currentChunk += '\n\n' + paragraph;
+          } else {
+            currentChunk = paragraph;
+          }
+        }
+      }
+      
+      if (currentChunk.length > 0) {
+        storyChunks.push(currentChunk);
+      }
+    }
+    
+    console.log(`Split story into ${storyChunks.length} chunks for processing`);
+    
+    const failedChunks = [];
+    
+    for (let i = 0; i < storyChunks.length; i++) {
+      const chunk = storyChunks[i];
+      const chunkNumber = i + 1;
+      
+      await loadingMessage.edit(`📝 Creating image ${chunkNumber}/${storyChunks.length} for your story...`);
+      
+      try {
+        const imageDescription = await extractDescriptionFromStoryChunk(chunk, characterNames);
+        
+        const avatarUrls = characterUsers.map(user => 
+          user.displayAvatarURL({ format: 'png', size: 512 })
+        );
+        
+        const { imageId, imagePath } = await generateImageWithAvatars(imageDescription, avatarUrls);
+        
+        const imageEmbed = new EmbedBuilder()
+          .setColor('#ff6600')
+          .setTitle(`📖 Part ${chunkNumber} of ${storyChunks.length}`)
+          .setDescription(imageDescription)
+          .setImage(`attachment://${imageId}.png`)
+          .setFooter({ text: `Story image ${chunkNumber}/${storyChunks.length} • Generated with AI` });
+        
+        await message.channel.send({
+          content: chunk,
+          embeds: [imageEmbed],
+          files: [{ attachment: imagePath, name: `${imageId}.png` }]
+        });
+        
+        setTimeout(() => {
+          try {
+            fs.unlinkSync(imagePath);
+            console.log(`Deleted image file: ${imagePath}`);
+          } catch (err) {
+            console.error(`Error deleting image file: ${err}`);
+          }
+        }, 5000);
+        
+      } catch (error) {
+        console.error(`Error processing chunk ${chunkNumber}:`, error);
+        
+        failedChunks.push({ index: i, chunkNumber, chunk });
+        
+        await message.channel.send({
+          content: `**Part ${chunkNumber} of ${storyChunks.length}:**\n\n${chunk}\n\n*(Image generation failed for this part)*`
+        });
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    const summaryEmbed = new EmbedBuilder()
+      .setColor('#9966cc')
+      .setTitle('📚 Story Complete!')
+      .setDescription(`Your story "${storyPrompt}" featuring ${characterUsers.map(user => user.username).join(', ')} is now complete.`)
+      .addFields(
+        { name: 'Story Stats', value: `${storyChunks.length} parts\n${story.length} characters`, inline: true },
+        { name: 'Image Generation', value: `${storyChunks.length - failedChunks.length}/${storyChunks.length} successful`, inline: true }
+      )
+      .setFooter({ text: 'Generated using AI • Story with images created just for you' })
+      .setTimestamp();
+    
+    await message.channel.send({ 
+      content: `${message.author} Story generation complete!`,
+      embeds: [summaryEmbed] });
+    
+    await loadingMessage.edit('✅ Story with images generated successfully!');
+    
+  } catch (error) {
+    console.error('Error in generateAndSendStoryWithImages:', error);
+    
+    try {
+      const characterNames = characterUsers.map(user => user.username);
+      const story = await generateStory(storyPrompt, characterNames);
+      
+      const MAX_MESSAGE_LENGTH = 1900;
+      for (let i = 0; i < story.length; i += MAX_MESSAGE_LENGTH) {
+        const chunk = story.substring(i, i + MAX_MESSAGE_LENGTH);
+        await message.channel.send(chunk);
+      }
+      
+      await message.channel.send(`${message.author} I was unable to generate images for your story, but I've sent the complete text version. Enjoy!`);
+      await loadingMessage.edit('⚠️ Story generated with text only (image generation failed).');
+      
+    } catch (fallbackError) {
+      console.error('Error in fallback story delivery:', fallbackError);
+      await loadingMessage.edit('Sorry, there was an error generating your story with images. Please try again later.');
+    }
+  }
+}
+
+// Function to handle the story command
+async function handleStoryCommand(message, generateImageWithAvatars, IMAGES_DIR) {
+  const characterUsers = Array.from(message.mentions.users.values());
+  
+  if (characterUsers.length === 0) {
+    return message.reply('Please mention at least one user to include as a character in the story. Example: `!generatestory @username1 @username2`');
+  }
+  
+  const loadingMessage = await message.reply(`I found ${characterUsers.length} character(s): ${characterUsers.map(user => user.username).join(', ')}. Now, please describe the scenario for the story in your next message.`);
+  
+  // Return information needed to set up the waiting state
+  return { characterUsers, loadingMessage };
+}
+
+module.exports = {
+  handleStoryCommand,
+  generateAndSendStoryWithImages
+};
