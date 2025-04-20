@@ -39,6 +39,7 @@ IMPORTANT REQUIREMENTS:
 6. Ensure varied question formats (who, what, when, where, how, etc.)
 7. Each question should have a brief explanation of the correct answer
 8. Return ONLY valid JSON with no additional text, comments or markdown
+9. CRITICAL: Create the quiz in the SAME LANGUAGE as the user's prompt. If the prompt is in Greek, create the quiz in Greek. If in English, create it in English, etc.
 
 The output must be a valid JSON array that can be directly parsed.`
           },
