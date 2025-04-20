@@ -342,6 +342,103 @@ function createGameEmbed(gameId, gamePrompt, gameUrl) {
     .setTimestamp();
 }
 
+/**
+ * Handle the play game command
+ * @param {Object} message - Discord message object
+ * @param {string} gameId - ID of the game to play
+ * @param {string} gamesDir - Directory where games are stored
+ * @param {number} port - Server port
+ * @param {string} jwtSecret - Secret for JWT token generation
+ */
+async function handlePlayGameCommand(message, gameId, gamesDir, port, jwtSecret) {
+  const path = require('path');
+  const fs = require('fs');
+  const { EmbedBuilder } = require('discord.js');
+  
+  const gamePath = path.join(gamesDir, `${gameId}.html`);
+  if (!fs.existsSync(gamePath)) {
+    message.reply(`Error: Game with ID ${gameId} not found.`);
+    return;
+  }
+  
+  const serverUrl = process.env.SERVER_URL || `http://localhost:${port}`;
+  const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+
+  // Generate game link
+  const gameUrl = generateGameLink(gameId, message.author, baseUrl, jwtSecret);
+  
+  // Create game embed
+  const gameEmbed = createGameEmbed(gameId, null, gameUrl);
+  
+  await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
+}
+
+/**
+ * Handle the edit game command
+ * @param {Object} message - Discord message object
+ * @param {string} gameId - ID of the game to edit
+ * @param {string} gamesDir - Directory where games are stored
+ * @returns {Object|null} - Object with gameId and loadingMessage if successful, null otherwise
+ */
+async function handleEditGameCommand(message, gameId, gamesDir) {
+  const path = require('path');
+  const fs = require('fs');
+  
+  const gamePath = path.join(gamesDir, `${gameId}.html`);
+  if (!fs.existsSync(gamePath)) {
+    message.reply(`Error: Game with ID ${gameId} not found.`);
+    return null;
+  }
+  
+  const loadingMessage = await message.reply(`Game ${gameId} found. Please send your edit request in the next message.`);
+  
+  return { gameId, loadingMessage };
+}
+
+/**
+ * Handle the enhance game command
+ * @param {Object} message - Discord message object
+ * @param {string} gameId - ID of the game to enhance
+ * @param {string} gamesDir - Directory where games are stored
+ */
+async function handleEnhanceGameCommand(message, gameId, gamesDir) {
+  const path = require('path');
+  const fs = require('fs');
+  const { EmbedBuilder } = require('discord.js');
+  
+  const gamePath = path.join(gamesDir, `${gameId}.html`);
+  if (!fs.existsSync(gamePath)) {
+    message.reply(`Error: Game with ID ${gameId} not found.`);
+    return;
+  }
+  
+  const loadingMessage = await message.reply(`🔄 Enhancing game ${gameId}... This might take a minute or two!`);
+  
+  try {
+    const originalHtml = fs.readFileSync(gamePath, 'utf8');
+    
+    await enhanceGame(gameId, originalHtml);
+    
+    const gameEmbed = new EmbedBuilder()
+      .setColor('#5533ff')
+      .setTitle('✨ Your Game Has Been Enhanced!')
+      .setDescription('Your game has been automatically improved with bug fixes and enhanced features!')
+      .addFields(
+        { name: 'Game ID', value: `\`${gameId}\`` },
+        { name: 'Enhancements Applied', value: '• Bug fixes\n• Improved game mechanics\n• Enhanced visuals\n• Performance optimization\n• Mobile compatibility improvements' },
+        { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your enhanced game.' }
+      )
+      .setFooter({ text: 'Auto-enhanced using AI • To play, use !playgame command' })
+      .setTimestamp();
+    
+    await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
+    
+  } catch (error) {
+    console.error('Error:', error);
+    await loadingMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
+  }
+}
+
 module.exports = {
   handleSingleGameCommand,
   generateSinglePlayerGame,
@@ -351,5 +448,8 @@ module.exports = {
   generateGuestUserData,
   setupGameRoutes,
   generateGameLink,
-  createGameEmbed
+  createGameEmbed,
+  handlePlayGameCommand,
+  handleEditGameCommand,
+  handleEnhanceGameCommand
 };

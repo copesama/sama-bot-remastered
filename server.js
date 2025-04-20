@@ -28,7 +28,10 @@ const {
   enhanceGame, 
   setupGameRoutes, 
   generateGameLink, 
-  createGameEmbed 
+  createGameEmbed,
+  handlePlayGameCommand,  // Add this new import
+  handleEditGameCommand,  // Add this new import
+  handleEnhanceGameCommand // Add this new import
 } = require('./commands/gameGenerator');
 
 // Import the story generator module
@@ -205,24 +208,7 @@ client.on('messageCreate', async (message) => {
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
     const gameId = playGameMatch[1];
-    
-    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
-    if (!fs.existsSync(gamePath)) {
-      message.reply(`Error: Game with ID ${gameId} not found.`);
-      return;
-    }
-    
-    const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
-    const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
-
-    // Generate game link using the function from gameGenerator.js
-    const gameUrl = generateGameLink(gameId, message.author, baseUrl, JWT_SECRET);
-    
-    // Create game embed using the function from gameGenerator.js
-    const gameEmbed = createGameEmbed(gameId, null, gameUrl);
-    
-    await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
-    
+    await handlePlayGameCommand(message, gameId, GAMES_DIR, PORT, JWT_SECRET);
     return;
   }
 
@@ -247,55 +233,17 @@ client.on('messageCreate', async (message) => {
   const editGameMatch = message.content.match(/^!editgame\s+([a-zA-Z0-9_-]+)$/);
   if (editGameMatch) {
     const gameId = editGameMatch[1];
-    
-    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
-    if (!fs.existsSync(gamePath)) {
-      message.reply(`Error: Game with ID ${gameId} not found.`);
-      return;
+    const result = await handleEditGameCommand(message, gameId, GAMES_DIR);
+    if (result) {
+      usersInEditMode.set(message.author.id, result);
     }
-    
-    const loadingMessage = await message.reply(`Game ${gameId} found. Please send your edit request in the next message.`);
-    
-    usersInEditMode.set(message.author.id, { gameId, loadingMessage });
     return;
   }
 
   const enhanceGameMatch = message.content.match(/^!enhance\s+([a-zA-Z0-9_-]+)$/);
   if (enhanceGameMatch) {
     const gameId = enhanceGameMatch[1];
-    
-    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
-    if (!fs.existsSync(gamePath)) {
-      message.reply(`Error: Game with ID ${gameId} not found.`);
-      return;
-    }
-    
-    const loadingMessage = await message.reply(`🔄 Enhancing game ${gameId}... This might take a minute or two!`);
-    
-    try {
-      const originalHtml = fs.readFileSync(gamePath, 'utf8');
-      
-      await enhanceGame(gameId, originalHtml);
-      
-      const gameEmbed = new EmbedBuilder()
-        .setColor('#5533ff')
-        .setTitle('✨ Your Game Has Been Enhanced!')
-        .setDescription('Your game has been automatically improved with bug fixes and enhanced features!')
-        .addFields(
-          { name: 'Game ID', value: `\`${gameId}\`` },
-          { name: 'Enhancements Applied', value: '• Bug fixes\n• Improved game mechanics\n• Enhanced visuals\n• Performance optimization\n• Mobile compatibility improvements' },
-          { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your enhanced game.' }
-        )
-        .setFooter({ text: 'Auto-enhanced using AI • To play, use !playgame command' })
-        .setTimestamp();
-      
-      await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
-      
-    } catch (error) {
-      console.error('Error:', error);
-      await loadingMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
-    }
-    
+    await handleEnhanceGameCommand(message, gameId, GAMES_DIR);
     return;
   }
 
