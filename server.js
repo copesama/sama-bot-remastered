@@ -21,8 +21,15 @@ const { handleQuizCommand, clearUserQuiz } = require('./commands/quizGenerator')
 // Import the music generator module
 const { handleMusicCommand, cleanupVoiceConnections } = require('./commands/musicGenerator');
 
-// Import the game generator module
-const { handleSingleGameCommand, editGame, enhanceGame } = require('./commands/gameGenerator');
+// Import the game generator module with extended functions
+const { 
+  handleSingleGameCommand, 
+  editGame, 
+  enhanceGame, 
+  setupGameRoutes, 
+  generateGameLink, 
+  createGameEmbed 
+} = require('./commands/gameGenerator');
 
 // Import the story generator module
 const { handleStoryCommand, generateAndSendStoryWithImages } = require('./commands/storyGenerator');
@@ -73,6 +80,9 @@ if (!fs.existsSync(IMAGES_DIR)) {
 app.use('/games', express.static(GAMES_DIR));
 app.use(cookieParser());
 
+// Set up game routes with authentication
+setupGameRoutes(app, JWT_SECRET);
+
 // Keep track of users waiting to provide image prompts
 const usersWaitingForImagePrompt = new Map();
 
@@ -81,59 +91,6 @@ const usersWaitingForStoryPrompt = new Map();
 
 // Track users who are in "edit mode"
 const usersInEditMode = new Map();
-
-// Game access with user authentication
-app.get('/game/:gameId', (req, res) => {
-  const gameId = req.params.gameId;
-  const userToken = req.query.token;
-  const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
-  
-  if (fs.existsSync(gamePath)) {
-    // If we have a user token, verify it
-    let userData = null;
-    
-    if (userToken) {
-      try {
-        userData = jwt.verify(userToken, JWT_SECRET);
-        // Set cookie with user data for the game
-        res.cookie('gameUserData', JSON.stringify(userData), { 
-          maxAge: 3600000, // 1 hour
-          httpOnly: false
-        });
-      } catch (err) {
-        console.error('Invalid token:', err);
-        // Generate a guest token if the provided token is invalid
-        userData = generateGuestUserData();
-        res.cookie('gameUserData', JSON.stringify(userData), { 
-          maxAge: 3600000, 
-          httpOnly: false 
-        });
-      }
-    } else {
-      // If no token provided, create a guest user
-      userData = generateGuestUserData();
-      res.cookie('gameUserData', JSON.stringify(userData), { 
-        maxAge: 3600000, 
-        httpOnly: false 
-      });
-    }
-    
-    res.sendFile(gamePath);
-  } else {
-    res.status(404).send('Game not found');
-  }
-});
-
-// Helper function to generate random guest user data
-function generateGuestUserData() {
-  const guestId = `guest-${shortid.generate()}`;
-  return {
-    id: guestId,
-    username: `Guest-${guestId.substring(6, 10)}`,
-    avatar: `https://ui-avatars.com/api/?name=G&background=random&size=128`,
-    isGuest: true
-  };
-}
 
 // Discord bot event handlers
 client.once('ready', () => {
@@ -258,24 +215,11 @@ client.on('messageCreate', async (message) => {
     const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
     const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
 
-    const userToken = jwt.sign({
-      id: message.author.id,
-      username: message.author.username,
-      avatar: message.author.displayAvatarURL({ format: 'png' })
-    }, JWT_SECRET);
+    // Generate game link using the function from gameGenerator.js
+    const gameUrl = generateGameLink(gameId, message.author, baseUrl, JWT_SECRET);
     
-    const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
-    
-    const gameEmbed = new EmbedBuilder()
-      .setColor('#00cc99')
-      .setTitle('🎮 Here\'s Your Personal Game Link!')
-      .setDescription(`**Game ID:** \`${gameId}\``)
-      .addFields(
-        { name: 'Play the game', value: `[Click here to play](${gameUrl})` },
-        { name: 'About Your Link', value: 'This link is personalized for you and will display your Discord username and avatar in the game.' }
-      )
-      .setFooter({ text: 'Generated using AI • Link personalized for you' })
-      .setTimestamp();
+    // Create game embed using the function from gameGenerator.js
+    const gameEmbed = createGameEmbed(gameId, null, gameUrl);
     
     await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
     

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
+const jwt = require('jsonwebtoken');
 
 // Path to games directory (relative to project root)
 const GAMES_DIR = path.join(__dirname, '..', 'games');
@@ -261,10 +262,94 @@ async function handleSingleGameCommand(message) {
   }
 }
 
+// Helper function to generate random guest user data
+function generateGuestUserData() {
+  const guestId = `guest-${shortid.generate()}`;
+  return {
+    id: guestId,
+    username: `Guest-${guestId.substring(6, 10)}`,
+    avatar: `https://ui-avatars.com/api/?name=G&background=random&size=128`,
+    isGuest: true
+  };
+}
+
+// Handle game route and authentication
+function setupGameRoutes(app, jwtSecret) {
+  app.get('/game/:gameId', (req, res) => {
+    const gameId = req.params.gameId;
+    const userToken = req.query.token;
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+    
+    if (fs.existsSync(gamePath)) {
+      // If we have a user token, verify it
+      let userData = null;
+      
+      if (userToken) {
+        try {
+          userData = jwt.verify(userToken, jwtSecret);
+          // Set cookie with user data for the game
+          res.cookie('gameUserData', JSON.stringify(userData), { 
+            maxAge: 3600000, // 1 hour
+            httpOnly: false
+          });
+        } catch (err) {
+          console.error('Invalid token:', err);
+          // Generate a guest token if the provided token is invalid
+          userData = generateGuestUserData();
+          res.cookie('gameUserData', JSON.stringify(userData), { 
+            maxAge: 3600000, 
+            httpOnly: false 
+          });
+        }
+      } else {
+        // If no token provided, create a guest user
+        userData = generateGuestUserData();
+        res.cookie('gameUserData', JSON.stringify(userData), { 
+          maxAge: 3600000, 
+          httpOnly: false 
+        });
+      }
+      
+      res.sendFile(gamePath);
+    } else {
+      res.status(404).send('Game not found');
+    }
+  });
+}
+
+// Generate a game link with user authentication
+function generateGameLink(gameId, user, baseUrl, jwtSecret) {
+  const userToken = jwt.sign({
+    id: user.id,
+    username: user.username,
+    avatar: user.displayAvatarURL({ format: 'png' })
+  }, jwtSecret);
+  
+  return `${baseUrl}/game/${gameId}?token=${userToken}`;
+}
+
+// Create game embed for responding to users
+function createGameEmbed(gameId, gamePrompt, gameUrl) {
+  return new EmbedBuilder()
+    .setColor('#00cc99')
+    .setTitle('🎮 Here\'s Your Personal Game Link!')
+    .setDescription(`**Game ID:** \`${gameId}\``)
+    .addFields(
+      { name: 'Play the game', value: `[Click here to play](${gameUrl})` },
+      { name: 'About Your Link', value: 'This link is personalized for you and will display your Discord username and avatar in the game.' }
+    )
+    .setFooter({ text: 'Generated using AI • Link personalized for you' })
+    .setTimestamp();
+}
+
 module.exports = {
   handleSingleGameCommand,
   generateSinglePlayerGame,
   editGame,
   enhanceGame,
-  extractHtmlFromResponse
+  extractHtmlFromResponse,
+  generateGuestUserData,
+  setupGameRoutes,
+  generateGameLink,
+  createGameEmbed
 };
