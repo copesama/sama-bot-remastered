@@ -29,16 +29,26 @@ const {
   setupGameRoutes, 
   generateGameLink, 
   createGameEmbed,
-  handlePlayGameCommand,  // Add this new import
-  handleEditGameCommand,  // Add this new import
-  handleEnhanceGameCommand // Add this new import
+  handlePlayGameCommand,
+  handleEditGameCommand,
+  handleEnhanceGameCommand,
+  handleGameEditInput
 } = require('./commands/gameGenerator');
 
 // Import the story generator module
-const { handleStoryCommand, generateAndSendStoryWithImages } = require('./commands/storyGenerator');
+const { 
+  handleStoryCommand, 
+  generateAndSendStoryWithImages,
+  handleStoryPromptInput
+} = require('./commands/storyGenerator');
 
 // Import the image generator module
-const { handleImageCommand, processImagePrompt, generateImageWithAvatars } = require('./commands/imageGenerator');
+const { 
+  handleImageCommand, 
+  processImagePrompt, 
+  generateImageWithAvatars,
+  handleImagePromptInput
+} = require('./commands/imageGenerator');
 
 // Import the multiplayer game module
 const { handleMultiplayerGameCommand } = require('./commands/multiplayerGame');
@@ -106,91 +116,55 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   if (usersInEditMode.has(message.author.id)) {
-    const { gameId, loadingMessage } = usersInEditMode.get(message.author.id);
+    const editData = usersInEditMode.get(message.author.id);
     const editPrompt = message.content;
     
     usersInEditMode.delete(message.author.id);
     
-    await loadingMessage.edit('🔄 Editing your game... This might take a minute!');
-    
     try {
-      const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
-      if (!fs.existsSync(gamePath)) {
-        await loadingMessage.edit(`Error: Game with ID ${gameId} not found.`);
-        return;
-      }
-      
-      const originalHtml = fs.readFileSync(gamePath, 'utf8');
-      
-      await editGame(gameId, editPrompt, originalHtml);
-      
-      const gameEmbed = new EmbedBuilder()
-        .setColor('#9933cc')
-        .setTitle('🎮 Your Game Has Been Updated!')
-        .setDescription(`**Edit request:** ${editPrompt}`)
-        .addFields(
-          { name: 'Game ID', value: `\`${gameId}\`` },
-          { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your game.' }
-        )
-        .setFooter({ text: 'Edited using AI • To play, use !playgame command' })
-        .setTimestamp();
-      
-      await loadingMessage.edit({ content: 'Game updated successfully!', embeds: [gameEmbed] });
-      
-      try {
-        await message.delete();
-      } catch (error) {
-        console.error('Error deleting message:', error);
-      }
-      
+      await handleGameEditInput(message.author.id, editData, editPrompt, GAMES_DIR);
+      await message.delete().catch(err => console.error('Error deleting message:', err));
     } catch (error) {
-      console.error('Error:', error);
-      await loadingMessage.edit('Sorry, there was an error editing your game. Please try again later.');
+      console.error('Error in edit mode:', error);
     }
     
     return;
   }
 
   if (usersWaitingForStoryPrompt.has(message.author.id)) {
-    const { characterUsers, loadingMessage } = usersWaitingForStoryPrompt.get(message.author.id);
+    const storyData = usersWaitingForStoryPrompt.get(message.author.id);
     const storyPrompt = message.content;
     
     usersWaitingForStoryPrompt.delete(message.author.id);
     
-    await loadingMessage.edit('📝 Generating your custom story with images... This might take several minutes as I craft a detailed narrative with visuals!');
-    
     try {
-      try {
-        await message.delete();
-      } catch (error) {
-        console.error('Error deleting message:', error);
-      }
-      
-      await generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage, 
-        (prompt, avatarUrls) => generateImageWithAvatars(prompt, avatarUrls, IMAGES_DIR), IMAGES_DIR);
-      
+      await message.delete().catch(err => console.error('Error deleting message:', err));
+      await handleStoryPromptInput(
+        message.author.id, 
+        storyData, 
+        storyPrompt, 
+        message,
+        (prompt, avatarUrls) => generateImageWithAvatars(prompt, avatarUrls, IMAGES_DIR), 
+        IMAGES_DIR
+      );
     } catch (error) {
-      console.error('Error processing story with images:', error);
-      
-      let errorMessage = 'Sorry, there was an error generating your story with images. Please try again later.';
-      
-      if (error.message && error.message.includes('timeout')) {
-        errorMessage = 'Sorry, story or image generation timed out. Please try a simpler prompt or try again later.';
-      }
-      
-      await loadingMessage.edit(errorMessage);
+      console.error('Error in story prompt handling:', error);
     }
     
     return;
   }
 
   if (usersWaitingForImagePrompt.has(message.author.id)) {
-    const { mentionedUsers, loadingMessage } = usersWaitingForImagePrompt.get(message.author.id);
+    const imageData = usersWaitingForImagePrompt.get(message.author.id);
     const imagePrompt = message.content;
     
     usersWaitingForImagePrompt.delete(message.author.id);
     
-    await processImagePrompt(message, imagePrompt, mentionedUsers, loadingMessage, IMAGES_DIR);
+    try {
+      await handleImagePromptInput(message.author.id, imageData, imagePrompt, message, IMAGES_DIR);
+    } catch (error) {
+      console.error('Error in image prompt handling:', error);
+    }
     
     return;
   }

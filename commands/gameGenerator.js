@@ -439,6 +439,50 @@ async function handleEnhanceGameCommand(message, gameId, gamesDir) {
   }
 }
 
+/**
+ * Handles a user's edit input for a game
+ * @param {string} userId - The Discord user ID
+ * @param {Object} editData - Data containing gameId and loadingMessage
+ * @param {string} editPrompt - The user's edit prompt
+ * @param {string} gamesDir - Directory where games are stored
+ */
+async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
+  const { gameId, loadingMessage } = editData;
+  
+  await loadingMessage.edit('🔄 Editing your game... This might take a minute!');
+  
+  try {
+    const gamePath = path.join(gamesDir, `${gameId}.html`);
+    if (!fs.existsSync(gamePath)) {
+      await loadingMessage.edit(`Error: Game with ID ${gameId} not found.`);
+      return;
+    }
+    
+    const originalHtml = fs.readFileSync(gamePath, 'utf8');
+    
+    await editGame(gameId, editPrompt, originalHtml);
+    
+    const gameEmbed = new EmbedBuilder()
+      .setColor('#9933cc')
+      .setTitle('🎮 Your Game Has Been Updated!')
+      .setDescription(`**Edit request:** ${editPrompt}`)
+      .addFields(
+        { name: 'Game ID', value: `\`${gameId}\`` },
+        { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your game.' }
+      )
+      .setFooter({ text: 'Edited using AI • To play, use !playgame command' })
+      .setTimestamp();
+    
+    await loadingMessage.edit({ content: 'Game updated successfully!', embeds: [gameEmbed] });
+    
+    return true;
+  } catch (error) {
+    console.error('Error:', error);
+    await loadingMessage.edit('Sorry, there was an error editing your game. Please try again later.');
+    return false;
+  }
+}
+
 module.exports = {
   handleSingleGameCommand,
   generateSinglePlayerGame,
@@ -451,5 +495,6 @@ module.exports = {
   createGameEmbed,
   handlePlayGameCommand,
   handleEditGameCommand,
-  handleEnhanceGameCommand
+  handleEnhanceGameCommand,
+  handleGameEditInput
 };

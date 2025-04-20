@@ -284,7 +284,46 @@ async function handleStoryCommand(message, generateImageWithAvatars, IMAGES_DIR)
   return { characterUsers, loadingMessage };
 }
 
+/**
+ * Handles a user's story prompt input
+ * @param {string} userId - The Discord user ID
+ * @param {Object} storyData - Data containing characterUsers and loadingMessage
+ * @param {string} storyPrompt - The user's story prompt
+ * @param {Function} imageGenerator - Function to generate images
+ * @param {string} imagesDir - Directory to store images
+ */
+async function handleStoryPromptInput(userId, storyData, storyPrompt, message, imageGenerator, imagesDir) {
+  const { characterUsers, loadingMessage } = storyData;
+  
+  await loadingMessage.edit('📝 Generating your custom story with images... This might take several minutes as I craft a detailed narrative with visuals!');
+  
+  try {
+    await generateAndSendStoryWithImages(
+      message, 
+      storyPrompt, 
+      characterUsers, 
+      loadingMessage, 
+      imageGenerator, 
+      imagesDir
+    );
+    
+    return true;
+  } catch (error) {
+    console.error('Error processing story with images:', error);
+    
+    let errorMessage = 'Sorry, there was an error generating your story with images. Please try again later.';
+    
+    if (error.message && error.message.includes('timeout')) {
+      errorMessage = 'Sorry, story or image generation timed out. Please try a simpler prompt or try again later.';
+    }
+    
+    await loadingMessage.edit(errorMessage);
+    return false;
+  }
+}
+
 module.exports = {
   handleStoryCommand,
-  generateAndSendStoryWithImages
+  generateAndSendStoryWithImages,
+  handleStoryPromptInput
 };

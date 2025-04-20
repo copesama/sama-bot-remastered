@@ -443,8 +443,22 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
   }
 }
 
+/**
+ * Handles a user's image prompt input
+ * @param {string} userId - The Discord user ID
+ * @param {Object} imageData - Data containing mentionedUsers and loadingMessage
+ * @param {string} imagePrompt - The user's image prompt
+ * @param {string} imagesDir - Directory to store images
+ */
+async function handleImagePromptInput(userId, imageData, imagePrompt, message, imagesDir) {
+  const { mentionedUsers, loadingMessage } = imageData;
+  
+  return await processImagePrompt(message, imagePrompt, mentionedUsers, loadingMessage, imagesDir);
+}
+
 module.exports = {
   handleImageCommand,
   processImagePrompt,
-  generateImageWithAvatars
+  generateImageWithAvatars,
+  handleImagePromptInput
 };
