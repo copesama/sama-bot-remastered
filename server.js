@@ -18,6 +18,9 @@ const { handleFinanceNewsCommand, initFinanceNews } = require('./commands/financ
 // Import the quiz generator module
 const { handleQuizCommand, clearUserQuiz } = require('./commands/quizGenerator');
 
+// Import the music generator module
+const { handleMusicCommand, cleanupVoiceConnections } = require('./commands/musicGenerator');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -57,10 +60,6 @@ if (!fs.existsSync(IMAGES_DIR)) {
 // Serve static game files
 app.use('/games', express.static(GAMES_DIR));
 app.use(cookieParser());
-
-// Keep track of active voice connections and players
-const voiceConnections = new Map();
-const audioPlayers = new Map();
 
 // Keep track of users waiting to provide image prompts
 const usersWaitingForImagePrompt = new Map();
@@ -214,112 +213,6 @@ async function generateSinglePlayerGame(prompt) {
   }
 }
 
-// Function to generate music using Segmind API
-async function generateMusic(prompt, lyrics = null, songFileUrl = null) {
-  try {
-    const formData = new FormData();
-    
-    // Check if the prompt contains lyrics or if separate lyrics were provided
-    const extractedLyrics = lyrics || prompt.includes('[verse]') ? prompt : null;
-    const musicPrompt = extractedLyrics ? "Generate music for these lyrics" : prompt;
-    
-    // For logging purposes - store what we're sending to the API
-    const requestParams = {};
-    
-    // Set up form data for the request - properly handle null values
-    if (extractedLyrics) {
-      formData.append('lyrics', extractedLyrics);
-      requestParams.lyrics = extractedLyrics;
-    } else {
-      // Use a template for lyrics based on the prompt
-      const defaultLyrics = `[verse]\n${prompt}\n[chorus]\nInspired by your imagination\nCreated just for you`;
-      formData.append('lyrics', defaultLyrics);
-      requestParams.lyrics = defaultLyrics;
-    }
-    
-    // Add required parameters with proper values
-    formData.append('bitrate', '256000');
-    requestParams.bitrate = '256000';
-    
-    formData.append('sample_rate', '44100');
-    requestParams.sample_rate = '44100';
-    
-    // Use the provided song file URL or default
-    const songFile = songFileUrl || 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
-    formData.append('song_file', songFile);
-    requestParams.song_file = songFile;
-    
-    // Log parameters
-    console.log('Sending music generation request with parameters:', requestParams);
-
-    const response = await axios.post(
-      'https://api.segmind.com/v1/minimax-music-01',
-      formData,
-      {
-        headers: {
-          'x-api-key': process.env.SEGMIND_API_KEY,
-          ...formData.getHeaders()
-        },
-        responseType: 'arraybuffer', // Important for receiving binary audio data
-        validateStatus: false, // Allow non-2xx responses for better error handling
-        timeout: 120000 // 2 minute timeout for long music generation
-      }
-    );
-
-    // Check if response contains an error
-    if (response.status !== 200) {
-      let errorMessage;
-      try {
-        errorMessage = Buffer.from(response.data).toString('utf8');
-        console.error('Music API error response:', errorMessage);
-        
-        // Try to parse as JSON for better error messaging
-        try {
-          const jsonError = JSON.parse(errorMessage);
-          if (jsonError.error) {
-            errorMessage = jsonError.error;
-          }
-        } catch (e) {
-          // If it's not valid JSON, keep the original error message
-        }
-        
-      } catch (e) {
-        errorMessage = `HTTP status ${response.status}`;
-      }
-      throw new Error(`Music generation failed: ${errorMessage}`);
-    }
-
-    // Generate unique ID for the music file
-    const musicId = shortid.generate();
-    const musicPath = path.join(MUSIC_DIR, `${musicId}.mp3`);
-
-    // Save the music file
-    fs.writeFileSync(musicPath, Buffer.from(response.data));
-    console.log(`Music file saved to ${musicPath}`);
-
-    return { musicId, musicPath };
-  } catch (error) {
-    console.error('Error generating music:', error);
-    
-    if (error.response) {
-      console.error('Error status:', error.response.status);
-      try {
-        const errorData = Buffer.from(error.response.data).toString('utf8');
-        console.error('API error response:', errorData);
-      } catch (e) {
-        console.error('Could not parse error response data');
-      }
-    }
-    
-    // Add more detailed error for timeouts
-    if (error.code === 'ECONNABORTED') {
-      throw new Error('Music generation timed out. The server took too long to respond.');
-    }
-    
-    throw error;
-  }
-}
-
 // Helper function to extract HTML from API response
 function extractHtmlFromResponse(response) {
   // Try to extract HTML from code blocks if present
@@ -407,33 +300,25 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
   try {
     console.log(`Step 2: Placing ${avatarUrls.length} avatars into white circles`);
     
-    // Load the base image - Updated Jimp import and read method
     const { Jimp, intToRGBA } = require('jimp');
     const baseImage = await Jimp.read(baseImagePath);
     const baseWidth = baseImage.width;
     const baseHeight = baseImage.height;
     
-    // Function to detect white circles in the image
     const findWhiteCircles = async (image) => {
       const circles = [];
-      const threshold = 230; // RGB threshold for "white" pixels
-      
-      // Increase the minimum circle size from 5% to 10% of image dimension for stricter filtering
-      const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.05; // Minimum circle size (10% of image dimension)
+      const threshold = 230;
+      const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.05;
       
       console.log(`Using minimum circle radius threshold: ${circleMinRadius} pixels`);
       
-      // Scan the image to find white areas that might be circles
-      for (let y = 0; y < image.height; y += 10) { // Sample every 10 pixels for performance
+      for (let y = 0; y < image.height; y += 10) {
         for (let x = 0; x < image.width; x += 10) {
           const { r, g, b } = intToRGBA(image.getPixelColor(x, y));
           
-          // If we find a white pixel
           if (r > threshold && g > threshold && b > threshold) {
-            // Expand from this point to find the approximate circle
             let leftEdge = x, rightEdge = x, topEdge = y, bottomEdge = y;
             
-            // Find horizontal edges (approximate)
             for (let testX = x; testX >= 0; testX -= 5) {
               const { r, g, b } = intToRGBA(image.getPixelColor(testX, y));
               if (r < threshold || g < threshold || b < threshold) {
@@ -450,7 +335,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
               }
             }
             
-            // Find vertical edges (approximate)
             for (let testY = y; testY >= 0; testY -= 5) {
               const { r, g, b } = intToRGBA(image.getPixelColor(x, testY));
               if (r < threshold || g < threshold || b < threshold) {
@@ -467,35 +351,28 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
               }
             }
             
-            // Calculate approximate circle dimensions
             const centerX = (leftEdge + rightEdge) / 2;
             const centerY = (topEdge + bottomEdge) / 2;
             const radiusX = (rightEdge - leftEdge) / 2;
             const radiusY = (bottomEdge - topEdge) / 2;
             
-            // Average the radii for a more accurate circle
             const radius = (radiusX + radiusY) / 2;
             
-            // Check if it's big enough to be a circle we want
             if (radius > circleMinRadius) {
-              // Add additional check for roundness - ensure radiusX and radiusY are similar
-              // If the ratio is too far from 1.0, it's not a good circle
               const roundnessRatio = Math.min(radiusX, radiusY) / Math.max(radiusX, radiusY);
               
-              if (roundnessRatio > 0.7) { // Allow slight elliptical shapes but not too stretched
-                // Check if we already found a circle too close to this one
+              if (roundnessRatio > 0.7) {
                 const isNewCircle = !circles.some(circle => {
                   const distance = Math.sqrt(
                     Math.pow(circle.centerX - centerX, 2) + 
                     Math.pow(circle.centerY - centerY, 2)
                   );
-                  return distance < (radius * 1.5); // Increased distance threshold to better avoid duplicates
+                  return distance < (radius * 1.5);
                 });
                 
                 if (isNewCircle) {
                   circles.push({ centerX, centerY, radius });
                   console.log(`Found potential circle at (${Math.round(centerX)},${Math.round(centerY)}) with radius ${Math.round(radius)} and roundness ${roundnessRatio.toFixed(2)}`);
-                  // Skip ahead to avoid finding the same circle again
                   x = Math.min(rightEdge + radius, image.width - 1);
                 }
               }
@@ -507,23 +384,18 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
       return circles;
     };
     
-    // Find white circles in the base image
     let circles = await findWhiteCircles(baseImage);
     console.log(`Found ${circles.length} potential white circles in the image that meet the size requirements`);
     
-    // Sort circles by size (largest first) before limiting to number of avatars
     circles.sort((a, b) => b.radius - a.radius);
     
-    // If we found fewer circles than avatars, fall back to automatic placement
     if (circles.length < avatarUrls.length) {
       console.log(`Not enough circles found (${circles.length}), using automatic placement for ${avatarUrls.length} avatars`);
       
-      // Create circles automatically
       circles = [];
       const margin = baseWidth * 0.1;
-      const avatarSize = Math.min(baseWidth, baseHeight) * 0.2; // 20% of the image dimension
+      const avatarSize = Math.min(baseWidth, baseHeight) * 0.2;
       
-      // Calculate how many avatars per row based on image width
       const avatarsPerRow = Math.ceil(Math.sqrt(avatarUrls.length));
       const spacing = (baseWidth - 2 * margin) / avatarsPerRow;
       
@@ -541,25 +413,17 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
         });
       }
     } else {
-      // If we have more circles than avatars, keep only the largest ones up to the number of avatars
       circles = circles.slice(0, avatarUrls.length);
-      
-      // Then resort by Y position for more natural avatar placement
       circles.sort((a, b) => a.centerY - b.centerY);
     }
     
-    // Download and place each avatar
     for (let i = 0; i < avatarUrls.length && i < circles.length; i++) {
       const { centerX, centerY, radius } = circles[i];
       
       try {
-        // Ensure we're requesting a PNG format from Discord instead of WebP
-        // Replace .webp with .png in the URL or add format=png parameter
         let avatarUrl = avatarUrls[i];
         
-        // Make sure we're requesting PNG format
         if (avatarUrl.includes('discord.com') || avatarUrl.includes('discordapp.com')) {
-          // If the URL already specifies size, just replace or add format
           if (avatarUrl.includes('?')) {
             if (avatarUrl.includes('format=')) {
               avatarUrl = avatarUrl.replace(/format=\w+/, 'format=png');
@@ -570,40 +434,32 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             avatarUrl += '?format=png';
           }
           
-          // Replace .webp extension if present
           avatarUrl = avatarUrl.replace('.webp', '.png');
         }
         
         console.log(`Processing avatar ${i+1} with URL: ${avatarUrl}`);
         
-        // Download the avatar with proper error handling
         let avatarImage;
         try {
           const avatarResponse = await axios.get(avatarUrl, { 
             responseType: 'arraybuffer',
-            // Add timeout and retry logic
             timeout: 10000,
             headers: {
               'Accept': 'image/png,image/*'
             }
           });
           
-          // Check the content type
           const contentType = avatarResponse.headers['content-type'];
           console.log(`Avatar ${i+1} content type: ${contentType}`);
           
-          // If we still get webp despite requesting png, we need to convert it
           if (contentType && contentType.includes('webp')) {
             console.log(`Avatar ${i+1} is in WebP format, using fallback circle`);
-            // Create a colored circle instead as a fallback - Updated constructor
             avatarImage = new Jimp({ 
               width: radius * 2, 
               height: radius * 2, 
               color: `hsl(${i * 30 % 360}, 70%, 60%)` 
             });
-            // Add a simple text label in the center of the circle (first letter of the URL)
             const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-            // Use some identifier from the URL or a simple number
             const label = `${i+1}`;
             const textWidth = Jimp.measureText(font, label);
             const textHeight = Jimp.measureTextHeight(font, label, textWidth);
@@ -620,12 +476,10 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
               textHeight * 2
             );
           } else {
-            // Process normal PNG avatar
             avatarImage = await Jimp.read(Buffer.from(avatarResponse.data));
           }
         } catch (avatarError) {
           console.error(`Error downloading/processing avatar ${i+1}:`, avatarError);
-          // Create a fallback colored circle with a number - Updated constructor
           console.log(`Using fallback circle for avatar ${i+1}`);
           avatarImage = new Jimp({ 
             width: radius * 2, 
@@ -633,7 +487,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             color: `hsl(${i * 30 % 360}, 70%, 60%)` 
           });
           
-          // Add a number in the center of the circle
           try {
             const font = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
             const label = `${i+1}`;
@@ -656,21 +509,15 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           }
         }
         
-        // Improved approach for fitting avatars to white circles
         try {
-          // Apply a slight scaling factor to ensure avatar completely covers the white circle
-          // This helps avoid any gaps between the avatar and the original white circle
-          const scalingFactor = 1.6; // 5% larger than the detected circle
+          const scalingFactor = 1.6;
           const exactDiameter = Math.floor(radius * 2);
           const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
           
-          // Resize the avatar with the scaled size to ensure full coverage
           avatarImage.resize({ w: scaledDiameter, h: scaledDiameter });
           
-          // Create a circular mask matching the exact circle size
           const mask = new Jimp({ width: scaledDiameter, height: scaledDiameter, color: 0x00000000 });
           
-          // Create a circular mask with precise edges
           const maskCenter = scaledDiameter / 2;
           const maskRadius = maskCenter;
           
@@ -678,27 +525,21 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
             for (let x = 0; x < scaledDiameter; x++) {
               const distanceFromCenter = Math.sqrt(Math.pow(x - maskCenter, 2) + Math.pow(y - maskCenter, 2));
               if (distanceFromCenter <= maskRadius) {
-                // Set pixel to solid white if inside the circle
                 mask.setPixelColor(0xFFFFFFFF, x, y);
               }
             }
           }
           
-          // Apply the circular mask to the avatar
           avatarImage.mask(mask, 0, 0);
           
-          // Calculate the position so the masked avatar perfectly covers the white circle
-          // We need to account for the scaling factor when positioning
           const offsetAdjustment = (scaledDiameter - exactDiameter) / 2;
           const avatarX = Math.round(centerX - (scaledDiameter / 2));
           const avatarY = Math.round(centerY - (scaledDiameter / 2));
           
-          // Add boundary checks before compositing
           if (avatarX >= -offsetAdjustment && avatarY >= -offsetAdjustment && 
               avatarX + scaledDiameter <= baseImage.width + offsetAdjustment && 
               avatarY + scaledDiameter <= baseImage.height + offsetAdjustment) {
             
-            // Composite the avatar onto the base image
             baseImage.composite(avatarImage, avatarX, avatarY, {
               mode: Jimp.BLEND_SOURCE_OVER,
               opacitySource: 1,
@@ -709,7 +550,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
           } else {
             console.warn(`Avatar ${i+1} placement partially out of bounds. Using fallback positioning.`);
             
-            // Fallback: place avatar at a valid position near the center of the image
             const safeX = Math.max(0, Math.min(avatarX, baseImage.width - scaledDiameter));
             const safeY = Math.max(0, Math.min(avatarY, baseImage.height - scaledDiameter));
             
@@ -729,11 +569,9 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls) {
       }
     }
     
-    // Generate unique ID for the final image file
     const imageId = shortid.generate();
     const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
     
-    // Save the final composite image - Updated write method
     await baseImage.write(imagePath);
     console.log(`Final composite image saved to ${imagePath}`);
     
@@ -749,13 +587,10 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
   try {
     console.log(`Starting two-step image generation process for prompt: ${prompt}`);
     
-    // Step 1: Generate base image from text prompt with white circles for avatar placement
     const { tempImageId, tempImagePath } = await generateBaseImage(prompt, avatarUrls.length);
     
-    // Step 2: Place avatars into the white circles
     const { imageId, imagePath } = await placeAvatarsInCircles(tempImagePath, avatarUrls);
     
-    // Clean up the temporary base image
     try {
       fs.unlinkSync(tempImagePath);
       console.log(`Deleted temporary base image: ${tempImagePath}`);
@@ -769,7 +604,6 @@ async function generateImageWithAvatars(prompt, avatarUrls) {
     throw error;
   }
 }
-
 
 // Function to edit an existing game
 async function editGame(gameId, editPrompt, originalHtml) {
@@ -808,11 +642,9 @@ async function editGame(gameId, editPrompt, originalHtml) {
       }
     );
 
-    // Extract HTML game code from response
     const gameCode = response.data.choices[0].message.content;
     const editedHtml = extractHtmlFromResponse(gameCode);
     
-    // Save the edited game HTML to file
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     fs.writeFileSync(gamePath, editedHtml);
     
@@ -864,11 +696,9 @@ async function enhanceGame(gameId, originalHtml) {
       }
     );
 
-    // Extract HTML game code from response
     const gameCode = response.data.choices[0].message.content;
     const enhancedHtml = extractHtmlFromResponse(gameCode);
     
-    // Save the enhanced game HTML to file
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     fs.writeFileSync(gamePath, enhancedHtml);
     
@@ -885,7 +715,6 @@ async function generateStory(prompt, characterNames) {
     console.log(`Generating story with prompt: ${prompt}`);
     console.log(`Characters: ${characterNames.join(', ')}`);
     
-    // Create an enhanced prompt that includes instructions to feature the characters
     const enhancedPrompt = `Write a creative and engaging story based on the following scenario: ${prompt}
 
 CHARACTERS TO INCLUDE:
@@ -924,7 +753,6 @@ REQUIREMENTS:
       }
     );
 
-    // Extract story content from response
     const story = response.data.choices[0].message.content;
     
     return story;
@@ -992,14 +820,12 @@ Extract a vivid scene description for an image generator. Focus on the most visu
       }
     );
 
-    // Extract the description from the response
     const description = response.data.choices[0].message.content.trim();
     console.log(`Generated image description: ${description}`);
     
     return description;
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
-    // Return a fallback description based on character names if extraction fails
     return `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`;
   }
 }
@@ -1007,13 +833,10 @@ Extract a vivid scene description for an image generator. Focus on the most visu
 // New function to generate and send story with images
 async function generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage) {
   try {
-    // Get character names from the mentioned users
     const characterNames = characterUsers.map(user => user.username);
     
-    // Generate the complete story
     const story = await generateStory(storyPrompt, characterNames);
     
-    // Create an embed for the story intro
     const storyEmbed = new EmbedBuilder()
       .setColor('#9966cc')
       .setTitle('📚 Your Custom Story is Ready!')
@@ -1026,34 +849,27 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
       .setFooter({ text: 'Generated using AI • Story with images created just for you' })
       .setTimestamp();
     
-    // Send the story intro
     const introMessage = await message.channel.send({ 
       content: `${message.author} Here's your generated story with images:`,
       embeds: [storyEmbed]
     });
 
-    // Update loading message
     await loadingMessage.edit('📝 Story generated! Now creating images for each part of the story... This will take a few more minutes.');
     
-    // Break story into chunks if needed (for both readability and image generation)
-    const MAX_MESSAGE_LENGTH = 1800; // Slightly shorter to accommodate image embeds
+    const MAX_MESSAGE_LENGTH = 1800;
     let storyChunks = [];
     
     if (story.length <= MAX_MESSAGE_LENGTH) {
-      // Story fits in a single message
       storyChunks = [story];
     } else {
-      // Find natural breaking points (paragraphs) to split the story
       const paragraphs = story.split(/\n\n+/);
       let currentChunk = '';
       
       for (const paragraph of paragraphs) {
-        // If adding this paragraph would exceed the limit, save current chunk and start a new one
         if (currentChunk.length + paragraph.length + 2 > MAX_MESSAGE_LENGTH && currentChunk.length > 0) {
           storyChunks.push(currentChunk);
           currentChunk = paragraph;
         } else {
-          // Add paragraph to current chunk
           if (currentChunk.length > 0) {
             currentChunk += '\n\n' + paragraph;
           } else {
@@ -1062,7 +878,6 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
         }
       }
       
-      // Add the last chunk if there's anything left
       if (currentChunk.length > 0) {
         storyChunks.push(currentChunk);
       }
@@ -1070,30 +885,23 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
     
     console.log(`Split story into ${storyChunks.length} chunks for processing`);
     
-    // Track which chunks failed so we can retry or send them without images
     const failedChunks = [];
     
-    // Process each chunk: extract description, generate image, send with text
     for (let i = 0; i < storyChunks.length; i++) {
       const chunk = storyChunks[i];
       const chunkNumber = i + 1;
       
-      // Update progress
       await loadingMessage.edit(`📝 Creating image ${chunkNumber}/${storyChunks.length} for your story...`);
       
       try {
-        // Extract a description for the image from this chunk
         const imageDescription = await extractDescriptionFromStoryChunk(chunk, characterNames);
         
-        // Get avatar URLs from the character users
         const avatarUrls = characterUsers.map(user => 
           user.displayAvatarURL({ format: 'png', size: 512 })
         );
         
-        // Generate image using the existing function
         const { imageId, imagePath } = await generateImageWithAvatars(imageDescription, avatarUrls);
         
-        // Create an embed for the image
         const imageEmbed = new EmbedBuilder()
           .setColor('#ff6600')
           .setTitle(`📖 Part ${chunkNumber} of ${storyChunks.length}`)
@@ -1101,14 +909,12 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
           .setImage(`attachment://${imageId}.png`)
           .setFooter({ text: `Story image ${chunkNumber}/${storyChunks.length} • Generated with AI` });
         
-        // Send the text chunk with its image
         await message.channel.send({
           content: chunk,
           embeds: [imageEmbed],
           files: [{ attachment: imagePath, name: `${imageId}.png` }]
         });
         
-        // Clean up the image file after sending (with a delay to ensure it's sent properly)
         setTimeout(() => {
           try {
             fs.unlinkSync(imagePath);
@@ -1116,27 +922,21 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
           } catch (err) {
             console.error(`Error deleting image file: ${err}`);
           }
-        }, 5000); // 5 seconds delay
+        }, 5000);
         
       } catch (error) {
         console.error(`Error processing chunk ${chunkNumber}:`, error);
         
-        // Add to failed chunks list
         failedChunks.push({ index: i, chunkNumber, chunk });
         
-        // If image generation fails, send just the text
         await message.channel.send({
           content: `**Part ${chunkNumber} of ${storyChunks.length}:**\n\n${chunk}\n\n*(Image generation failed for this part)*`
         });
       }
       
-      // Add a small delay between sending chunks to avoid rate limits
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
-    // Ensure that all chunks were sent - if any failed image generation, we've already sent text versions
-    
-    // Final verification - send ending message with story summary
     const summaryEmbed = new EmbedBuilder()
       .setColor('#9966cc')
       .setTitle('📚 Story Complete!')
@@ -1152,18 +952,15 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
       content: `${message.author} Story generation complete!`,
       embeds: [summaryEmbed] });
     
-    // Final update to loading message
     await loadingMessage.edit('✅ Story with images generated successfully!');
     
   } catch (error) {
     console.error('Error in generateAndSendStoryWithImages:', error);
     
-    // If the main process fails, try to send the full story without images as a fallback
     try {
       const characterNames = characterUsers.map(user => user.username);
       const story = await generateStory(storyPrompt, characterNames);
       
-      // Split the story into manageable chunks for Discord
       const MAX_MESSAGE_LENGTH = 1900;
       for (let i = 0; i < story.length; i += MAX_MESSAGE_LENGTH) {
         const chunk = story.substring(i, i + MAX_MESSAGE_LENGTH);
@@ -1184,27 +981,21 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   
-  // Initialize the finance news system with the Discord client
   initFinanceNews(client, process.env.NEWSAPI_KEY);
 });
 
 client.on('messageCreate', async (message) => {
-  // Ignore messages from bots
   if (message.author.bot) return;
 
-  // Check if the user is in edit mode and waiting for an edit prompt
   if (usersInEditMode.has(message.author.id)) {
     const { gameId, loadingMessage } = usersInEditMode.get(message.author.id);
     const editPrompt = message.content;
     
-    // Clear edit mode for this user
     usersInEditMode.delete(message.author.id);
     
-    // Update the loading message to indicate editing has started
     await loadingMessage.edit('🔄 Editing your game... This might take a minute!');
     
     try {
-      // Read the original game file
       const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
       if (!fs.existsSync(gamePath)) {
         await loadingMessage.edit(`Error: Game with ID ${gameId} not found.`);
@@ -1213,10 +1004,8 @@ client.on('messageCreate', async (message) => {
       
       const originalHtml = fs.readFileSync(gamePath, 'utf8');
       
-      // Edit the game
       await editGame(gameId, editPrompt, originalHtml);
       
-      // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
         .setColor('#9933cc')
         .setTitle('🎮 Your Game Has Been Updated!')
@@ -1228,10 +1017,8 @@ client.on('messageCreate', async (message) => {
         .setFooter({ text: 'Edited using AI • To play, use !playgame command' })
         .setTimestamp();
       
-      // Edit the loading message with the game ID
       await loadingMessage.edit({ content: 'Game updated successfully!', embeds: [gameEmbed] });
       
-      // Delete the user's edit prompt message to keep the channel clean
       try {
         await message.delete();
       } catch (error) {
@@ -1246,32 +1033,26 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check if the user is waiting to provide a story prompt
   if (usersWaitingForStoryPrompt.has(message.author.id)) {
     const { characterUsers, loadingMessage } = usersWaitingForStoryPrompt.get(message.author.id);
     const storyPrompt = message.content;
     
-    // Clear story prompt wait for this user
     usersWaitingForStoryPrompt.delete(message.author.id);
     
-    // Update the loading message to indicate story generation has started
     await loadingMessage.edit('📝 Generating your custom story with images... This might take several minutes as I craft a detailed narrative with visuals!');
     
     try {
-      // Delete the prompt message to keep the channel clean
       try {
         await message.delete();
       } catch (error) {
         console.error('Error deleting message:', error);
       }
       
-      // Use the new function to generate and send the story with images
       await generateAndSendStoryWithImages(message, storyPrompt, characterUsers, loadingMessage);
       
     } catch (error) {
       console.error('Error processing story with images:', error);
       
-      // Provide more helpful error message
       let errorMessage = 'Sorry, there was an error generating your story with images. Please try again later.';
       
       if (error.message && error.message.includes('timeout')) {
@@ -1284,36 +1065,29 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !financenews command - update this section
   if (message.content.startsWith('!financenews')) {
-    // Call the finance news handler with NewsAPI key and the client
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
   }
 
-  // Check for !generatequiz command
   if (message.content.startsWith('!generatequiz')) {
     await handleQuizCommand(message);
     return;
   }
 
-  // Check for !playgame command
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
     const gameId = playGameMatch[1];
     
-    // Check if the game exists
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     if (!fs.existsSync(gamePath)) {
       message.reply(`Error: Game with ID ${gameId} not found.`);
       return;
     }
     
-    // Get the server URL from environment variables or default to localhost during development
     const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
     const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
 
-    // Create user token with Discord info for authentication
     const userToken = jwt.sign({
       id: message.author.id,
       username: message.author.username,
@@ -1322,7 +1096,6 @@ client.on('messageCreate', async (message) => {
     
     const gameUrl = `${baseUrl}/game/${gameId}?token=${userToken}`;
     
-    // Create an embed with the personalized game link
     const gameEmbed = new EmbedBuilder()
       .setColor('#00cc99')
       .setTitle('🎮 Here\'s Your Personal Game Link!')
@@ -1334,15 +1107,12 @@ client.on('messageCreate', async (message) => {
       .setFooter({ text: 'Generated using AI • Link personalized for you' })
       .setTimestamp();
     
-    // Send directly in the channel
     await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
     
     return;
   }
 
-  // Check for !generatestory command with mentions
   if (message.content.startsWith('!generatestory')) {
-    // Extract mentioned users from the message
     const characterUsers = Array.from(message.mentions.users.values());
     
     if (characterUsers.length === 0) {
@@ -1350,57 +1120,45 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
-    // Send initial response
     const loadingMessage = await message.reply(`I found ${characterUsers.length} character(s): ${characterUsers.map(user => user.username).join(', ')}. Now, please describe the scenario for the story in your next message.`);
     
-    // Put the user in wait-for-prompt mode
     usersWaitingForStoryPrompt.set(message.author.id, { characterUsers, loadingMessage });
     return;
   }
 
-  // Check for !editgame command
   const editGameMatch = message.content.match(/^!editgame\s+([a-zA-Z0-9_-]+)$/);
   if (editGameMatch) {
     const gameId = editGameMatch[1];
     
-    // Check if the game exists
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     if (!fs.existsSync(gamePath)) {
       message.reply(`Error: Game with ID ${gameId} not found.`);
       return;
     }
     
-    // Send initial response
     const loadingMessage = await message.reply(`Game ${gameId} found. Please send your edit request in the next message.`);
     
-    // Put the user in edit mode
     usersInEditMode.set(message.author.id, { gameId, loadingMessage });
     return;
   }
 
-  // Check for !enhance command
   const enhanceGameMatch = message.content.match(/^!enhance\s+([a-zA-Z0-9_-]+)$/);
   if (enhanceGameMatch) {
     const gameId = enhanceGameMatch[1];
     
-    // Check if the game exists
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     if (!fs.existsSync(gamePath)) {
       message.reply(`Error: Game with ID ${gameId} not found.`);
       return;
     }
     
-    // Send initial response
     const loadingMessage = await message.reply(`🔄 Enhancing game ${gameId}... This might take a minute or two!`);
     
     try {
-      // Read the original game file
       const originalHtml = fs.readFileSync(gamePath, 'utf8');
       
-      // Enhance the game
       await enhanceGame(gameId, originalHtml);
       
-      // Create an embed with the game information
       const gameEmbed = new EmbedBuilder()
         .setColor('#5533ff')
         .setTitle('✨ Your Game Has Been Enhanced!')
@@ -1413,7 +1171,6 @@ client.on('messageCreate', async (message) => {
         .setFooter({ text: 'Auto-enhanced using AI • To play, use !playgame command' })
         .setTimestamp();
       
-      // Edit the loading message with the game ID
       await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
       
     } catch (error) {
@@ -1424,164 +1181,11 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Check for !createmusic command
   if (message.content.startsWith('!createmusic')) {
-    const fullContent = message.content.slice('!createmusic'.length).trim();
-    
-    // Check if there are lyrics in the format "[lyrics] ... [/lyrics]"
-    let prompt, lyrics;
-    const lyricsMatch = fullContent.match(/\[lyrics\]([\s\S]*?)\[\/lyrics\]/);
-    
-    if (lyricsMatch) {
-      // Extract lyrics from the special format
-      lyrics = lyricsMatch[1].trim();
-      // Get the remaining text as the prompt
-      prompt = fullContent.replace(/\[lyrics\][\s\S]*?\[\/lyrics\]/, '').trim();
-      if (!prompt) prompt = "Generate music for these lyrics";
-    } else {
-      prompt = fullContent;
-      lyrics = null;
-    }
-    
-    if (!prompt) {
-      message.reply('Please provide a prompt for the music. Examples:\n- `!createmusic upbeat jazz with piano solo`\n- `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics] soft piano ballad`\n- Attach an audio file with your command to use it as a base for music generation');
-      return;
-    }
-    
-    // Check if user is in a voice channel
-    const voiceChannel = message.member?.voice?.channel;
-    if (!voiceChannel) {
-      message.reply('You need to join a voice channel first!');
-      return;
-    }
-    
-    // Check if a file is attached to the message
-    let songFileUrl = 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
-    const hasAttachment = message.attachments.size > 0;
-    
-    if (hasAttachment) {
-      const attachment = message.attachments.first();
-      // Check if the attachment is an audio file
-      const isAudio = attachment.contentType && attachment.contentType.startsWith('audio/');
-      
-      if (isAudio) {
-        songFileUrl = attachment.url;
-        console.log(`Using user-provided song file: ${songFileUrl}`);
-      } else {
-        await message.reply('The attached file is not recognized as an audio file. Using the default sample instead.');
-      }
-    }
-    
-    // Send initial response with better messaging about timing
-    const loadingMessage = await message.reply(`🎵 Generating your custom music track${hasAttachment ? ' using your audio file' : ''}... This might take 1-2 minutes. Please be patient!`);
-    
-    try {
-      // Generate the music with the song file URL (default or from attachment)
-      const { musicId, musicPath } = await generateMusic(prompt, lyrics, songFileUrl);
-      
-      // Create an embed with the music information
-      const musicEmbed = new EmbedBuilder()
-        .setColor('#9966ff')
-        .setTitle('🎵 Your Custom Music Track is Ready!')
-        .setDescription(`**Music prompt:** ${prompt}${lyrics ? '\n\n**With custom lyrics**' : ''}${hasAttachment ? '\n\n**Using your provided audio file**' : ''}`)
-        .setFooter({ text: 'Generated using AI • Now playing in your voice channel' })
-        .setTimestamp();
-      
-      // Edit the loading message and attach the music file
-      await loadingMessage.edit({ content: 'Music created successfully!', embeds: [musicEmbed], files: [musicPath] });
-      
-      // Join the voice channel and play the music
-      try {
-        // Create a voice connection
-        const connection = joinVoiceChannel({
-          channelId: voiceChannel.id,
-          guildId: voiceChannel.guild.id,
-          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-        });
-        
-        // Create an audio player
-        const player = createAudioPlayer({
-          behaviors: {
-            noSubscriber: NoSubscriberBehavior.Pause,
-          },
-        });
-        
-        // Create an audio resource from the generated file
-        const resource = createAudioResource(musicPath);
-        
-        // Play the audio
-        player.play(resource);
-        connection.subscribe(player);
-        
-        // Store the connection and player for cleanup later
-        voiceConnections.set(voiceChannel.guild.id, connection);
-        audioPlayers.set(voiceChannel.guild.id, player);
-        
-        // Handle when audio finishes playing
-        player.on(AudioPlayerStatus.Idle, () => {
-          // Disconnect after playing
-          connection.destroy();
-          voiceConnections.delete(voiceChannel.guild.id);
-          audioPlayers.delete(voiceChannel.guild.id);
-          
-          // Clean up the file
-          try {
-            fs.unlinkSync(musicPath);
-            console.log(`Deleted music file: ${musicPath}`);
-          } catch (err) {
-            console.error(`Error deleting music file: ${err}`);
-          }
-        });
-        
-        // Add error handling for player errors
-        player.on('error', error => {
-          console.error(`Error playing audio: ${error.message}`);
-          connection.destroy();
-          voiceConnections.delete(voiceChannel.guild.id);
-          audioPlayers.delete(voiceChannel.guild.id);
-          message.channel.send('Error playing the generated music in the voice channel.');
-          
-          // Clean up the file
-          try {
-            fs.unlinkSync(musicPath);
-            console.log(`Deleted music file (after error): ${musicPath}`);
-          } catch (err) {
-            console.error(`Error deleting music file: ${err}`);
-          }
-        });
-        
-      } catch (voiceError) {
-        console.error('Error connecting to voice channel:', voiceError);
-        message.channel.send('Failed to join your voice channel. Please check permissions or try again later.');
-        
-        // Clean up the file if voice connection fails
-        setTimeout(() => {
-          try {
-            fs.unlinkSync(musicPath);
-            console.log(`Deleted music file (voice error): ${musicPath}`);
-          } catch (err) {
-            console.error(`Error deleting music file: ${err}`);
-          }
-        }, 10000); // 10 seconds delay
-      }
-      
-    } catch (error) {
-      console.error('Error generating music:', error);
-      
-      // Provide more helpful error message to the user
-      let errorMessage = 'Sorry, there was an error generating your music. Please try again later.';
-      
-      if (error.message.includes('timed out')) {
-        errorMessage = 'Sorry, music generation timed out. Please try a simpler prompt or try again later.';
-      } else if (error.message.includes('vocal_id null not found')) {
-        errorMessage = 'Sorry, there was an issue with the music generation service. Please try a different prompt.';
-      }
-      
-      await loadingMessage.edit(errorMessage);
-    }
+    await handleMusicCommand(message);
+    return;
   }
   
-  // Check for !singlegame command
   if (message.content.startsWith('!singlegame')) {
     const prompt = message.content.slice('!singlegame'.length).trim();
     
@@ -1590,14 +1194,11 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
-    // Send initial response
     const loadingMessage = await message.reply('🎮 Generating your custom single-player game... This might take a minute!');
     
     try {
-      // Generate the single-player game
       const gameId = await generateSinglePlayerGame(prompt);
       
-      // Create an embed with just the game ID, no direct links
       const gameEmbed = new EmbedBuilder()
         .setColor('#00cc99')
         .setTitle('🎮 Your Custom Single-Player Game is Ready!')
@@ -1613,7 +1214,6 @@ client.on('messageCreate', async (message) => {
         .setFooter({ text: 'Generated using AI • To play, use !playgame command' })
         .setTimestamp();
       
-      // Edit the loading message with the game ID
       await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
     } catch (error) {
       console.error('Error:', error);
@@ -1621,9 +1221,7 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // Check for !multigame command
   if (message.content.startsWith('!multigame')) {
-    // Create an embed with information about the upcoming multiplayer feature
     const multiplayerEmbed = new EmbedBuilder()
       .setColor('#ff9900')
       .setTitle('🎮 Multiplayer Games - Coming Soon!')
@@ -1634,14 +1232,11 @@ client.on('messageCreate', async (message) => {
       .setFooter({ text: 'Stay tuned for updates!' })
       .setTimestamp();
     
-    // Send the embed
     await message.reply({ embeds: [multiplayerEmbed] });
     return;
   }
 
-  // Check for !generateimage command with mentions
   if (message.content.startsWith('!generateimage')) {
-    // Extract mentioned users from the message
     const mentionedUsers = Array.from(message.mentions.users.values());
     
     if (mentionedUsers.length === 0) {
@@ -1649,37 +1244,29 @@ client.on('messageCreate', async (message) => {
       return;
     }
     
-    // Send initial response
     const loadingMessage = await message.reply(`I found ${mentionedUsers.length} mentioned user(s). Now, please describe the scenario for the image in your next message.`);
     
-    // Put the user in wait-for-prompt mode
     usersWaitingForImagePrompt.set(message.author.id, { mentionedUsers, loadingMessage });
     return;
   }
 
-  // Check if the user is waiting to provide an image prompt
   if (usersWaitingForImagePrompt.has(message.author.id)) {
     const { mentionedUsers, loadingMessage } = usersWaitingForImagePrompt.get(message.author.id);
     const imagePrompt = message.content;
     
-    // Clear prompt wait for this user
     usersWaitingForImagePrompt.delete(message.author.id);
     
-    // Update the loading message to indicate image generation has started
     await loadingMessage.edit('🎨 Generating your custom image in two steps...\n1️⃣ Creating base image from your prompt with placeholder circles\n2️⃣ Adding user avatars to the circles\n\nThis process might take 2-3 minutes!');
     
     try {
-      // Collect avatar URLs from mentioned users - EXPLICITLY REQUEST PNG FORMAT
       const avatarUrls = mentionedUsers.map(user => 
         user.displayAvatarURL({ format: 'png', size: 512 })
       );
       
       console.log('Avatar URLs:', avatarUrls);
       
-      // Generate the image using the two-step process
       const { imageId, imagePath } = await generateImageWithAvatars(imagePrompt, avatarUrls);
       
-      // Create an embed with the image information
       const imageEmbed = new EmbedBuilder()
         .setColor('#ff6600')
         .setTitle('🎨 Your Custom Image with Avatars is Ready!')
@@ -1688,24 +1275,20 @@ client.on('messageCreate', async (message) => {
         .setFooter({ text: 'Generated using AI with Discord avatars' })
         .setTimestamp();
       
-      // Send the image in the channel
       await message.channel.send({ 
         content: `${message.author} Here's your generated image with ${mentionedUsers.length} user avatars:`,
         embeds: [imageEmbed],
         files: [{ attachment: imagePath, name: `${imageId}.png` }]
       });
       
-      // Edit the loading message
       await loadingMessage.edit('✅ Composite image generated successfully!');
       
-      // Delete the prompt message to keep the channel clean
       try {
         await message.delete();
       } catch (error) {
         console.error('Error deleting message:', error);
       }
       
-      // Delete the temporary image file after sending
       setTimeout(() => {
         try {
           fs.unlinkSync(imagePath);
@@ -1713,12 +1296,11 @@ client.on('messageCreate', async (message) => {
         } catch (err) {
           console.error(`Error deleting image file: ${err}`);
         }
-      }, 5000); // 5 seconds delay
+      }, 5000);
       
     } catch (error) {
       console.error('Error:', error);
       
-      // Provide more helpful error message
       let errorMessage = 'Sorry, there was an error generating your image. Please try again later.';
       
       if (error.message.includes('timeout')) {
@@ -1732,31 +1314,22 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// Add a function to handle cleaning up user data when the user leaves or is disconnected
 client.on('guildMemberRemove', (member) => {
-  // Clean up any active quizzes for this user
   clearUserQuiz(member.id);
 });
 
-// Add a function to handle cleaning up voice connections when the bot is stopped
 process.on('SIGINT', () => {
-  voiceConnections.forEach(connection => {
-    connection.destroy();
-  });
+  cleanupVoiceConnections();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  voiceConnections.forEach(connection => {
-    connection.destroy();
-  });
+  cleanupVoiceConnections();
   process.exit(0);
 });
 
-// Start the Express server and Discord bot
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// Login to Discord with your app's token
 client.login(process.env.DISCORD_BOT_TOKEN);
