@@ -12,8 +12,8 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const FormData = require('form-data');
 
-// Import the finance news module - update to include the initFinanceNews function
-const { handleFinanceNewsCommand, initFinanceNews } = require('./commands/financeNews');
+// Import the finance news module - update to include the handleFinanceReportCommand function
+const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } = require('./commands/financeNews');
 
 // Import the quiz generator module
 const { handleQuizCommand, clearUserQuiz } = require('./commands/quizGenerator');
@@ -171,6 +171,11 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.startsWith('!financenews')) {
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
+    return;
+  }
+
+  if (message.content.startsWith('!financereport')) {
+    await handleFinanceReportCommand(message, client);
     return;
   }
 

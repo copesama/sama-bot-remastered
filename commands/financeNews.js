@@ -595,12 +595,6 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
   try {
     const parts = message.content.toLowerCase().split(' ');
     
-    // Check if this is a finance report command
-    if (message.content.toLowerCase().startsWith('!financereport')) {
-      await handleFinanceReportCommand(message, client);
-      return;
-    }
-    
     if (parts.length > 1) {
       const hasPermission = message.member && message.member.permissions.has(PermissionFlagsBits.Administrator);
       
