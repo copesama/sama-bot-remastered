@@ -375,6 +375,8 @@ async function generateFinancialAnalysis(newsArticles) {
                - At least 3-5 specific stocks to BUY with clear reasoning
                - At least 3-5 specific stocks to SELL or AVOID with clear reasoning 
                - Include a mix of well-known and lesser-known stocks
+            
+            IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
 
             Keep your analysis professional, balanced, and evidence-based. Make your stock recommendations extremely clear and actionable.
             Format your response in clear sections with bullet points, with stock tickers in bold.
