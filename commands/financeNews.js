@@ -19,6 +19,13 @@ let dailyNewsJob = null;
 let cachedNewsArticles = null;
 let lastFetchDate = null;
 
+// Load subscriptions immediately when module is loaded
+try {
+  loadSubscribedChannels();
+} catch (error) {
+  console.error('Error loading finance channel subscriptions on startup:', error);
+}
+
 /**
  * Loads subscribed channels from the configuration file
  */
@@ -252,7 +259,8 @@ function scheduleDailyNews(client, apiKey) {
  * @param {string} apiKey - NewsAPI API key
  */
 function initFinanceNews(client, apiKey) {
-  // Load subscribed channels
+  // We already load subscribed channels at module initialization
+  // But we can reload them here to be safe
   loadSubscribedChannels();
   
   // Schedule daily news
