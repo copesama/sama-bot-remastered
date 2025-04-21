@@ -182,15 +182,23 @@ async function generateFinancialAnalysis(newsArticles) {
             3. Potential investment opportunities or sectors to watch
             4. Brief risk assessment
             
-            Keep your analysis professional, balanced, and evidence-based. Avoid making extreme claims about guaranteed returns. 
-            Format your response in clear sections with bullet points where appropriate. Keep total response under 500 words.`
+            IMPORTANT: For investment advice, provide SPECIFIC stock recommendations including:
+            - At least 3-5 specific stocks to consider going LONG on (buying), with brief rationale
+            - At least 3-5 specific stocks to consider going SHORT on (selling), with brief rationale
+            - Include both well-known stocks (like AAPL, MSFT, META, AMZN, GOOGL) and other relevant companies
+            - Mention specific price targets or entry/exit points where appropriate
+            - Suggest specific industry sectors that look promising or concerning
+            
+            Format your analysis with clear sections, bullet points, and specific stock symbols in bold.
+            Add a disclaimer that this is for informational purposes only and not financial advice.
+            Keep total response under 800 words, but make it detailed and actionable.`
           },
           {
             role: 'user',
-            content: `Please analyze these financial news headlines and provide market insights and investment advice:\n\n${newsText}`
+            content: `Please analyze these financial news headlines and provide market insights with specific stock recommendations:\n\n${newsText}`
           }
         ],
-        temperature: 0.2
+        temperature: 0.4
       },
       {
         headers: {
