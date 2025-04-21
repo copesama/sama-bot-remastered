@@ -18,6 +18,8 @@ let subscribedChannels = new Map();
 let dailyNewsJob = null;
 let cachedNewsArticles = null;
 let lastFetchDate = null;
+let cachedAnalysis = null;
+let lastAnalysisDate = null;
 
 /**
  * Loads subscribed channels from the configuration file
@@ -88,10 +90,10 @@ function getSubscribedChannel(guildId) {
  * @returns {Promise<Array>} - Array of news articles
  */
 async function fetchFinanceNews(apiKey, limit = 10) {
-  // Check if we already have fresh news (less than 6 hours old)
+  // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
-      (now.getTime() - lastFetchDate.getTime() < 6 * 60 * 60 * 1000)) {
+      (now.getTime() - lastFetchDate.getTime() < 24 * 60 * 60 * 1000)) {
     console.log('Using cached finance news');
     return cachedNewsArticles;
   }
@@ -133,11 +135,97 @@ async function fetchFinanceNews(apiKey, limit = 10) {
 }
 
 /**
+ * Generates financial analysis and stock advice using OpenRouter API
+ * @param {Array} newsArticles - Array of news articles
+ * @returns {Promise<string>} - Financial analysis and stock advice
+ */
+async function generateFinancialAnalysis(newsArticles) {
+  // Check if we already have fresh analysis (less than a day old)
+  const now = new Date();
+  if (cachedAnalysis && lastAnalysisDate && 
+      (now.getTime() - lastAnalysisDate.getTime() < 24 * 60 * 60 * 1000)) {
+    console.log('Using cached financial analysis');
+    return cachedAnalysis;
+  }
+
+  try {
+    // If there are no articles, return empty analysis
+    if (!newsArticles || newsArticles.length === 0) {
+      return "No financial analysis available due to lack of news data.";
+    }
+
+    // Extract titles and summaries for analysis
+    const newsData = newsArticles.map(article => {
+      return {
+        title: article.title || '',
+        description: article.description || article.content || '',
+        source: article.source && article.source.name ? article.source.name : 'Unknown Source'
+      };
+    });
+
+    const newsText = newsData.map((item, index) => 
+      `${index + 1}. ${item.title} - ${item.description} (Source: ${item.source})`
+    ).join('\n\n');
+
+    // Make request to OpenRouter API
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'google/gemini-2.5-pro-exp-03-25:free',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a professional financial analyst and investment advisor with decades of experience in the stock market. 
+            Analyze the provided financial news headlines and provide:
+            1. A concise market sentiment analysis
+            2. Key market trends identified from the news
+            3. Potential investment opportunities or sectors to watch
+            4. Brief risk assessment
+            
+            Keep your analysis professional, balanced, and evidence-based. Avoid making extreme claims about guaranteed returns. 
+            Format your response in clear sections with bullet points where appropriate. Keep total response under 500 words.`
+          },
+          {
+            role: 'user',
+            content: `Please analyze these financial news headlines and provide market insights and investment advice:\n\n${newsText}`
+          }
+        ],
+        temperature: 0.2
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (response.data && response.data.choices && response.data.choices[0].message.content) {
+      // Cache the analysis
+      cachedAnalysis = response.data.choices[0].message.content;
+      lastAnalysisDate = new Date();
+      return cachedAnalysis;
+    } else {
+      console.log('Failed to generate financial analysis');
+      return "No financial analysis available at this time.";
+    }
+  } catch (error) {
+    console.error('Error generating financial analysis:', error);
+    if (error.response) {
+      console.error('API error status:', error.response.status);
+      console.error('API error data:', error.response.data);
+    }
+    return "Failed to generate financial analysis due to an error.";
+  }
+}
+
+/**
  * Creates a Discord embed with finance news
  * @param {Array} newsArticles - Array of news articles from NewsAPI
+ * @param {string} analysis - Financial analysis and stock advice
  * @returns {EmbedBuilder} - Discord embed with formatted news
  */
-function createNewsEmbed(newsArticles) {
+function createNewsEmbed(newsArticles, analysis = null) {
   // Create the main embed
   const embed = new EmbedBuilder()
     .setColor('#00ff00')
@@ -185,6 +273,14 @@ function createNewsEmbed(newsArticles) {
     }
   });
 
+  // Add financial analysis if available
+  if (analysis) {
+    embed.addFields({ 
+      name: '💹 Market Analysis & Investment Insights',
+      value: analysis.length > 1024 ? analysis.substring(0, 1021) + '...' : analysis
+    });
+  }
+
   return embed;
 }
 
@@ -204,7 +300,12 @@ function scheduleDailyNews(client, apiKey) {
   dailyNewsJob = schedule.scheduleJob('0 30 8 * * *', async function() {
     try {
       console.log('Running scheduled finance news update');
-      // Only fetch news once
+      
+      // NEWS AND ANALYSIS ARE FETCHED ONLY ONCE PER DAY
+      // Then the same content is distributed to all subscribed channels
+      // This is more efficient and avoids redundant API calls
+      
+      // Fetch news articles once for all channels
       const newsArticles = await fetchFinanceNews(apiKey, 8);
       
       if (newsArticles.length === 0) {
@@ -212,9 +313,13 @@ function scheduleDailyNews(client, apiKey) {
         return;
       }
       
-      const newsEmbed = createNewsEmbed(newsArticles);
+      // Generate financial analysis once for all channels
+      const analysis = await generateFinancialAnalysis(newsArticles);
       
-      // Send to all subscribed channels
+      // Create a single embed to be reused across all channels
+      const newsEmbed = createNewsEmbed(newsArticles, analysis);
+      
+      // Send the same content to all subscribed channels
       let successCount = 0;
       let failCount = 0;
       
@@ -223,7 +328,7 @@ function scheduleDailyNews(client, apiKey) {
           const channel = await client.channels.fetch(channelId);
           if (channel && channel.isTextBased()) {
             await channel.send({ 
-              content: '📈 Here are today\'s top financial news headlines:', 
+              content: '📈 Here are today\'s top financial news headlines and market analysis:', 
               embeds: [newsEmbed] 
             });
             successCount++;
@@ -314,7 +419,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
     }
     
     // If not a subscription command, treat as a regular news request
-    const loadingMessage = await message.reply('📊 Fetching the latest financial news headlines...');
+    const loadingMessage = await message.reply('📊 Fetching the latest financial news headlines and analysis...');
     
     // Check if API key is available
     if (!apiKey) {
@@ -325,9 +430,15 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
     // Fetch finance news
     const newsArticles = await fetchFinanceNews(apiKey, 8);
     
+    // Generate financial analysis
+    const analysis = await generateFinancialAnalysis(newsArticles);
+    
     // Create and send the embed
-    const newsEmbed = createNewsEmbed(newsArticles);
-    await loadingMessage.edit({ content: '📈 Here are today\'s top financial news headlines:', embeds: [newsEmbed] });
+    const newsEmbed = createNewsEmbed(newsArticles, analysis);
+    await loadingMessage.edit({ 
+      content: '📈 Here are today\'s top financial news headlines and market analysis:', 
+      embeds: [newsEmbed] 
+    });
   } catch (error) {
     console.error('Error in finance news command:', error);
     
@@ -359,5 +470,6 @@ module.exports = {
   initFinanceNews,
   getSubscribedChannel,
   subscribeChannel,
-  unsubscribeChannel
+  unsubscribeChannel,
+  generateFinancialAnalysis
 };
