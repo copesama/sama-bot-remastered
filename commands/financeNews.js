@@ -89,7 +89,7 @@ function getSubscribedChannel(guildId) {
  * @param {number} limit - Maximum number of news items to return
  * @returns {Promise<Array>} - Array of news articles
  */
-async function fetchFinanceNews(apiKey, limit = 10) {
+async function fetchFinanceNews(apiKey, limit = 15) {
   // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
@@ -177,20 +177,19 @@ async function generateFinancialAnalysis(newsArticles) {
             role: 'system',
             content: `You are a professional financial analyst and investment advisor with decades of experience in the stock market. 
             Analyze the provided financial news headlines and provide:
-            1. A concise market sentiment analysis
-            2. Key market trends identified from the news
-            3. SPECIFIC stock recommendations including:
+            1. A deep market sentiment and trend analysis
+            2. SPECIFIC stock recommendations including:
                - At least 3-5 specific stocks to BUY with clear reasoning (e.g., "I would buy MSFT because...")
                - At least 3-5 specific stocks to SELL with clear reasoning (e.g., "I would sell META because...")
                - Include well-known stocks (AAPL, MSFT, GOOGL, AMZN, META, TSLA, etc.)
                - Also include lesser-known but promising stocks that are relevant to current trends
-            4. Brief risk assessment
+
             
             Keep your analysis professional, balanced, and evidence-based. Make your stock recommendations extremely clear and actionable.
             Format your response in clear sections with bullet points, with stock tickers in bold.
             For lesser-known stocks, briefly explain what the company does.
             Add a disclaimer that this is for informational purposes only and not financial advice.
-            Keep total response under 800 words, but make it detailed and actionable.`
+            Keep total response under 500 words, but make it detailed and actionable.`
           },
           {
             role: 'user',
@@ -305,7 +304,7 @@ function scheduleDailyNews(client, apiKey) {
       // This is more efficient and avoids redundant API calls
       
       // Fetch news articles once for all channels
-      const newsArticles = await fetchFinanceNews(apiKey, 8);
+      const newsArticles = await fetchFinanceNews(apiKey, 15);
       
       if (newsArticles.length === 0) {
         console.log('No finance news to send for daily update');
@@ -441,7 +440,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
     }
     
     // Fetch finance news
-    const newsArticles = await fetchFinanceNews(apiKey, 8);
+    const newsArticles = await fetchFinanceNews(apiKey, 15);
     
     // Create and send the news embed (without analysis)
     const newsEmbed = createNewsEmbed(newsArticles);
