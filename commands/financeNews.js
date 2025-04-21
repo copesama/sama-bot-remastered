@@ -548,6 +548,44 @@ function initFinanceNews(client, apiKey) {
 }
 
 /**
+ * Generates and sends a market performance report on demand
+ * @param {Object} message - Discord message object
+ * @param {Object} client - Discord client object
+ */
+async function handleFinanceReportCommand(message, client) {
+  try {
+    const loadingMessage = await message.reply('📊 Generating market performance report...');
+    
+    if (!lastAnalysisStocks || lastAnalysisStocks.length === 0) {
+      await loadingMessage.edit('No stock tickers available. Please run `!financenews` first to generate financial analysis.');
+      return;
+    }
+    
+    const stockData = await fetchStockPerformance(lastAnalysisStocks);
+    
+    if (stockData.length === 0) {
+      await loadingMessage.edit('Could not retrieve stock data for any of the analyzed stocks. Please try again later.');
+      return;
+    }
+    
+    const reportEmbed = createMarketReportEmbed(stockData);
+    
+    await loadingMessage.edit({ 
+      content: '📊 Here\'s the market performance report for stocks mentioned in our analysis:', 
+      embeds: [reportEmbed] 
+    });
+    
+  } catch (error) {
+    console.error('Error generating finance report:', error);
+    try {
+      await message.reply('Sorry, there was an error generating the financial report. Please try again later.');
+    } catch (e) {
+      console.error('Error sending error message:', e);
+    }
+  }
+}
+
+/**
  * Handles the finance news command
  * @param {Object} message - Discord message object
  * @param {string} apiKey - NewsAPI API key
@@ -556,6 +594,12 @@ function initFinanceNews(client, apiKey) {
 async function handleFinanceNewsCommand(message, apiKey, client) {
   try {
     const parts = message.content.toLowerCase().split(' ');
+    
+    // Check if this is a finance report command
+    if (message.content.toLowerCase().startsWith('!financereport')) {
+      await handleFinanceReportCommand(message, client);
+      return;
+    }
     
     if (parts.length > 1) {
       const hasPermission = message.member && message.member.permissions.has(PermissionFlagsBits.Administrator);
@@ -665,5 +709,6 @@ module.exports = {
   extractStockTickers,
   fetchStockPerformance,
   createMarketReportEmbed,
-  sendMarketPerformanceReport
+  sendMarketPerformanceReport,
+  handleFinanceReportCommand
 };
