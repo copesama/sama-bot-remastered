@@ -16,10 +16,12 @@ if (!fs.existsSync(CONFIG_DIR)) {
 // Store subscribed channels (guildId -> channelId)
 let subscribedChannels = new Map();
 let dailyNewsJob = null;
+let dailyReportJob = null;
 let cachedNewsArticles = null;
 let lastFetchDate = null;
 let cachedAnalysis = null;
 let lastAnalysisDate = null;
+let lastAnalysisStocks = null; // Store stock tickers from the last analysis
 
 /**
  * Loads subscribed channels from the configuration file
@@ -89,7 +91,7 @@ function getSubscribedChannel(guildId) {
  * @param {number} limit - Maximum number of news items to return
  * @returns {Promise<Array>} - Array of news articles
  */
-async function fetchFinanceNews(apiKey, limit = 16) {
+async function fetchFinanceNews(apiKey, limit = 15) {
   // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
@@ -135,12 +137,206 @@ async function fetchFinanceNews(apiKey, limit = 16) {
 }
 
 /**
+ * Extract stock tickers from financial analysis text
+ * @param {string} analysisText - The financial analysis text
+ * @returns {Array<string>} - Array of stock tickers
+ */
+function extractStockTickers(analysisText) {
+  if (!analysisText) return [];
+  
+  // Look for stock tickers which are typically in uppercase and 1-5 characters
+  const tickerRegex = /\b[A-Z]{1,5}\b/g;
+  
+  // Find all matches
+  const matches = analysisText.match(tickerRegex) || [];
+  
+  // Filter out common words that might be mistaken for tickers
+  const commonWords = ['A', 'I', 'AI', 'AND', 'THE', 'BUY', 'SELL', 'FOR', 'TO', 'OR', 'IN', 'IT', 'IS', 'BE'];
+  const filteredMatches = matches.filter(match => !commonWords.includes(match));
+  
+  // Remove duplicates
+  return [...new Set(filteredMatches)];
+}
+
+/**
+ * Fetch real-time stock performance data
+ * @param {Array<string>} tickers - Array of stock tickers
+ * @returns {Promise<Array>} - Array of stock performance data
+ */
+async function fetchStockPerformance(tickers) {
+  if (!tickers || tickers.length === 0) return [];
+  
+  try {
+    const stockData = [];
+    const batchSize = 5;
+    for (let i = 0; i < tickers.length; i += batchSize) {
+      const batch = tickers.slice(i, i + batchSize);
+      
+      const batchPromises = batch.map(async (ticker) => {
+        try {
+          const response = await axios.get('https://www.alphavantage.co/query', {
+            params: {
+              function: 'GLOBAL_QUOTE',
+              symbol: ticker,
+              apikey: process.env.ALPHAVANTAGE_API_KEY
+            }
+          });
+          
+          if (response.data && response.data['Global Quote']) {
+            const quote = response.data['Global Quote'];
+            return {
+              ticker,
+              price: quote['05. price'] ? parseFloat(quote['05. price']).toFixed(2) : 'N/A',
+              change: quote['10. change percent'] ? quote['10. change percent'] : 'N/A',
+              valid: quote['05. price'] ? true : false
+            };
+          }
+          return { ticker, price: 'N/A', change: 'N/A', valid: false };
+        } catch (error) {
+          console.error(`Error fetching data for ${ticker}:`, error);
+          return { ticker, price: 'N/A', change: 'N/A', valid: false };
+        }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      stockData.push(...batchResults);
+      
+      if (i + batchSize < tickers.length) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+    
+    return stockData.filter(stock => stock.valid);
+  } catch (error) {
+    console.error('Error fetching stock performance:', error);
+    return [];
+  }
+}
+
+/**
+ * Creates a Discord embed with stock performance data
+ * @param {Array} stockData - Array of stock performance data
+ * @returns {EmbedBuilder} - Discord embed with formatted stock performance
+ */
+function createMarketReportEmbed(stockData) {
+  const embed = new EmbedBuilder()
+    .setColor('#0099ff')
+    .setTitle('📊 Daily Market Performance Report')
+    .setDescription('Performance of stocks mentioned in today\'s financial analysis')
+    .setTimestamp()
+    .setFooter({ text: 'Market data from Alpha Vantage • For informational purposes only' });
+  
+  if (!stockData || stockData.length === 0) {
+    embed.addFields({ 
+      name: 'No Stock Data Available', 
+      value: 'Could not retrieve market data for the stocks mentioned in today\'s analysis.'
+    });
+    return embed;
+  }
+  
+  stockData.sort((a, b) => {
+    const changeA = parseFloat(a.change.replace('%', '')) || 0;
+    const changeB = parseFloat(b.change.replace('%', '')) || 0;
+    return changeB - changeA;
+  });
+  
+  const gainers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) > 0);
+  const losers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) < 0);
+  const neutral = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) === 0);
+  
+  if (gainers.length > 0) {
+    embed.addFields({ 
+      name: '📈 Top Gainers',
+      value: gainers.map(stock => `**${stock.ticker}**: $${stock.price} (${stock.change})`).join('\n') || 'None'
+    });
+  }
+  
+  if (losers.length > 0) {
+    embed.addFields({ 
+      name: '📉 Top Losers',
+      value: losers.map(stock => `**${stock.ticker}**: $${stock.price} (${stock.change})`).join('\n') || 'None'
+    });
+  }
+  
+  if (neutral.length > 0) {
+    embed.addFields({ 
+      name: '➖ Unchanged',
+      value: neutral.map(stock => `**${stock.ticker}**: $${stock.price} (${stock.change})`).join('\n') || 'None'
+    });
+  }
+  
+  const gainersAvg = gainers.length > 0 
+    ? (gainers.reduce((sum, stock) => sum + parseFloat(stock.change.replace('%', '')), 0) / gainers.length).toFixed(2) 
+    : 0;
+    
+  const losersAvg = losers.length > 0 
+    ? (losers.reduce((sum, stock) => sum + parseFloat(stock.change.replace('%', '')), 0) / losers.length).toFixed(2) 
+    : 0;
+  
+  embed.addFields({ 
+    name: '📊 Market Summary',
+    value: `Overall tracked stocks: **${stockData.length}**\nAverage gainer: **+${gainersAvg}%**\nAverage loser: **${losersAvg}%**\n\n*Reminder: This is for information only and not financial advice.*`
+  });
+  
+  return embed;
+}
+
+/**
+ * Sends a market performance report to all subscribed channels
+ * @param {Object} client - Discord client
+ */
+async function sendMarketPerformanceReport(client) {
+  try {
+    console.log('Sending market performance report');
+    
+    if (!lastAnalysisStocks || lastAnalysisStocks.length === 0) {
+      console.log('No stock tickers available from last analysis');
+      return;
+    }
+    
+    const stockData = await fetchStockPerformance(lastAnalysisStocks);
+    
+    if (stockData.length === 0) {
+      console.log('No valid stock data available');
+      return;
+    }
+    
+    const reportEmbed = createMarketReportEmbed(stockData);
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const [guildId, channelId] of subscribedChannels.entries()) {
+      try {
+        const channel = await client.channels.fetch(channelId);
+        if (channel && channel.isTextBased()) {
+          await channel.send({ 
+            content: '📊 Here\'s today\'s market performance report for stocks mentioned in our morning analysis:', 
+            embeds: [reportEmbed] 
+          });
+          successCount++;
+        } else {
+          console.log(`Cannot send to channel ${channelId} in guild ${guildId} - not a text channel`);
+          failCount++;
+        }
+      } catch (error) {
+        console.error(`Error sending market report to guild ${guildId}, channel ${channelId}:`, error);
+        failCount++;
+      }
+    }
+    
+    console.log(`Market report sent to ${successCount} channels (${failCount} failed)`);
+  } catch (error) {
+    console.error('Error in market performance report:', error);
+  }
+}
+
+/**
  * Generates financial analysis and stock advice using OpenRouter API
  * @param {Array} newsArticles - Array of news articles
  * @returns {Promise<string>} - Financial analysis and stock advice
  */
 async function generateFinancialAnalysis(newsArticles) {
-  // Check if we already have fresh analysis (less than a day old)
   const now = new Date();
   if (cachedAnalysis && lastAnalysisDate && 
       (now.getTime() - lastAnalysisDate.getTime() < 24 * 60 * 60 * 1000)) {
@@ -149,12 +345,10 @@ async function generateFinancialAnalysis(newsArticles) {
   }
 
   try {
-    // If there are no articles, return empty analysis
     if (!newsArticles || newsArticles.length === 0) {
       return "No financial analysis available due to lack of news data.";
     }
 
-    // Extract titles and summaries for analysis
     const newsData = newsArticles.map(article => {
       return {
         title: article.title || '',
@@ -167,7 +361,6 @@ async function generateFinancialAnalysis(newsArticles) {
       `${index + 1}. ${item.title} - ${item.description} (Source: ${item.source})`
     ).join('\n\n');
 
-    // Make request to OpenRouter API
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
@@ -204,9 +397,10 @@ async function generateFinancialAnalysis(newsArticles) {
     );
 
     if (response.data && response.data.choices && response.data.choices[0].message.content) {
-      // Cache the analysis
       cachedAnalysis = response.data.choices[0].message.content;
       lastAnalysisDate = new Date();
+      lastAnalysisStocks = extractStockTickers(cachedAnalysis);
+      console.log(`Extracted ${lastAnalysisStocks.length} stock tickers from analysis:`, lastAnalysisStocks);
       return cachedAnalysis;
     } else {
       console.log('Failed to generate financial analysis');
@@ -229,7 +423,6 @@ async function generateFinancialAnalysis(newsArticles) {
  * @returns {EmbedBuilder} - Discord embed with formatted news
  */
 function createNewsEmbed(newsArticles, analysis = null) {
-  // Create the main embed
   const embed = new EmbedBuilder()
     .setColor('#00ff00')
     .setTitle('📈 Today\'s Financial News Headlines')
@@ -237,7 +430,6 @@ function createNewsEmbed(newsArticles, analysis = null) {
     .setTimestamp()
     .setFooter({ text: 'Powered by NewsAPI • Updated just now' });
 
-  // If no articles found, add a message
   if (!newsArticles || newsArticles.length === 0) {
     embed.addFields({ 
       name: 'No News Available', 
@@ -246,29 +438,17 @@ function createNewsEmbed(newsArticles, analysis = null) {
     return embed;
   }
 
-  // Add each news article as a field
   newsArticles.forEach((article, index) => {
     if (article.title && article.url) {
-      // Format source information
       const source = article.source && article.source.name ? article.source.name : 'Unknown Source';
-      
-      // Process the description - truncate if too long, provide a fallback if missing
       let description = article.description || article.content || 'No summary available';
-      
-      // Remove HTML tags if present
       description = description.replace(/<[^>]*>?/gm, '');
-      
-      // Truncate if too long (Discord field values have a 1024 character limit)
       if (description.length > 300) {
         description = description.substring(0, 297) + '...';
       }
-      
-      // Format the timestamp
       const timestamp = article.publishedAt 
         ? new Date(article.publishedAt).toLocaleString() 
         : 'Unknown date';
-      
-      // Create a field for each news item with title, summary, and link
       embed.addFields({ 
         name: `${index + 1}. ${article.title}`,
         value: `**Summary:** ${description}\n\n[Read more](${article.url}) • Source: ${source} • ${timestamp}`
@@ -285,36 +465,29 @@ function createNewsEmbed(newsArticles, analysis = null) {
  * @param {string} apiKey - NewsAPI API key
  */
 function scheduleDailyNews(client, apiKey) {
-  // Cancel any existing job
   if (dailyNewsJob) {
     dailyNewsJob.cancel();
   }
   
-  // Schedule job to run at 8:30 AM (market opening time for major markets)
-  // This is a good time for daily financial updates before trading day starts
-  dailyNewsJob = schedule.scheduleJob('0 30 8 * * *', async function() {
+  if (dailyReportJob) {
+    dailyReportJob.cancel();
+  }
+  
+  dailyNewsJob = schedule.scheduleJob('0 00 11 * * *', async function() {
     try {
       console.log('Running scheduled finance news update');
       
-      // NEWS AND ANALYSIS ARE FETCHED ONLY ONCE PER DAY
-      // Then the same content is distributed to all subscribed channels
-      // This is more efficient and avoids redundant API calls
-      
-      // Fetch news articles once for all channels
-      const newsArticles = await fetchFinanceNews(apiKey, 16);
+      const newsArticles = await fetchFinanceNews(apiKey, 15);
       
       if (newsArticles.length === 0) {
         console.log('No finance news to send for daily update');
         return;
       }
       
-      // Generate financial analysis once for all channels
       const analysis = await generateFinancialAnalysis(newsArticles);
       
-      // Create a single embed to be reused across all channels (without analysis)
       const newsEmbed = createNewsEmbed(newsArticles);
       
-      // Send the same content to all subscribed channels
       let successCount = 0;
       let failCount = 0;
       
@@ -322,13 +495,11 @@ function scheduleDailyNews(client, apiKey) {
         try {
           const channel = await client.channels.fetch(channelId);
           if (channel && channel.isTextBased()) {
-            // Send news headlines first
             await channel.send({ 
               content: '📈 Here are today\'s top financial news headlines:', 
               embeds: [newsEmbed] 
             });
             
-            // Send analysis as a separate message
             if (analysis) {
               const analysisEmbed = new EmbedBuilder()
                 .setColor('#0099ff')
@@ -357,7 +528,12 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  console.log('Daily finance news scheduled for 8:30 AM');
+  dailyReportJob = schedule.scheduleJob('0 05 18 * * *', async function() {
+    await sendMarketPerformanceReport(client);
+  });
+  
+  console.log('Daily finance news scheduled for 11:00 AM');
+  console.log('Daily market report scheduled for 6:00 PM (7 hours after daily news)');
 }
 
 /**
@@ -366,12 +542,8 @@ function scheduleDailyNews(client, apiKey) {
  * @param {string} apiKey - NewsAPI API key
  */
 function initFinanceNews(client, apiKey) {
-  // Load subscribed channels
   loadSubscribedChannels();
-  
-  // Schedule daily news
   scheduleDailyNews(client, apiKey);
-  
   console.log('Finance news system initialized');
 }
 
@@ -383,12 +555,9 @@ function initFinanceNews(client, apiKey) {
  */
 async function handleFinanceNewsCommand(message, apiKey, client) {
   try {
-    // Check if the command is a subscription management command
     const parts = message.content.toLowerCase().split(' ');
     
-    // Admin commands for channel subscription
     if (parts.length > 1) {
-      // Check if user has admin permissions
       const hasPermission = message.member && message.member.permissions.has(PermissionFlagsBits.Administrator);
       
       if (!hasPermission) {
@@ -399,13 +568,11 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       const action = parts[1];
       
       if (action === 'subscribe') {
-        // Subscribe this channel to daily updates
         subscribeChannel(message.guild.id, message.channel.id);
-        await message.reply('✅ This channel will now receive daily financial news updates at 8:30 AM.');
+        await message.reply('✅ This channel will now receive daily financial news updates at 11:00 AM.');
         return;
       } 
       else if (action === 'unsubscribe') {
-        // Unsubscribe this server from daily updates
         const wasSubscribed = unsubscribeChannel(message.guild.id);
         if (wasSubscribed) {
           await message.reply('✅ This server will no longer receive daily financial news updates.');
@@ -415,7 +582,6 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
         return;
       }
       else if (action === 'status') {
-        // Check subscription status
         const subscribedChannelId = getSubscribedChannel(message.guild.id);
         if (subscribedChannelId) {
           const channelMention = `<#${subscribedChannelId}>`;
@@ -427,26 +593,21 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       }
     }
     
-    // If not a subscription command, treat as a regular news request
     const loadingMessage = await message.reply('📊 Fetching the latest financial news headlines and analysis...');
     
-    // Check if API key is available
     if (!apiKey) {
       await loadingMessage.edit('Error: NewsAPI key is not configured. Please check the server configuration.');
       return;
     }
     
-    // Fetch finance news
-    const newsArticles = await fetchFinanceNews(apiKey, 16);
+    const newsArticles = await fetchFinanceNews(apiKey, 15);
     
-    // Create and send the news embed (without analysis)
     const newsEmbed = createNewsEmbed(newsArticles);
     await loadingMessage.edit({ 
       content: '📈 Here are today\'s top financial news headlines:', 
       embeds: [newsEmbed] 
     });
     
-    // Generate financial analysis and send as a separate message
     try {
       const loadingAnalysis = await message.channel.send('📊 Generating market analysis...');
       const analysis = await generateFinancialAnalysis(newsArticles);
@@ -473,7 +634,6 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
   } catch (error) {
     console.error('Error in finance news command:', error);
     
-    // Handle various error scenarios
     let errorMessage = 'Sorry, there was an error fetching financial news. Please try again later.';
     
     if (error.response) {
@@ -484,7 +644,6 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       }
     }
     
-    // Send error message
     try {
       await message.reply(errorMessage);
     } catch (e) {
@@ -502,5 +661,9 @@ module.exports = {
   getSubscribedChannel,
   subscribeChannel,
   unsubscribeChannel,
-  generateFinancialAnalysis
+  generateFinancialAnalysis,
+  extractStockTickers,
+  fetchStockPerformance,
+  createMarketReportEmbed,
+  sendMarketPerformanceReport
 };
