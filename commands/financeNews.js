@@ -179,17 +179,17 @@ async function generateFinancialAnalysis(newsArticles) {
             Analyze the provided financial news headlines and provide:
             1. A concise market sentiment analysis
             2. Key market trends identified from the news
-            3. Potential investment opportunities or sectors to watch
+            3. SPECIFIC stock recommendations including:
+               - At least 3-5 specific stocks to BUY with clear reasoning (e.g., "I would buy MSFT because...")
+               - At least 3-5 specific stocks to SELL with clear reasoning (e.g., "I would sell META because...")
+               - Include well-known stocks (AAPL, MSFT, GOOGL, AMZN, META, TSLA, etc.)
+               - Also include lesser-known but promising stocks that are relevant to current trends
+               - Suggest specific entry points or price targets where appropriate
             4. Brief risk assessment
             
-            IMPORTANT: For investment advice, provide SPECIFIC stock recommendations including:
-            - At least 3-5 specific stocks to consider going LONG on (buying), with brief rationale
-            - At least 3-5 specific stocks to consider going SHORT on (selling), with brief rationale
-            - Include both well-known stocks (like AAPL, MSFT, META, AMZN, GOOGL) and other relevant companies
-            - Mention specific price targets or entry/exit points where appropriate
-            - Suggest specific industry sectors that look promising or concerning
-            
-            Format your analysis with clear sections, bullet points, and specific stock symbols in bold.
+            Keep your analysis professional, balanced, and evidence-based. Make your stock recommendations extremely clear and actionable.
+            Format your response in clear sections with bullet points, with stock tickers in bold.
+            For lesser-known stocks, briefly explain what the company does.
             Add a disclaimer that this is for informational purposes only and not financial advice.
             Keep total response under 800 words, but make it detailed and actionable.`
           },
