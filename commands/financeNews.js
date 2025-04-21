@@ -151,7 +151,7 @@ function extractStockTickers(analysisText) {
   const matches = analysisText.match(tickerRegex) || [];
   
   // Filter out common words that might be mistaken for tickers
-  const commonWords = ['A', 'I', 'AI', 'AND', 'THE', 'BUY', 'SELL', 'FOR', 'TO', 'OR', 'IN', 'IT', 'IS', 'BE'];
+  const commonWords = ['A', 'I', 'AI', 'AND', 'THE', 'BUY', 'SELL', 'FOR', 'TO', 'OR', 'IN', 'IT', 'IS', 'BE','AVOID'];
   const filteredMatches = matches.filter(match => !commonWords.includes(match));
   
   // Remove duplicates
@@ -370,8 +370,8 @@ async function generateFinancialAnalysis(newsArticles) {
             role: 'system',
             content: `You are a professional financial analyst and investment advisor with decades of experience in the stock market. 
             Analyze the provided financial news headlines and summaries and provide:
-            1. A detailed market sentiment and trend analysis
-            2. SPECIFIC stock recommendations including:
+            1. A detailed market sentiment and trend analysis (DON'T include stock tickers)
+            2. SPECIFIC short-term stock recommendations including:
                - At least 3-5 specific stocks to BUY with clear reasoning
                - At least 3-5 specific stocks to SELL or AVOID with clear reasoning 
                - Include a mix of well-known and lesser-known stocks
