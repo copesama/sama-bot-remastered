@@ -273,14 +273,6 @@ function createNewsEmbed(newsArticles, analysis = null) {
     }
   });
 
-  // Add financial analysis if available
-  if (analysis) {
-    embed.addFields({ 
-      name: '💹 Market Analysis & Investment Insights',
-      value: analysis.length > 1024 ? analysis.substring(0, 1021) + '...' : analysis
-    });
-  }
-
   return embed;
 }
 
@@ -316,8 +308,8 @@ function scheduleDailyNews(client, apiKey) {
       // Generate financial analysis once for all channels
       const analysis = await generateFinancialAnalysis(newsArticles);
       
-      // Create a single embed to be reused across all channels
-      const newsEmbed = createNewsEmbed(newsArticles, analysis);
+      // Create a single embed to be reused across all channels (without analysis)
+      const newsEmbed = createNewsEmbed(newsArticles);
       
       // Send the same content to all subscribed channels
       let successCount = 0;
@@ -327,10 +319,24 @@ function scheduleDailyNews(client, apiKey) {
         try {
           const channel = await client.channels.fetch(channelId);
           if (channel && channel.isTextBased()) {
+            // Send news headlines first
             await channel.send({ 
-              content: '📈 Here are today\'s top financial news headlines and market analysis:', 
+              content: '📈 Here are today\'s top financial news headlines:', 
               embeds: [newsEmbed] 
             });
+            
+            // Send analysis as a separate message
+            if (analysis) {
+              const analysisEmbed = new EmbedBuilder()
+                .setColor('#0099ff')
+                .setTitle('💹 Financial Market Analysis & Investment Insights')
+                .setDescription(analysis)
+                .setTimestamp()
+                .setFooter({ text: 'AI-powered market analysis • This is not financial advice' });
+                
+              await channel.send({ embeds: [analysisEmbed] });
+            }
+            
             successCount++;
           } else {
             console.log(`Cannot send to channel ${channelId} in guild ${guildId} - not a text channel`);
@@ -430,15 +436,37 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
     // Fetch finance news
     const newsArticles = await fetchFinanceNews(apiKey, 8);
     
-    // Generate financial analysis
-    const analysis = await generateFinancialAnalysis(newsArticles);
-    
-    // Create and send the embed
-    const newsEmbed = createNewsEmbed(newsArticles, analysis);
+    // Create and send the news embed (without analysis)
+    const newsEmbed = createNewsEmbed(newsArticles);
     await loadingMessage.edit({ 
-      content: '📈 Here are today\'s top financial news headlines and market analysis:', 
+      content: '📈 Here are today\'s top financial news headlines:', 
       embeds: [newsEmbed] 
     });
+    
+    // Generate financial analysis and send as a separate message
+    try {
+      const loadingAnalysis = await message.channel.send('📊 Generating market analysis...');
+      const analysis = await generateFinancialAnalysis(newsArticles);
+      
+      if (analysis) {
+        const analysisEmbed = new EmbedBuilder()
+          .setColor('#0099ff')
+          .setTitle('💹 Financial Market Analysis & Investment Insights')
+          .setDescription(analysis)
+          .setTimestamp()
+          .setFooter({ text: 'AI-powered market analysis • This is not financial advice' });
+          
+        await loadingAnalysis.edit({ 
+          content: '💹 Here\'s my analysis of today\'s financial news:', 
+          embeds: [analysisEmbed] 
+        });
+      } else {
+        await loadingAnalysis.edit('Sorry, I couldn\'t generate a financial analysis at this time.');
+      }
+    } catch (analysisError) {
+      console.error('Error generating analysis:', analysisError);
+      await message.channel.send('Sorry, there was an error generating the financial analysis.').catch(console.error);
+    }
   } catch (error) {
     console.error('Error in finance news command:', error);
     
