@@ -371,7 +371,7 @@ async function generateFinancialAnalysis(newsArticles) {
             role: 'system',
             content: `You are a professional financial analyst and investment advisor with decades of experience in the stock market. 
             Analyze the provided financial news headlines and summaries and provide:
-            1. A detailed market sentiment and trend analysis
+            1. A detailed market sentiment and trend analysis. Don't display any stock ticker for this section
             2. SPECIFIC short-term stock recommendations including:
                - At least 3-5 specific stocks to BUY with clear reasoning
                - At least 3-5 specific stocks to SELL or AVOID with clear reasoning 
