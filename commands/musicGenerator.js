@@ -190,9 +190,9 @@ async function handleMusicCommand(message) {
     return message.reply('Please provide lyrics in the format: `!createmusic [lyrics]Your lyrics here[/lyrics]`\nExample: `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics]`\n- You can also attach an audio file to use as a base for music generation');
   }
   
-  // Extract lyrics from the special format and use a generic prompt
+  // Extract lyrics from the special format and use the lyrics themselves as the prompt
   lyrics = lyricsMatch[1].trim();
-  prompt = "Generate music for these lyrics";
+  prompt = lyrics; // Use the lyrics as the prompt instead of a generic message
   
   // Check if user is in a voice channel
   const voiceChannel = message.member?.voice?.channel;
