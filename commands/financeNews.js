@@ -89,7 +89,7 @@ function getSubscribedChannel(guildId) {
  * @param {number} limit - Maximum number of news items to return
  * @returns {Promise<Array>} - Array of news articles
  */
-async function fetchFinanceNews(apiKey, limit = 20) {
+async function fetchFinanceNews(apiKey, limit = 18) {
   // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
@@ -301,7 +301,7 @@ function scheduleDailyNews(client, apiKey) {
       // This is more efficient and avoids redundant API calls
       
       // Fetch news articles once for all channels
-      const newsArticles = await fetchFinanceNews(apiKey, 20);
+      const newsArticles = await fetchFinanceNews(apiKey, 18);
       
       if (newsArticles.length === 0) {
         console.log('No finance news to send for daily update');
@@ -437,7 +437,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
     }
     
     // Fetch finance news
-    const newsArticles = await fetchFinanceNews(apiKey, 20);
+    const newsArticles = await fetchFinanceNews(apiKey, 18);
     
     // Create and send the news embed (without analysis)
     const newsEmbed = createNewsEmbed(newsArticles);
