@@ -11,27 +11,17 @@ const voiceConnections = new Map();
 const audioPlayers = new Map();
 
 // Function to generate music using Segmind API
-async function generateMusic(prompt, lyrics = null, songFileUrl = null) {
+async function generateMusic(prompt, lyrics, songFileUrl = null) {
   try {
     const formData = new FormData();
     
-    // Check if the prompt contains lyrics or if separate lyrics were provided
-    const extractedLyrics = lyrics || prompt.includes('[verse]') ? prompt : null;
-    const musicPrompt = extractedLyrics ? "Generate music for these lyrics" : prompt;
+    // In the modified version, lyrics will always be provided
+    formData.append('lyrics', lyrics);
     
     // For logging purposes - store what we're sending to the API
-    const requestParams = {};
-    
-    // Set up form data for the request - properly handle null values
-    if (extractedLyrics) {
-      formData.append('lyrics', extractedLyrics);
-      requestParams.lyrics = extractedLyrics;
-    } else {
-      // Use a template for lyrics based on the prompt
-      const defaultLyrics = `[verse]\n${prompt}`;
-      formData.append('lyrics', defaultLyrics);
-      requestParams.lyrics = defaultLyrics;
-    }
+    const requestParams = {
+      lyrics: lyrics
+    };
     
     // Add required parameters with proper values
     formData.append('bitrate', '256000');
@@ -196,20 +186,13 @@ async function handleMusicCommand(message) {
   let prompt, lyrics;
   const lyricsMatch = fullContent.match(/\[lyrics\]([\s\S]*?)\[\/lyrics\]/);
   
-  if (lyricsMatch) {
-    // Extract lyrics from the special format
-    lyrics = lyricsMatch[1].trim();
-    // Get the remaining text as the prompt
-    prompt = fullContent.replace(/\[lyrics\][\s\S]*?\[\/lyrics\]/, '').trim();
-    if (!prompt) prompt = "Generate music for these lyrics";
-  } else {
-    prompt = fullContent;
-    lyrics = null;
+  if (!lyricsMatch) {
+    return message.reply('Please provide lyrics in the format: `!createmusic [lyrics]Your lyrics here[/lyrics]`\nExample: `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics]`\n- You can also attach an audio file to use as a base for music generation');
   }
   
-  if (!prompt) {
-    return message.reply('Please provide a prompt for the music. Examples:\n- `!createmusic upbeat jazz with piano solo`\n- `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics] soft piano ballad`\n- Attach an audio file with your command to use it as a base for music generation');
-  }
+  // Extract lyrics from the special format and use a generic prompt
+  lyrics = lyricsMatch[1].trim();
+  prompt = "Generate music for these lyrics";
   
   // Check if user is in a voice channel
   const voiceChannel = message.member?.voice?.channel;
@@ -235,7 +218,7 @@ async function handleMusicCommand(message) {
   }
   
   // Send initial response with better messaging about timing
-  const loadingMessage = await message.reply(`🎵 Generating your custom music track${hasAttachment ? ' using your audio file' : ''}... This might take 1-2 minutes. Please be patient!`);
+  const loadingMessage = await message.reply(`🎵 Generating music for your lyrics${hasAttachment ? ' using your audio file' : ''}... This might take 1-2 minutes. Please be patient!`);
   
   try {
     // Generate the music with the song file URL (default or from attachment)
@@ -245,7 +228,7 @@ async function handleMusicCommand(message) {
     const musicEmbed = new EmbedBuilder()
       .setColor('#9966ff')
       .setTitle('🎵 Your Custom Music Track is Ready!')
-      .setDescription(`**Music prompt:** ${prompt}${lyrics ? '\n\n**With custom lyrics**' : ''}${hasAttachment ? '\n\n**Using your provided audio file**' : ''}`)
+      .setDescription(`**Using your provided lyrics:**\n\`\`\`\n${lyrics}\n\`\`\`${hasAttachment ? '\n\n**Using your provided audio file**' : ''}`)
       .setFooter({ text: 'Generated using AI • Now playing in your voice channel' })
       .setTimestamp();
     
