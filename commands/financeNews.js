@@ -184,7 +184,6 @@ async function generateFinancialAnalysis(newsArticles) {
                - At least 3-5 specific stocks to SELL with clear reasoning (e.g., "I would sell META because...")
                - Include well-known stocks (AAPL, MSFT, GOOGL, AMZN, META, TSLA, etc.)
                - Also include lesser-known but promising stocks that are relevant to current trends
-               - Suggest specific entry points or price targets where appropriate
             4. Brief risk assessment
             
             Keep your analysis professional, balanced, and evidence-based. Make your stock recommendations extremely clear and actionable.
