@@ -28,7 +28,7 @@ async function generateMusic(prompt, lyrics = null, songFileUrl = null) {
       requestParams.lyrics = extractedLyrics;
     } else {
       // Use a template for lyrics based on the prompt
-      const defaultLyrics = `[verse]\n${prompt}\n[chorus]\nInspired by your imagination\nCreated just for you`;
+      const defaultLyrics = `[verse]\n${prompt}`;
       formData.append('lyrics', defaultLyrics);
       requestParams.lyrics = defaultLyrics;
     }
