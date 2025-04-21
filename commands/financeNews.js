@@ -144,18 +144,19 @@ async function fetchFinanceNews(apiKey, limit = 15) {
 function extractStockTickers(analysisText) {
   if (!analysisText) return [];
   
-  // Look for stock tickers which are typically in uppercase and 1-5 characters
-  const tickerRegex = /\b[A-Z]{1,5}\b/g;
+  // Look for stock tickers with a dollar sign prefix ($TICKER)
+  const tickerRegex = /\$([A-Z]{1,5})\b/g;
+  const tickers = [];
+  let match;
   
   // Find all matches
-  const matches = analysisText.match(tickerRegex) || [];
-  
-  // Filter out common words that might be mistaken for tickers
-  const commonWords = ['A', 'I', 'AI', 'AND', 'THE', 'BUY', 'SELL', 'FOR', 'TO', 'OR', 'IN', 'IT', 'IS', 'BE','AVOID'];
-  const filteredMatches = matches.filter(match => !commonWords.includes(match));
+  while ((match = tickerRegex.exec(analysisText)) !== null) {
+    // match[1] contains the ticker without the dollar sign
+    tickers.push(match[1]);
+  }
   
   // Remove duplicates
-  return [...new Set(filteredMatches)];
+  return [...new Set(tickers)];
 }
 
 /**
@@ -370,11 +371,12 @@ async function generateFinancialAnalysis(newsArticles) {
             role: 'system',
             content: `You are a professional financial analyst and investment advisor with decades of experience in the stock market. 
             Analyze the provided financial news headlines and summaries and provide:
-            1. A detailed market sentiment and trend analysis (DON'T include stock tickers)
+            1. A detailed market sentiment and trend analysis
             2. SPECIFIC short-term stock recommendations including:
                - At least 3-5 specific stocks to BUY with clear reasoning
                - At least 3-5 specific stocks to SELL or AVOID with clear reasoning 
                - Include a mix of well-known and lesser-known stocks
+               - Display the stock tickers like this $STOCK
             
             IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
 
