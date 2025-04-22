@@ -53,6 +53,9 @@ const {
 // Import the multiplayer game module
 const { handleMultiplayerGameCommand } = require('./commands/multiplayerGame');
 
+// Import the invite command module
+const { handleInviteCommand } = require('./commands/inviteCommand');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -238,6 +241,11 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.startsWith('!multigame')) {
     await handleMultiplayerGameCommand(message);
+    return;
+  }
+
+  if (message.content.startsWith('!invite')) {
+    await handleInviteCommand(message);
     return;
   }
 });

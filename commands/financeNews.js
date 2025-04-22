@@ -478,7 +478,7 @@ function scheduleDailyNews(client, apiKey) {
     dailyReportJob.cancel();
   }
   
-  dailyNewsJob = schedule.scheduleJob('0 00 13 * * *', async function() {
+  dailyNewsJob = schedule.scheduleJob('0 15 13 * * *', async function() {
     try {
       console.log('Running scheduled finance news update');
       
@@ -538,7 +538,7 @@ function scheduleDailyNews(client, apiKey) {
   });
   
   console.log('Daily finance news scheduled');
-  console.log('Daily market report scheduled for 7 hours after daily news');
+  console.log('Daily market report scheduled');
 }
 
 /**
@@ -612,7 +612,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       
       if (action === 'subscribe') {
         subscribeChannel(message.guild.id, message.channel.id);
-        await message.reply('✅ This channel will now receive daily financial analysis half an hour before market opening and a financial report 5 minutes after closing');
+        await message.reply('✅ This channel will now receive daily financial analysis 15 minutes before market opening and a financial report 5 minutes after closing');
         return;
       } 
       else if (action === 'unsubscribe') {
