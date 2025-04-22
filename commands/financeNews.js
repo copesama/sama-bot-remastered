@@ -377,7 +377,7 @@ async function generateFinancialAnalysis(newsArticles) {
                - Stocks to SELL or AVOID with clear reasoning 
                - Include a mix of well-known and lesser-known stocks
                - Display the stock tickers like this $STOCK
-               - Total stocks must be exactly 10
+               - Total stocks must be exactly 10 but they don't need to be evenly distributed between BUY and SELL
             
             IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
 
@@ -448,9 +448,9 @@ function createNewsEmbed(newsArticles, analysis = null) {
       const source = article.source && article.source.name ? article.source.name : 'Unknown Source';
       let description = article.description || article.content || 'No summary available';
       description = description.replace(/<[^>]*>?/gm, '');
-      if (description.length > 500) {
-        description = description.substring(0, 497) + '...';
-      }
+      // if (description.length > 500) {
+      //   description = description.substring(0, 497) + '...';
+      // }
       const timestamp = article.publishedAt 
         ? new Date(article.publishedAt).toLocaleString() 
         : 'Unknown date';
