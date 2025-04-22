@@ -448,8 +448,8 @@ function createNewsEmbed(newsArticles, analysis = null) {
       const source = article.source && article.source.name ? article.source.name : 'Unknown Source';
       let description = article.description || article.content || 'No summary available';
       description = description.replace(/<[^>]*>?/gm, '');
-      if (description.length > 300) {
-        description = description.substring(0, 297) + '...';
+      if (description.length > 500) {
+        description = description.substring(0, 497) + '...';
       }
       const timestamp = article.publishedAt 
         ? new Date(article.publishedAt).toLocaleString() 
@@ -537,8 +537,8 @@ function scheduleDailyNews(client, apiKey) {
     await sendMarketPerformanceReport(client);
   });
   
-  console.log('Daily finance news scheduled for 11:00 AM');
-  console.log('Daily market report scheduled for 6:00 PM (7 hours after daily news)');
+  console.log('Daily finance news scheduled');
+  console.log('Daily market report scheduled for 7 hours after daily news');
 }
 
 /**
@@ -612,7 +612,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       
       if (action === 'subscribe') {
         subscribeChannel(message.guild.id, message.channel.id);
-        await message.reply('✅ This channel will now receive daily financial news updates at 11:00 AM.');
+        await message.reply('✅ This channel will now receive daily financial analysis half an hour before market opening and a financial report 5 minutes after closing');
         return;
       } 
       else if (action === 'unsubscribe') {
