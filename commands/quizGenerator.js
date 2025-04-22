@@ -7,11 +7,12 @@ const activeQuizzes = new Map();
 /**
  * Generates a quiz based on the provided prompt using OpenRouter API
  * @param {string} prompt The topic for the quiz
+ * @param {number} questionCount Number of questions to generate
  * @returns {Object} Object containing questions and answers
  */
-async function generateQuizContent(prompt) {
+async function generateQuizContent(prompt, questionCount = 10) {
   try {
-    console.log(`Generating quiz about: ${prompt}`);
+    console.log(`Generating quiz about: ${prompt} with ${questionCount} questions`);
     
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -20,7 +21,7 @@ async function generateQuizContent(prompt) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert quiz creator. Create a multiple-choice quiz with exactly 10 questions about the topic provided by the user.
+            content: `You are an expert quiz creator. Create a multiple-choice quiz with exactly ${questionCount} questions about the topic provided by the user.
 
 Each question must follow this exact JSON format:
 {
@@ -31,7 +32,7 @@ Each question must follow this exact JSON format:
 }
 
 IMPORTANT REQUIREMENTS:
-1. Generate exactly 10 questions in a JSON array
+1. Generate exactly ${questionCount} questions in a JSON array
 2. Each question must have exactly 4 options
 3. The correctIndex must be 0, 1, 2, or 3 (corresponding to the correct option's position)
 4. The difficulty should increase gradually throughout the quiz
@@ -45,7 +46,7 @@ The output must be a valid JSON array that can be directly parsed.`
           },
           {
             role: 'user',
-            content: `Create a 10-question multiple-choice quiz about: ${prompt}`
+            content: `Create a ${questionCount}-question multiple-choice quiz about: ${prompt}`
           }
         ],
         temperature: 0.7
@@ -83,8 +84,8 @@ The output must be a valid JSON array that can be directly parsed.`
     }
     
     // Validate the questions format
-    if (!Array.isArray(quizQuestions) || quizQuestions.length !== 10) {
-      throw new Error('Invalid quiz format: Expected an array of 10 questions');
+    if (!Array.isArray(quizQuestions) || quizQuestions.length !== questionCount) {
+      throw new Error(`Invalid quiz format: Expected an array of ${questionCount} questions`);
     }
     
     // Validate each question
@@ -218,12 +219,40 @@ function createResultsEmbed(score, totalQuestions, prompt, questionResults) {
  * @param {Object} message Discord message object
  */
 async function handleQuizCommand(message) {
-  // Extract the prompt from the message
-  const prompt = message.content.slice('!generatequiz'.length).trim();
+  // Extract the command content
+  const commandContent = message.content.slice('!generatequiz'.length).trim();
   
-  if (!prompt) {
-    message.reply('Please provide a topic for the quiz. Example: `!generatequiz Solar System`');
-    return;
+  // Check for number and prompt
+  let questionCount = 10; // Default to 10 questions
+  let prompt;
+  
+  // Parse the command
+  const match = commandContent.match(/^(\d+)(?:\s+(.+))?$/);
+  
+  if (match) {
+    // User specified a number
+    questionCount = parseInt(match[1]);
+    prompt = match[2] ? match[2].trim() : null;
+    
+    // Validate question count
+    if (questionCount < 3 || questionCount > 20) {
+      message.reply('Please specify a number of questions between 3 and 20. Example: `!generatequiz 15 Solar System`');
+      return;
+    }
+    
+    // If no prompt was provided after the number, ask for it
+    if (!prompt) {
+      message.reply(`Please provide a topic for your ${questionCount}-question quiz. Example: \`!generatequiz ${questionCount} Solar System\``);
+      return;
+    }
+  } else {
+    // No number specified, the entire content is the prompt
+    prompt = commandContent;
+    
+    if (!prompt) {
+      message.reply('Please provide a topic for the quiz. Example: `!generatequiz Solar System` or `!generatequiz 15 Solar System`');
+      return;
+    }
   }
   
   // Check if user already has an active quiz
@@ -233,11 +262,11 @@ async function handleQuizCommand(message) {
   }
   
   // Send initial loading message
-  const loadingMessage = await message.reply(`📝 Generating a quiz about "${prompt}"... This might take a minute!`);
+  const loadingMessage = await message.reply(`📝 Generating a ${questionCount}-question quiz about "${prompt}"... This might take a minute!`);
   
   try {
     // Generate quiz questions using the API
-    const quizQuestions = await generateQuizContent(prompt);
+    const quizQuestions = await generateQuizContent(prompt, questionCount);
     
     // Create user quiz session
     const quizSession = {
@@ -254,7 +283,7 @@ async function handleQuizCommand(message) {
     activeQuizzes.set(message.author.id, quizSession);
     
     // Update the loading message
-    await loadingMessage.edit(`✅ Quiz generated! ${message.author}, get ready to test your knowledge about "${prompt}"!`);
+    await loadingMessage.edit(`✅ Quiz generated! ${message.author}, get ready to test your knowledge about "${prompt}" with ${questionCount} questions!`);
     
     // Start the quiz with the first question
     await sendNextQuestion(message.channel, message.author.id);

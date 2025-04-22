@@ -119,7 +119,7 @@ Extract a vivid scene description for an image generator. Focus on the most visu
     return description;
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
-    return `A portrait-style scene featuring ${characterNames.join(' and ')} with their faces clearly visible, positioned at eye level with the viewer`;
+    return `A portrait-style scene featuring ${characterUsers.length} people with their faces clearly visible, positioned at eye level with the viewer, adventurous style`;
   }
 }
 
@@ -130,23 +130,6 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
     
     const story = await generateStory(storyPrompt, characterNames);
     
-    const storyEmbed = new EmbedBuilder()
-      .setColor('#9966cc')
-      .setTitle('📚 Your Custom Story is Ready!')
-      .setDescription(`**Scenario:** ${storyPrompt}\n\n**Featuring:** ${characterUsers.map(user => user.username).join(', ')}`)
-      .addFields(
-        { name: 'Story Length', value: `${story.length} characters`, inline: true },
-        { name: 'Characters', value: `${characterUsers.length} characters`, inline: true },
-        { name: 'With Images', value: 'Each part of the story includes a custom generated image', inline: true }
-      )
-      .setFooter({ text: 'Generated using AI • Story with images created just for you' })
-      .setTimestamp();
-    
-    const introMessage = await message.channel.send({ 
-      content: `${message.author} Here's your generated story with images:`,
-      embeds: [storyEmbed]
-    });
-
     await loadingMessage.edit('📝 Story generated! Now creating images for each part of the story... This will take a few more minutes.');
     
     const MAX_MESSAGE_LENGTH = 1800;
@@ -198,7 +181,6 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
         const imageEmbed = new EmbedBuilder()
           .setColor('#ff6600')
           .setTitle(`📖 Part ${chunkNumber} of ${storyChunks.length}`)
-          .setDescription(imageDescription)
           .setImage(`attachment://${imageId}.png`)
           .setFooter({ text: `Story image ${chunkNumber}/${storyChunks.length} • Generated with AI` });
         

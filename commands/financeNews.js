@@ -373,10 +373,11 @@ async function generateFinancialAnalysis(newsArticles) {
             Analyze the provided financial news headlines and summaries and provide:
             1. A detailed market sentiment and trend analysis. Don't display any stock ticker for this section
             2. SPECIFIC short-term stock recommendations including:
-               - At least 3-5 specific stocks to BUY with clear reasoning
-               - At least 3-5 specific stocks to SELL or AVOID with clear reasoning 
+               - Stocks to BUY with clear reasoning
+               - Stocks to SELL or AVOID with clear reasoning 
                - Include a mix of well-known and lesser-known stocks
                - Display the stock tickers like this $STOCK
+               - Total stocks must be exactly 10
             
             IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
 
