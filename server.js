@@ -56,6 +56,9 @@ const { handleMultiplayerGameCommand } = require('./commands/multiplayerGame');
 // Import the invite command module
 const { handleInviteCommand } = require('./commands/inviteCommand');
 
+// Import the help command module
+const { handleHelpCommand } = require('./commands/helpCommand');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -246,6 +249,11 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.startsWith('!invite')) {
     await handleInviteCommand(message);
+    return;
+  }
+  
+  if (message.content.startsWith('!help')) {
+    await handleHelpCommand(message);
     return;
   }
 });
