@@ -226,7 +226,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!createmusic')) {
+  if (message.content.startsWith('!generatemusic')) {
     await handleMusicCommand(message);
     return;
   }

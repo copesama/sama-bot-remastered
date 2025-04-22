@@ -178,16 +178,16 @@ async function playMusicInVoiceChannel(voiceChannel, musicPath) {
   }
 }
 
-// Main handler function for the !createmusic command
+// Main handler function for the !generateemusic command
 async function handleMusicCommand(message) {
-  const fullContent = message.content.slice('!createmusic'.length).trim();
+  const fullContent = message.content.slice('!generatemusic'.length).trim();
   
   // Check if there are lyrics in the format "[lyrics] ... [/lyrics]"
   let prompt, lyrics;
   const lyricsMatch = fullContent.match(/\[lyrics\]([\s\S]*?)\[\/lyrics\]/);
   
   if (!lyricsMatch) {
-    return message.reply('Please provide lyrics in the format: `!createmusic [lyrics]Your lyrics here[/lyrics]`\nExample: `!createmusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics]`\n- You can also attach an audio file to use as a base for music generation');
+    return message.reply('Please provide lyrics in the format: `!generatemusic [lyrics]Your lyrics here[/lyrics]`\nExample: `!generatemusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics]`\n- You can also attach an audio file to use as a base for music generation');
   }
   
   // Extract lyrics from the special format and use the lyrics themselves as the prompt

@@ -478,7 +478,7 @@ function scheduleDailyNews(client, apiKey) {
     dailyReportJob.cancel();
   }
   
-  dailyNewsJob = schedule.scheduleJob('0 00 11 * * *', async function() {
+  dailyNewsJob = schedule.scheduleJob('0 00 13 * * *', async function() {
     try {
       console.log('Running scheduled finance news update');
       
@@ -533,7 +533,7 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  dailyReportJob = schedule.scheduleJob('0 05 18 * * *', async function() {
+  dailyReportJob = schedule.scheduleJob('0 05 20 * * *', async function() {
     await sendMarketPerformanceReport(client);
   });
   
