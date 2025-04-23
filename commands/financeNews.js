@@ -266,18 +266,100 @@ function createMarketReportEmbed(stockData) {
     });
   }
   
-  const gainersAvg = gainers.length > 0 
-    ? (gainers.reduce((sum, stock) => sum + parseFloat(stock.change.replace('%', '')), 0) / gainers.length).toFixed(2) 
-    : 0;
+  // Calculate AI Performance
+  if (cachedAnalysis) {
+    // Find stocks mentioned in the analysis
+    const buySection = cachedAnalysis.match(/BUY\s*([\s\S]*?)(?:SELL|AVOID|DISCLAIMER|$)/i);
+    const sellSection = cachedAnalysis.match(/(?:SELL|AVOID)\s*([\s\S]*?)(?:DISCLAIMER|$)/i);
     
-  const losersAvg = losers.length > 0 
-    ? (losers.reduce((sum, stock) => sum + parseFloat(stock.change.replace('%', '')), 0) / losers.length).toFixed(2) 
-    : 0;
-  
-  embed.addFields({ 
-    name: '📊 Market Summary',
-    value: `Overall tracked stocks: **${stockData.length}**\nAverage gainer: **+${gainersAvg}%**\nAverage loser: **${losersAvg}%**\n\n*Reminder: This is for information only and not financial advice.*`
-  });
+    let buyTickers = [];
+    let sellTickers = [];
+    
+    // Extract tickers from BUY section
+    if (buySection && buySection[1]) {
+      // Look for $TICKER patterns in the BUY section
+      const buyMatches = [...buySection[1].matchAll(/\$([A-Z]{1,5})\b/g)];
+      buyTickers = buyMatches.map(match => match[1]);
+    }
+    
+    // Extract tickers from SELL section
+    if (sellSection && sellSection[1]) {
+      // Look for $TICKER patterns in the SELL section
+      const sellMatches = [...sellSection[1].matchAll(/\$([A-Z]{1,5})\b/g)];
+      sellTickers = sellMatches.map(match => match[1]);
+    }
+    
+    // Remove duplicates and ensure no ticker is in both lists
+    buyTickers = [...new Set(buyTickers)].filter(ticker => !sellTickers.includes(ticker));
+    sellTickers = [...new Set(sellTickers)].filter(ticker => !buyTickers.includes(ticker));
+    
+    // Match with stock data
+    const buyStocks = stockData.filter(stock => buyTickers.includes(stock.ticker));
+    const sellStocks = stockData.filter(stock => sellTickers.includes(stock.ticker));
+    
+    let buyPerformance = 0;
+    let sellPerformance = 0;
+    let buyCount = 0;
+    let sellCount = 0;
+    
+    // Calculate performance of BUY recommendations (positive if they went up)
+    buyStocks.forEach(stock => {
+      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+      buyPerformance += changeValue;
+      buyCount++;
+    });
+    
+    // Calculate performance of SELL recommendations (positive if they went down)
+    sellStocks.forEach(stock => {
+      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+      sellPerformance -= changeValue; // Negate the change for sell recommendations
+      sellCount++;
+    });
+    
+    const totalPerformance = (buyPerformance + sellPerformance).toFixed(2);
+    const sign = parseFloat(totalPerformance) >= 0 ? '+' : '';
+    
+    // Create performance summary
+    let performanceSummary = `**AI Recommendation Performance: ${sign}${totalPerformance}%**\n\n`;
+    
+    if (buyStocks.length > 0) {
+      const buySign = buyPerformance >= 0 ? '+' : '';
+      performanceSummary += `**BUY Recommendations (${buySign}${buyPerformance.toFixed(2)}%)**\n`;
+      performanceSummary += buyStocks.map(stock => {
+        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+        return `$${stock.ticker}: ${stock.change} (${changeValue > 0 ? '✅' : '❌'})`;
+      }).join('\n') + '\n\n';
+    } else if (buyTickers.length > 0) {
+      performanceSummary += `**BUY Recommendations**\n`;
+      performanceSummary += `Could not retrieve market data for the recommended buy stocks.\n\n`;
+    }
+    
+    if (sellStocks.length > 0) {
+      const sellSign = sellPerformance >= 0 ? '+' : '';
+      performanceSummary += `**SELL/AVOID Recommendations (${sellSign}${sellPerformance.toFixed(2)}%)**\n`;
+      performanceSummary += sellStocks.map(stock => {
+        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+        return `$${stock.ticker}: ${stock.change} (${changeValue < 0 ? '✅' : '❌'})`;
+      }).join('\n') + '\n\n';
+    } else if (sellTickers.length > 0) {
+      performanceSummary += `**SELL/AVOID Recommendations**\n`;
+      performanceSummary += `Could not retrieve market data for the recommended sell stocks.\n\n`;
+    }
+    
+    performanceSummary += `*For BUY recommendations, positive changes are good.*\n`;
+    performanceSummary += `*For SELL recommendations, negative changes are good.*\n`;
+    performanceSummary += `*Total performance: +${Math.abs(buyPerformance.toFixed(2))}% (BUY) ${sellPerformance >= 0 ? '+' : ''}${sellPerformance.toFixed(2)}% (SELL) = ${sign}${totalPerformance}%*`;
+    
+    embed.addFields({ 
+      name: '🤖 AI Recommendation Performance',
+      value: performanceSummary
+    });
+  } else {
+    embed.addFields({ 
+      name: '🤖 AI Recommendation Performance',
+      value: 'No AI analysis available to evaluate performance.'
+    });
+  }
   
   return embed;
 }
