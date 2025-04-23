@@ -95,7 +95,7 @@ async function fetchFinanceNews(apiKey, limit = 15) {
   // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
-      (now.getTime() - lastFetchDate.getTime() < 24 * 60 * 60 * 1000)) {
+      (now.getTime() - lastFetchDate.getTime() < 23 * 60 * 60 * 1000)) {
     console.log('Using cached finance news');
     return cachedNewsArticles;
   }
@@ -340,7 +340,7 @@ async function sendMarketPerformanceReport(client) {
 async function generateFinancialAnalysis(newsArticles) {
   const now = new Date();
   if (cachedAnalysis && lastAnalysisDate && 
-      (now.getTime() - lastAnalysisDate.getTime() < 24 * 60 * 60 * 1000)) {
+      (now.getTime() - lastAnalysisDate.getTime() < 23 * 60 * 60 * 1000)) {
     console.log('Using cached financial analysis');
     return cachedAnalysis;
   }

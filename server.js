@@ -59,6 +59,13 @@ const { handleInviteCommand } = require('./commands/inviteCommand');
 // Import the help command module
 const { handleHelpCommand } = require('./commands/helpCommand');
 
+// Import the human generator module
+const { 
+  handleHumanGeneratorCommand, 
+  handleHumanResponseInput,
+  usersWaitingForHumanResponse
+} = require('./commands/humanGenerator');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -175,6 +182,22 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  // Handle responses for the human generator command
+  if (usersWaitingForHumanResponse.has(message.author.id)) {
+    const humanData = usersWaitingForHumanResponse.get(message.author.id);
+    const userResponse = message.content;
+    
+    usersWaitingForHumanResponse.delete(message.author.id);
+    
+    try {
+      await handleHumanResponseInput(message.author.id, humanData, userResponse, message);
+    } catch (error) {
+      console.error('Error in human response handling:', error);
+    }
+    
+    return;
+  }
+
   if (message.content.startsWith('!financenews')) {
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
@@ -244,6 +267,14 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.startsWith('!multigame')) {
     await handleMultiplayerGameCommand(message);
+    return;
+  }
+
+  if (message.content.startsWith('!generatehuman')) {
+    const result = await handleHumanGeneratorCommand(message);
+    if (result) {
+      usersWaitingForHumanResponse.set(message.author.id, result);
+    }
     return;
   }
 
