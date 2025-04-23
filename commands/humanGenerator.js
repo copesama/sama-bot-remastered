@@ -107,11 +107,14 @@ The generated text should:
 6. Preserve any idiosyncrasies, casual elements, or stylistic inconsistencies present in my writing
 7. NOT sound AI-generated or overly polished - maintain the natural imperfections of human writing
 8. Use the SAME LANGUAGE that I used in my response (e.g., if I wrote in Greek, English, German, etc., respond in that same language)
+9. Employ a rich and varied vocabulary, including less common synonyms and terms rather than overusing the most standard words
+10. Demonstrate lexical diversity by not repeating the same words too frequently
+11. Use nuanced terms that convey specific meanings rather than generic alternatives when appropriate
 
-Maintain my apparent level of expertise, whether I seem knowledgeable or not. The goal is to create text that I could have plausibly written myself in the exact language I used in my prompt.`
+Maintain my apparent level of expertise, whether I seem knowledgeable or not. The goal is to create text that I could have plausibly written myself in the exact language I used in my prompt, but with a rich vocabulary that avoids repetition.`
           }
         ],
-        temperature: 0.8 // Increased temperature to encourage more human-like, varied text
+        temperature: 0.9 // Increased temperature to encourage more human-like, varied text
       },
       {
         headers: {
