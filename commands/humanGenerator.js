@@ -20,14 +20,24 @@ async function generateQuestion(topic) {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert at generating thought-provoking questions that will elicit a detailed, opinionated response from users. Your questions should be open-ended and encourage users to express their views and writing style. Always respond in the same language as the user\'s request.'
+            content: 'You are an expert at generating clear, simple questions that anyone can understand. Your questions should be straightforward, use everyday language, and avoid complex terminology. They should still encourage users to express their views and writing style, but in a way that is accessible to people of all education levels and backgrounds. Always respond in the same language as the user\'s request.'
           },
           {
             role: 'user',
-            content: `Create a thought-provoking question about "${topic}" that will encourage the user to write at least a paragraph expressing their personal views, opinions, and knowledge about this topic. The question should be neutral but stimulating, allowing me to analyze their writing style and perspective. Make the question specifically about ${topic} and be concise. IMPORTANT: Respond in the same language as my request (e.g., if I asked in Greek, respond in Greek; if I asked in English, respond in English, etc.).`
+            content: `Create a simple, clear question about "${topic}" that anyone can understand.
+
+The question should:
+- Use everyday language and simple vocabulary
+- Avoid jargon, technical terms, and complex phrasing
+- Be concise (ideally under 20 words)
+- Still encourage the user to share their personal views and opinions
+- Be neutral but engaging
+- Be specifically about ${topic}
+
+IMPORTANT: Respond in the same language as my request (e.g., if I asked in Greek, respond in Greek; if I asked in English, respond in English, etc.). Make sure the question is extremely simple and understandable by everyone, regardless of their education level.`
           }
         ],
-        temperature: 0.7
+        temperature: 0.5
       },
       {
         headers: {
@@ -52,16 +62,17 @@ async function generateQuestion(topic) {
  * Analyzes user's response and generates academic text in their style
  * @param {string} topic - The original topic
  * @param {string} userResponse - The user's response to the question
+ * @param {string} question - The question that was asked to the user
  * @returns {Promise<string>} - The generated academic text
  */
-async function generateAcademicText(topic, userResponse) {
+async function generateAcademicText(topic, userResponse, question) {
   try {
     console.log(`Generating academic text based on user response of length: ${userResponse.length}`);
     
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'sophosympatheia/rogue-rose-103b-v0.2:free',
+        model: 'nvidia/llama-3.1-nemotron-ultra-253b-v1:free',
         messages: [
           {
             role: 'system',
@@ -81,7 +92,7 @@ async function generateAcademicText(topic, userResponse) {
           },
           {
             role: 'user',
-            content: `Here is a sample of my writing on the topic of "${topic}":
+            content: `Here is a sample of my writing on the topic of "${topic}" in response to the question: "${question}"
 
 ${userResponse}
 
@@ -100,7 +111,7 @@ The generated text should:
 Maintain my apparent level of expertise, whether I seem knowledgeable or not. The goal is to create text that I could have plausibly written myself in the exact language I used in my prompt.`
           }
         ],
-        temperature: 0.9 // Increased temperature to encourage more human-like, varied text
+        temperature: 0.8 // Increased temperature to encourage more human-like, varied text
       },
       {
         headers: {
@@ -124,7 +135,7 @@ Maintain my apparent level of expertise, whether I seem knowledgeable or not. Th
 /**
  * Handles the initial !generatehuman command
  * @param {Object} message - The Discord message object
- * @returns {Promise<Object>} - Information about the waiting state
+ * @returns {Promise<Object>} - Information about the waiting state, including the question
  */
 async function handleHumanGeneratorCommand(message) {
   try {
@@ -144,15 +155,15 @@ async function handleHumanGeneratorCommand(message) {
       .setColor('#3498db')
       .setTitle(`Question about ${topic}`)
       .setDescription(question)
-      .setFooter({ text: 'Please respond to this question in your next message' });
+      .setFooter({ text: 'Please respond with at least 50 words in your next message' });
     
     await loadingMessage.edit({
-      content: `${message.author}, please answer the following question about "${topic}" in your next message:`,
+      content: `${message.author}, please answer the following question about "${topic}" in your next message. For best results, please write at least 50 words in your response:`,
       embeds: [questionEmbed]
     });
     
-    // Return information needed to set up the waiting state
-    return { topic, loadingMessage };
+    // Return information needed to set up the waiting state, including the question
+    return { topic, loadingMessage, question };
   } catch (error) {
     console.error('Error in handleHumanGeneratorCommand:', error);
     message.reply('Sorry, there was an error generating your question. Please try again later.');
@@ -163,18 +174,25 @@ async function handleHumanGeneratorCommand(message) {
 /**
  * Handles the user's response to the human generator question
  * @param {string} userId - The Discord user ID
- * @param {Object} humanData - Data containing topic and loadingMessage
+ * @param {Object} humanData - Data containing topic, loadingMessage, and question
  * @param {string} userResponse - The user's response to the question
  * @param {Object} message - The Discord message object
  * @returns {Promise<boolean>} - Whether the processing was successful
  */
 async function handleHumanResponseInput(userId, humanData, userResponse, message) {
-  const { topic, loadingMessage } = humanData;
+  const { topic, loadingMessage, question } = humanData;
   
-  await loadingMessage.edit(`Analyzing your response and generating an academic text about "${topic}"... This might take several minutes.`);
+  // Check if the response is too short
+  const wordCount = userResponse.split(/\s+/).length;
+  if (wordCount < 50) {
+    await loadingMessage.edit(`Your response was only ${wordCount} words. For better results, please use the command again and provide at least 50 words in your answer.`);
+    return false;
+  }
+  
+  await loadingMessage.edit(`Analyzing your response (${wordCount} words) and generating an academic text about "${topic}"... This might take several minutes.`);
   
   try {
-    const academicText = await generateAcademicText(topic, userResponse);
+    const academicText = await generateAcademicText(topic, userResponse, question);
     
     // Split the text into chunks of maximum 1900 characters to fit within Discord's message limit
     const MAX_MESSAGE_LENGTH = 1900;
