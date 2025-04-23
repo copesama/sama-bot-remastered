@@ -72,7 +72,7 @@ async function generateAcademicText(topic, userResponse, question) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'deepseek/deepseek-chat-v3-0324:free',
+        model: 'mistralai/mistral-small-3.1-24b-instruct:free',
         messages: [
           {
             role: 'system',
