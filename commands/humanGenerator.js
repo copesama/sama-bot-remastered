@@ -84,11 +84,13 @@ async function generateAcademicText(topic, userResponse, question) {
             1. Subtle language patterns unique to the individual
             2. Any informal elements, slang, or colloquialisms they use
             3. Their specific sentence length preferences and paragraph structuring
-            4. Any grammatical patterns or even "errors" that appear consistently
+            4. Any grammatical patterns or even "errors" that appear consistently - do NOT correct these errors
             5. How they transition between ideas
             6. Their emotional tone and how they express opinions
+            7. Their exact vocabulary level - never use words that seem more advanced than what they've shown
+            8. The precise frequency of grammar mistakes - if they make mistakes, you should make SIMILAR mistakes at a similar rate
             
-            Create content that maintains these human elements rather than "improving" or standardizing their writing style.`
+            Create content that deliberately maintains these human elements. Do NOT improve or standardize their writing style in any way. If they have a limited vocabulary, use the same limited vocabulary. If they make grammar mistakes, make similar grammar mistakes.`
           },
           {
             role: 'user',
@@ -107,14 +109,14 @@ The generated text should:
 6. Preserve any idiosyncrasies, casual elements, or stylistic inconsistencies present in my writing
 7. NOT sound AI-generated or overly polished - maintain the natural imperfections of human writing
 8. Use the SAME LANGUAGE that I used in my response (e.g., if I wrote in Greek, English, German, etc., respond in that same language)
-9. Employ a rich and varied vocabulary, including less common synonyms and terms rather than overusing the most standard words
-10. Demonstrate lexical diversity by not repeating the same words too frequently
-11. Use nuanced terms that convey specific meanings rather than generic alternatives when appropriate
+9. Maintain EXACTLY the same grammar level as my sample - if I make grammar mistakes, make similar types of mistakes with the same frequency
+10. Use ONLY vocabulary at the same level of complexity as my sample - don't use words I wouldn't use
+11. If I use slang, repetitive phrases, or have other speech patterns, incorporate these at the same frequency
 
-Maintain my apparent level of expertise, whether I seem knowledgeable or not. The goal is to create text that I could have plausibly written myself in the exact language I used in my prompt, but with a rich vocabulary that avoids repetition.`
+The most important aspect is to exactly match my vocabulary and grammar level. Do NOT improve my writing or make it more eloquent or correct than my sample. If my sample contains grammar errors or limited vocabulary, your generated text should contain similar patterns. The goal is to create text that I could have plausibly written myself in the exact language, style and grammar level I used in my sample.`
           }
         ],
-        temperature: 0.9 // Increased temperature to encourage more human-like, varied text
+        temperature: 0.8 // Increased temperature to encourage more human-like, varied text
       },
       {
         headers: {
