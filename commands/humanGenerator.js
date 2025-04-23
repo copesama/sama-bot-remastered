@@ -72,7 +72,7 @@ async function generateAcademicText(topic, userResponse, question) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'microsoft/mai-ds-r1:free',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           {
             role: 'system',
