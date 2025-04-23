@@ -176,8 +176,8 @@ async function handleHumanResponseInput(userId, humanData, userResponse, message
   try {
     const academicText = await generateAcademicText(topic, userResponse);
     
-    // Split the text into chunks of maximum 2000 characters to fit within Discord's message limit
-    const MAX_MESSAGE_LENGTH = 2000;
+    // Split the text into chunks of maximum 1900 characters to fit within Discord's message limit
+    const MAX_MESSAGE_LENGTH = 1900;
     const textChunks = [];
     
     for (let i = 0; i < academicText.length; i += MAX_MESSAGE_LENGTH) {
