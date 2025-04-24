@@ -175,6 +175,64 @@ The output must be a valid JSON object that can be directly parsed.`
 }
 
 /**
+ * Truncates a string to a maximum length and adds ellipsis if needed
+ * @param {string} text The text to truncate
+ * @param {number} maxLength Maximum length allowed
+ * @returns {string} Truncated text
+ */
+function truncateText(text, maxLength = 75) {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+}
+
+/**
+ * Creates button components for choices
+ * @param {Array} choices The choices for the current node
+ * @param {string} nodeId The ID of the current node
+ * @returns {Array} Rows of button components (max 5 buttons per row)
+ */
+function createChoiceButtons(choices, nodeId) {
+  const rows = [];
+  
+  // Create a new row for every 5 buttons (Discord maximum)
+  for (let i = 0; i < choices.length; i += 5) {
+    const row = new ActionRowBuilder();
+    
+    // Add up to 5 buttons to this row
+    const rowChoices = choices.slice(i, i + 5);
+    rowChoices.forEach((choice, index) => {
+      // Convert button style string to ButtonStyle enum
+      let buttonStyle = ButtonStyle.Primary;
+      switch (choice.buttonStyle.toUpperCase()) {
+        case 'SECONDARY':
+          buttonStyle = ButtonStyle.Secondary;
+          break;
+        case 'SUCCESS':
+          buttonStyle = ButtonStyle.Success;
+          break;
+        case 'DANGER':
+          buttonStyle = ButtonStyle.Danger;
+          break;
+      }
+      
+      // Truncate choice text to stay under Discord's limit (80 chars)
+      const truncatedLabel = truncateText(choice.text);
+      
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`choice_${nodeId}_${i + index}`)
+          .setLabel(truncatedLabel)
+          .setStyle(buttonStyle)
+      );
+    });
+    
+    rows.push(row);
+  }
+  
+  return rows;
+}
+
+/**
  * Creates a Discord embed for a game node
  * @param {Object} gameData The full game data
  * @param {string} nodeId The current node ID
@@ -218,50 +276,6 @@ function createNodeEmbed(gameData, nodeId, node) {
   }
   
   return embed;
-}
-
-/**
- * Creates button components for choices
- * @param {Array} choices The choices for the current node
- * @param {string} nodeId The ID of the current node
- * @returns {Array} Rows of button components (max 5 buttons per row)
- */
-function createChoiceButtons(choices, nodeId) {
-  const rows = [];
-  
-  // Create a new row for every 5 buttons (Discord maximum)
-  for (let i = 0; i < choices.length; i += 5) {
-    const row = new ActionRowBuilder();
-    
-    // Add up to 5 buttons to this row
-    const rowChoices = choices.slice(i, i + 5);
-    rowChoices.forEach((choice, index) => {
-      // Convert button style string to ButtonStyle enum
-      let buttonStyle = ButtonStyle.Primary;
-      switch (choice.buttonStyle.toUpperCase()) {
-        case 'SECONDARY':
-          buttonStyle = ButtonStyle.Secondary;
-          break;
-        case 'SUCCESS':
-          buttonStyle = ButtonStyle.Success;
-          break;
-        case 'DANGER':
-          buttonStyle = ButtonStyle.Danger;
-          break;
-      }
-      
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`choice_${nodeId}_${i + index}`)
-          .setLabel(choice.text)
-          .setStyle(buttonStyle)
-      );
-    });
-    
-    rows.push(row);
-  }
-  
-  return rows;
 }
 
 /**
@@ -319,32 +333,71 @@ async function sendGameNode(channel, userId) {
     
     // Handle choice selection
     collector.on('collect', async (interaction) => {
-      // Parse the choice index from the custom ID
-      const parts = interaction.customId.split('_');
-      const choiceIndex = parseInt(parts[2]);
-      
-      // Get the selected choice and next node
-      const selectedChoice = currentNode.choices[choiceIndex];
-      
-      // Record this choice in history
-      gameSession.history.push({
-        nodeId: currentNodeId,
-        choice: selectedChoice.text,
-        description: currentNode.description,
-        question: currentNode.question || 'What will you do?'
-      });
-      
-      // Update current node
-      gameSession.currentNodeId = selectedChoice.nextNode;
-      
-      // Acknowledge the interaction
-      await interaction.deferUpdate();
-      
-      // Send the next node
-      sendGameNode(channel, userId);
-      
-      // Stop the collector
-      collector.stop();
+      try {
+        // Parse the choice index from the custom ID
+        const parts = interaction.customId.split('_');
+        if (parts.length < 3) {
+          console.error('Invalid choice custom ID format:', interaction.customId);
+          await interaction.reply({ 
+            content: 'Sorry, there was an error processing your choice. Please try again.',
+            flags: MessageFlags.Ephemeral 
+          });
+          return;
+        }
+        
+        const choiceIndex = parseInt(parts[2]);
+        
+        // Validate the choice index is valid
+        if (isNaN(choiceIndex) || choiceIndex < 0 || choiceIndex >= currentNode.choices.length) {
+          console.error(`Invalid choice index: ${choiceIndex}, max: ${currentNode.choices.length - 1}`);
+          await interaction.reply({ 
+            content: 'Sorry, there was an error processing your choice. Please try again.',
+            flags: MessageFlags.Ephemeral 
+          });
+          return;
+        }
+        
+        // Get the selected choice and next node
+        const selectedChoice = currentNode.choices[choiceIndex];
+        if (!selectedChoice || !selectedChoice.text || !selectedChoice.nextNode) {
+          console.error(`Invalid choice data at index ${choiceIndex}:`, selectedChoice);
+          await interaction.reply({ 
+            content: 'Sorry, there was an error processing your choice. Please try again.',
+            flags: MessageFlags.Ephemeral 
+          });
+          return;
+        }
+        
+        // Record this choice in history
+        gameSession.history.push({
+          nodeId: currentNodeId,
+          choice: selectedChoice.text,
+          description: currentNode.description,
+          question: currentNode.question || 'What will you do?'
+        });
+        
+        // Update current node
+        gameSession.currentNodeId = selectedChoice.nextNode;
+        
+        // Acknowledge the interaction
+        await interaction.deferUpdate();
+        
+        // Send the next node
+        sendGameNode(channel, userId);
+        
+        // Stop the collector
+        collector.stop();
+      } catch (error) {
+        console.error('Error handling choice selection:', error);
+        try {
+          await interaction.reply({ 
+            content: 'Sorry, there was an error processing your choice. Please try again.',
+            flags: MessageFlags.Ephemeral 
+          });
+        } catch (replyError) {
+          console.error('Error sending error reply:', replyError);
+        }
+      }
     });
     
     // Handle collector end (timeout)
