@@ -59,11 +59,13 @@ const { handleInviteCommand } = require('./commands/inviteCommand');
 // Import the help command module
 const { handleHelpCommand } = require('./commands/helpCommand');
 
-// Import the human generator module
+// Import the human generator module with new word count functionality
 const { 
   handleHumanGeneratorCommand, 
   handleHumanResponseInput,
-  usersWaitingForHumanResponse
+  handleWordCountInput,
+  usersWaitingForHumanResponse,
+  usersWaitingForWordCount
 } = require('./commands/humanGenerator');
 
 // Initialize Discord client
@@ -177,6 +179,19 @@ client.on('messageCreate', async (message) => {
       await handleImagePromptInput(message.author.id, imageData, imagePrompt, message, IMAGES_DIR);
     } catch (error) {
       console.error('Error in image prompt handling:', error);
+    }
+    
+    return;
+  }
+
+  // Handle word count input for the human generator command
+  if (usersWaitingForWordCount.has(message.author.id)) {
+    const wordCountInput = message.content;
+    
+    try {
+      await handleWordCountInput(message.author.id, wordCountInput, message);
+    } catch (error) {
+      console.error('Error in word count handling:', error);
     }
     
     return;

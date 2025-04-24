@@ -3,6 +3,8 @@ const { EmbedBuilder } = require('discord.js');
 
 // Map to track users waiting for responses to the human generation questions
 const usersWaitingForHumanResponse = new Map();
+// Map to track users waiting for word count input
+const usersWaitingForWordCount = new Map();
 
 /**
  * Generates a question about a given topic to analyze the user's writing style
@@ -63,11 +65,12 @@ IMPORTANT: Respond in the same language as my request (e.g., if I asked in Greek
  * @param {string} topic - The original topic
  * @param {string} userResponse - The user's response to the question
  * @param {string} question - The question that was asked to the user
+ * @param {number} wordCount - The desired word count for the academic text
  * @returns {Promise<string>} - The generated academic text
  */
-async function generateAcademicText(topic, userResponse, question) {
+async function generateAcademicText(topic, userResponse, question, wordCount = 1500) {
   try {
-    console.log(`Generating academic text based on user response of length: ${userResponse.length}`);
+    console.log(`Generating academic text based on user response of length: ${userResponse.length} with target word count: ${wordCount}`);
     
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -98,7 +101,7 @@ async function generateAcademicText(topic, userResponse, question) {
 
 ${userResponse}
 
-Based on my writing style, vocabulary choices, sentence structures, and ideological perspective evident in the above text, please generate a comprehensive academic text of 1500-2000 words on the topic of "${topic}". 
+Based on my writing style, vocabulary choices, sentence structures, and ideological perspective evident in the above text, please generate a comprehensive academic text of ${wordCount} words on the topic of "${topic}". 
 
 The generated text should:
 1. Perfectly mimic my writing style, vocabulary, and sentence structures - maintain any quirks, informality, or unique patterns
@@ -163,7 +166,7 @@ async function handleHumanGeneratorCommand(message) {
       .setFooter({ text: 'Please respond with at least 50 words in your next message' });
     
     await loadingMessage.edit({
-      content: `${message.author}, please answer the following question about "${topic}" in your next message. For best results, please write at least 50 words in your response:`,
+      content: `${message.author}, please answer the following question about "${topic}" in your next message. For best results, please write at least 50 words in your response. After your response, you'll be able to choose how many words of academic text to generate:`,
       embeds: [questionEmbed]
     });
     
@@ -194,10 +197,58 @@ async function handleHumanResponseInput(userId, humanData, userResponse, message
     return false;
   }
   
-  await loadingMessage.edit(`Analyzing your response (${wordCount} words) and generating an academic text about "${topic}"... This might take several minutes.`);
+  // Store the user's response for later use when generating the academic text
+  const responseData = { topic, loadingMessage, question, userResponse };
+  usersWaitingForWordCount.set(userId, responseData);
+  
+  // Create an embed to ask for the desired word count
+  const wordCountEmbed = new EmbedBuilder()
+    .setColor('#f39c12')
+    .setTitle('Choose Word Count')
+    .setDescription('How many words would you like in your academic text? Please respond with a number between 500 and 5000.')
+    .setFooter({ text: 'Type a number (e.g., 1500) in your next message' });
+  
+  await loadingMessage.edit({
+    content: `${message.author}, I've received your ${wordCount}-word response. Now, please specify how many words of academic text you'd like me to generate:`,
+    embeds: [wordCountEmbed]
+  });
+  
+  // Remove the user from waiting for human response
+  usersWaitingForHumanResponse.delete(userId);
+  
+  return true;
+}
+
+/**
+ * Handles the user's word count input
+ * @param {string} userId - The Discord user ID
+ * @param {string} wordCountInput - The user's input for word count
+ * @param {Object} message - The Discord message object
+ * @returns {Promise<boolean>} - Whether the processing was successful
+ */
+async function handleWordCountInput(userId, wordCountInput, message) {
+  // Get the stored response data
+  const responseData = usersWaitingForWordCount.get(userId);
+  if (!responseData) {
+    message.reply("I couldn't find your previous response. Please start again with the !generatehuman command.");
+    return false;
+  }
+  
+  const { topic, loadingMessage, question, userResponse } = responseData;
+  
+  // Parse the word count input
+  let desiredWordCount = parseInt(wordCountInput.trim(), 10);
+  
+  // Validate the word count
+  if (isNaN(desiredWordCount) || desiredWordCount < 100 || desiredWordCount > 5000) {
+    await loadingMessage.edit(`Invalid word count. Please provide a number between 100 and 5000. You entered: "${wordCountInput}"`);
+    return false;
+  }
+  
+  await loadingMessage.edit(`Analyzing your response and generating a ${desiredWordCount}-word academic text about "${topic}"... This might take several minutes.`);
   
   try {
-    const academicText = await generateAcademicText(topic, userResponse, question);
+    const academicText = await generateAcademicText(topic, userResponse, question, desiredWordCount);
     
     // Split the text into chunks of maximum 1900 characters to fit within Discord's message limit
     const MAX_MESSAGE_LENGTH = 1900;
@@ -212,11 +263,11 @@ async function handleHumanResponseInput(userId, humanData, userResponse, message
       .setColor('#27ae60')
       .setTitle(`Academic Text on ${topic}`)
       .setDescription(textChunks.length > 1 ? 'Here is your academic text (split into multiple messages):' : 'Here is your academic text:')
-      .setFooter({ text: `Generated based on your writing style • ${textChunks.length} part${textChunks.length > 1 ? 's' : ''}` })
+      .setFooter({ text: `Generated based on your writing style • ${textChunks.length} part${textChunks.length > 1 ? 's' : ''} • Target: ${desiredWordCount} words` })
       .setTimestamp();
     
     await message.channel.send({
-      content: `${message.author}, I've analyzed your writing style and generated an academic text on "${topic}" that matches your style and perspective:`,
+      content: `${message.author}, I've analyzed your writing style and generated a ${desiredWordCount}-word academic text on "${topic}" that matches your style and perspective:`,
       embeds: [academicEmbed]
     });
     
@@ -230,12 +281,17 @@ async function handleHumanResponseInput(userId, humanData, userResponse, message
       }
     }
     
-    await loadingMessage.edit(`✅ Academic text on "${topic}" generated successfully based on your writing style!`);
+    await loadingMessage.edit(`✅ ${desiredWordCount}-word academic text on "${topic}" generated successfully based on your writing style!`);
+    
+    // Remove the user from waiting for word count
+    usersWaitingForWordCount.delete(userId);
     
     return true;
   } catch (error) {
-    console.error('Error processing human response:', error);
+    console.error('Error processing word count input:', error);
     await loadingMessage.edit(`Sorry, there was an error generating the academic text on "${topic}". Please try again later.`);
+    // Remove the user from waiting for word count
+    usersWaitingForWordCount.delete(userId);
     return false;
   }
 }
@@ -243,5 +299,7 @@ async function handleHumanResponseInput(userId, humanData, userResponse, message
 module.exports = {
   handleHumanGeneratorCommand,
   handleHumanResponseInput,
-  usersWaitingForHumanResponse
+  handleWordCountInput,
+  usersWaitingForHumanResponse,
+  usersWaitingForWordCount
 };
