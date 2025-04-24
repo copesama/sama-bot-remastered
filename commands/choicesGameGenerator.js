@@ -476,10 +476,10 @@ async function handleChoicesGameCommand(message) {
     return;
   }
   
-  // Check if user already has an active choices game
+  // Check if user already has an active choices game and clear it
   if (activeChoicesGames.has(message.author.id)) {
-    message.reply('You already have an active choices game! Please finish it before starting a new one.');
-    return;
+    // Clear the existing game without any warning
+    clearUserChoicesGame(message.author.id);
   }
   
   // Send initial loading message
