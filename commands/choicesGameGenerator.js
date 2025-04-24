@@ -5,10 +5,99 @@ const axios = require('axios');
 const activeChoicesGames = new Map();
 
 /**
- * Generates a choices-based game scenario using OpenRouter API
- * @param {string} scenario The scenario for the choices game
- * @returns {Object} Object containing the game structure with branching paths
+ * Attempts to sanitize and repair malformed JSON
+ * @param {string} jsonString String that should be JSON
+ * @returns {string} Sanitized JSON string
  */
+function sanitizeJson(jsonString) {
+  let cleaned = jsonString;
+  
+  // Remove any markdown code block syntax
+  cleaned = cleaned.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1');
+  
+  // Replace any unicode quotes with standard quotes
+  cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+  
+  // Fix trailing commas in arrays and objects (common JSON error)
+  cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
+  
+  // Fix missing commas between array elements
+  cleaned = cleaned.replace(/}\s*{/g, '},{');
+  cleaned = cleaned.replace(/"\s*{/g, '",{');
+  cleaned = cleaned.replace(/}\s*"/g, '},"');
+  
+  // Fix unescaped quotes in strings
+  cleaned = cleaned.replace(/"([^"]*)(?<!\\)"([^"]*)"/g, '"$1\\"$2"');
+  
+  return cleaned;
+}
+
+/**
+ * Attempts to parse JSON with advanced error recovery
+ * @param {string} jsonString The string to parse as JSON
+ * @returns {Object} Parsed JSON object
+ */
+function parseJsonWithRecovery(jsonString) {
+  // First try simple parse
+  try {
+    return JSON.parse(jsonString);
+  } catch (e) {
+    // Clean up the JSON string
+    const cleaned = sanitizeJson(jsonString);
+    
+    try {
+      // Try parsing the cleaned string
+      return JSON.parse(cleaned);
+    } catch (e2) {
+      // More aggressive approach - find valid JSON object
+      const objectMatch = jsonString.match(/\{\s*"[\s\S]*"\s*:\s*[\s\S]*\}/);
+      if (objectMatch) {
+        try {
+          const extracted = sanitizeJson(objectMatch[0]);
+          return JSON.parse(extracted);
+        } catch (e3) {
+          console.error('Failed to parse JSON after extraction attempt', e3);
+          throw new Error('Failed to parse game data: ' + e3.message);
+        }
+      }
+      
+      // Try using a JSON error corrector as last resort
+      try {
+        // Find the reported error position
+        const posMatch = e2.message.match(/position\s+(\d+)/);
+        if (posMatch) {
+          const pos = parseInt(posMatch[1]);
+          
+          // Get the problematic section (20 chars before and after)
+          const start = Math.max(0, pos - 20);
+          const end = Math.min(cleaned.length, pos + 20);
+          const section = cleaned.substring(start, end);
+          
+          console.log(`JSON error around position ${pos}: ${section}`);
+          
+          // Try to fix specific errors based on position
+          let fixedJson = cleaned;
+          // Check if there's an unquoted or unclosed string
+          if (cleaned[pos] === '"' && cleaned[pos-1] !== '\\') {
+            fixedJson = cleaned.substring(0, pos) + '\\' + cleaned.substring(pos);
+          }
+          // Missing comma between elements
+          else if (/["\d\}true|false|null]\s*["{\[]/.test(section)) {
+            fixedJson = cleaned.substring(0, pos) + ',' + cleaned.substring(pos);
+          }
+          
+          return JSON.parse(fixedJson);
+        }
+      } catch (e4) {
+        console.error('All JSON recovery methods failed', e4);
+        throw new Error('Unable to parse or repair game data JSON');
+      }
+      
+      throw e2;
+    }
+  }
+}
+
 async function generateChoicesGameContent(scenario) {
   try {
     console.log(`Generating choices game for scenario: ${scenario}`);
@@ -94,25 +183,19 @@ The output must be a valid JSON object that can be directly parsed.`
     // Extract the game content from the response
     const gameContent = response.data.choices[0].message.content;
     
-    // Try to extract JSON from the content (in case it's wrapped in markdown or other text)
+    console.log('Received game content, attempting to parse JSON');
+    
+    // Try to extract and parse JSON with enhanced error handling
     let gameData;
     try {
-      // First attempt: try to parse the entire response as JSON
-      gameData = JSON.parse(gameContent);
+      gameData = parseJsonWithRecovery(gameContent);
+      
+      // Log successful parsing
+      console.log('Successfully parsed game data JSON');
     } catch (e) {
-      // Second attempt: try to extract JSON if it's wrapped in a code block
-      const jsonMatch = gameContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonMatch && jsonMatch[1]) {
-        gameData = JSON.parse(jsonMatch[1]);
-      } else {
-        // Third attempt: look for object brackets in the content
-        const objectMatch = gameContent.match(/\{\s*"[\s\S]*"\s*:\s*[\s\S]*\}/);
-        if (objectMatch) {
-          gameData = JSON.parse(objectMatch[0]);
-        } else {
-          throw new Error('Failed to parse game data from API response');
-        }
-      }
+      console.error('Failed to parse game JSON:', e.message);
+      console.error('Raw content sample:', gameContent.substring(0, 500) + '...');
+      throw new Error('Could not parse game data: ' + e.message);
     }
     
     // Validate the game data format
