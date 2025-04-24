@@ -302,10 +302,25 @@ async function sendGameNode(channel, userId) {
     // Parse the selected node from the button ID
     const selectedNode = interaction.customId.split('_')[1];
     
+    // Find the selected choice
+    const selectedChoice = node.choices.find(c => c.nextNode === selectedNode);
+    
+    // Check if choice was found
+    if (!selectedChoice) {
+      // Error: choice not found - let user know and let them try again
+      await interaction.reply({
+        content: "There was an error with that choice. Please select another option.",
+        ephemeral: true
+      });
+      
+      console.error(`Error: Could not find choice with nextNode ${selectedNode} in node ${nodeId}`);
+      return;
+    }
+    
     // Update game session
     gameSession.history.push({
       node: nodeId,
-      choice: node.choices.find(c => c.nextNode === selectedNode).text,
+      choice: selectedChoice.text,
       step: gameSession.step
     });
     
