@@ -5,6 +5,52 @@ const axios = require('axios');
 const activeChoicesGames = new Map();
 
 /**
+ * Automatically repairs a game that has invalid node references by creating missing nodes
+ * @param {Object} gameData The game data to repair
+ * @returns {Object} The repaired game data
+ */
+function repairGameData(gameData) {
+  // Collect all referenced nodes to find missing ones
+  const referencedNodes = new Set();
+  const existingNodes = new Set(Object.keys(gameData.nodes));
+
+  // Find all node references
+  Object.values(gameData.nodes).forEach(node => {
+    if (node.choices && Array.isArray(node.choices)) {
+      node.choices.forEach(choice => {
+        if (choice.nextNode) {
+          referencedNodes.add(choice.nextNode);
+        }
+      });
+    }
+  });
+
+  // Find nodes that are referenced but don't exist
+  let repairsMade = false;
+  referencedNodes.forEach(nodeId => {
+    if (!existingNodes.has(nodeId)) {
+      console.log(`Auto-repairing game: Creating missing node ${nodeId}`);
+      
+      // Create a fallback ending node for any missing nodes
+      gameData.nodes[nodeId] = {
+        description: `You continue on your journey... (This is an auto-repaired node)`,
+        isEnding: true,
+        endingType: "neutral",
+        endingTitle: "An Unexpected Turn"
+      };
+      
+      repairsMade = true;
+    }
+  });
+
+  if (repairsMade) {
+    console.log('Game data was automatically repaired to fix missing node references');
+  }
+  
+  return gameData;
+}
+
+/**
  * Generates a choices-based game scenario using OpenRouter API
  * @param {string} scenario The scenario for the choices game
  * @returns {Object} Object containing the game structure with branching paths
@@ -16,7 +62,7 @@ async function generateChoicesGameContent(scenario) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'microsoft/mai-ds-r1:free',
         messages: [
           {
             role: 'system',
@@ -115,6 +161,9 @@ The output must be a valid JSON object that can be directly parsed.`
       }
     }
     
+    // Auto-repair any broken node references
+    gameData = repairGameData(gameData);
+    
     // Validate the game data format
     if (!gameData.title || !gameData.description || !gameData.startNode || !gameData.nodes) {
       throw new Error('Invalid game format: Missing required fields');
@@ -122,7 +171,16 @@ The output must be a valid JSON object that can be directly parsed.`
     
     // Validate that the start node exists
     if (!gameData.nodes[gameData.startNode]) {
-      throw new Error('Invalid game format: Start node not found');
+      // Create a start node if missing
+      console.log('Auto-repairing game: Creating missing start node');
+      gameData.nodes[gameData.startNode] = {
+        description: "You begin your adventure...",
+        question: "What will you do?",
+        choices: [
+          {text: "Continue cautiously", nextNode: Object.keys(gameData.nodes)[0], buttonStyle: "PRIMARY"},
+          {text: "Proceed boldly", nextNode: Object.keys(gameData.nodes)[0], buttonStyle: "DANGER"}
+        ]
+      };
     }
     
     // Validate each node has the required properties
@@ -130,28 +188,41 @@ The output must be a valid JSON object that can be directly parsed.`
       const node = gameData.nodes[nodeId];
       
       if (!node.description) {
-        throw new Error(`Node ${nodeId} is missing a description`);
+        node.description = `You arrive at a new junction in your journey. (Auto-fixed missing description)`;
       }
       
       // If not an ending node, it needs choices
       if (!node.isEnding && (!node.choices || !Array.isArray(node.choices) || node.choices.length === 0)) {
-        throw new Error(`Node ${nodeId} is not an ending but has no choices`);
+        // Convert to an ending if it has no choices
+        console.log(`Auto-repairing game: Adding ending to node ${nodeId} with no choices`);
+        node.isEnding = true;
+        node.endingType = "neutral";
+        node.endingTitle = "The Journey Concludes";
       }
       
       // If it's an ending node, check for ending properties
       if (node.isEnding && (!node.endingType || !node.endingTitle)) {
-        throw new Error(`Ending node ${nodeId} is missing ending properties`);
+        console.log(`Auto-repairing game: Adding missing ending properties to node ${nodeId}`);
+        node.endingType = node.endingType || "neutral";
+        node.endingTitle = node.endingTitle || "The End";
       }
       
-      // Check that each choice points to a valid node
+      // Check that each choice points to a valid node - all handled in repairGameData() now
+      // Instead of failing, we'll double-check that repairGameData fixed everything
       if (node.choices) {
         node.choices.forEach((choice, index) => {
-          if (!choice.text || !choice.nextNode) {
-            throw new Error(`Choice ${index} in node ${nodeId} is missing required properties`);
+          if (!choice.text) {
+            choice.text = `Option ${index + 1}`;
+            console.log(`Auto-repairing game: Added missing choice text in node ${nodeId}`);
           }
           
-          if (!gameData.nodes[choice.nextNode]) {
-            throw new Error(`Choice ${index} in node ${nodeId} points to non-existent node: ${choice.nextNode}`);
+          if (!choice.nextNode) {
+            // Find any other node to point to
+            const availableNodes = Object.keys(gameData.nodes).filter(id => id !== nodeId);
+            choice.nextNode = availableNodes.length > 0 ? 
+                            availableNodes[Math.floor(Math.random() * availableNodes.length)] : 
+                            nodeId; // Last resort: point to self
+            console.log(`Auto-repairing game: Added missing nextNode reference in node ${nodeId}`);
           }
           
           // Set default button style if not specified
