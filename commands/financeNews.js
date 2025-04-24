@@ -458,8 +458,8 @@ async function generateFinancialAnalysis(newsArticles) {
                - Stocks to BUY with clear reasoning
                - Stocks to SELL or AVOID with clear reasoning 
                - Include a mix of well-known and lesser-known stocks
-               - Display the stock tickers like this $STOCK
-               - Total stocks must be exactly 10 but they don't need to be evenly distributed between BUY and SELL (If market feels BULLISH pick more BUY stocks, if market feels BEARISH pick more SELL stocks)
+               - Display the stock tickers like this $STOCK:
+               - Don't display any tickers in the reasoning
             
             IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
 
