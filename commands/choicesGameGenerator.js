@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require('discord.js');
 const axios = require('axios');
 
 // Store active choice games with user IDs as keys
@@ -391,7 +391,7 @@ async function sendGameNode(channel, userId) {
       const summaryEmbed = createSummaryEmbed(gameSession);
       await interaction.reply({
         embeds: [summaryEmbed],
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     });
     
