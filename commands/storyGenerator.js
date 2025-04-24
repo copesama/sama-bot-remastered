@@ -21,7 +21,8 @@ REQUIREMENTS:
 - Create an interesting plot with a beginning, middle, and satisfying conclusion
 - Write in an engaging narrative style with descriptive language
 - The story should be well-structured and 1000-2000 words in length
-- Divide the story into clear paragraphs with natural breaks`;
+- Divide the story into clear paragraphs with natural breaks
+- Write in the SAME LANGUAGE as the user's prompt. If the prompt is in Greek, write the story in Greek. If in English, write it in English, etc.`;
 
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -30,7 +31,7 @@ REQUIREMENTS:
         messages: [
           {
             role: 'system',
-            content: 'You are an expert creative writer skilled in crafting engaging stories featuring specific characters. Create an immersive narrative that includes all provided character names and follows the scenario described by the user. Your writing should be vivid, with natural dialogue, good pacing, and a satisfying conclusion.'
+            content: 'You are an expert creative writer skilled in crafting engaging stories featuring specific characters. Create an immersive narrative that includes all provided character names and follows the scenario described by the user. Your writing should be vivid, with natural dialogue, good pacing, and a satisfying conclusion.  Write in the SAME LANGUAGE as the user\'s prompt. If the prompt is in Greek, write the story in Greek. If in English, write it in English, etc.'
           },
           {
             role: 'user',
@@ -92,6 +93,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
             - Be specific about visual elements (colors, lighting, positioning)
             - Keep the description between 10-20 words
             - Do NOT include character names directly - describe them visually instead
+            - Write the description in English regardless of the story's language
             - Respond ONLY with the description - no explanations or other text`
           },
           {
@@ -100,7 +102,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
 
 ${chunk}
 
-Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads.`
+Extract a vivid scene description for an image generator. Focus on the most visually interesting moment where the characters' faces are clearly visible, as if posing for a portrait. Ensure the description will work well for an image where profile pictures will be placed on the characters' heads. Write the description in English regardless of the story's language.`
           }
         ],
         temperature: 0.7
@@ -119,7 +121,7 @@ Extract a vivid scene description for an image generator. Focus on the most visu
     return description;
   } catch (error) {
     console.error('Error extracting description from story chunk:', error);
-    return `A portrait-style scene featuring ${characterUsers.length} people with their faces clearly visible, positioned at eye level with the viewer, adventurous style`;
+    return `A portrait-style scene featuring ${characterNames.length} people with their faces clearly visible, positioned at eye level with the viewer, adventurous style`;
   }
 }
 

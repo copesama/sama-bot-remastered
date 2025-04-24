@@ -18,6 +18,9 @@ const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } 
 // Import the quiz generator module
 const { handleQuizCommand, clearUserQuiz } = require('./commands/quizGenerator');
 
+// Import the choices game generator module
+const { handleChoicesGameCommand, clearUserChoicesGame } = require('./commands/choicesGameGenerator');
+
 // Import the music generator module
 const { handleMusicCommand, cleanupVoiceConnections } = require('./commands/musicGenerator');
 
@@ -228,6 +231,11 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
+    await handleChoicesGameCommand(message);
+    return;
+  }
+
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
     const gameId = playGameMatch[1];
@@ -306,6 +314,7 @@ client.on('messageCreate', async (message) => {
 
 client.on('guildMemberRemove', (member) => {
   clearUserQuiz(member.id);
+  clearUserChoicesGame(member.id);
 });
 
 process.on('SIGINT', () => {

@@ -205,7 +205,7 @@ async function handleHumanResponseInput(userId, humanData, userResponse, message
   const wordCountEmbed = new EmbedBuilder()
     .setColor('#f39c12')
     .setTitle('Choose Word Count')
-    .setDescription('How many words would you like in your academic text? Please respond with a number between 500 and 5000.')
+    .setDescription('How many words would you like in your academic text? Please respond with a number between 100 and 3000.')
     .setFooter({ text: 'Type a number (e.g., 1500) in your next message' });
   
   await loadingMessage.edit({
@@ -240,8 +240,8 @@ async function handleWordCountInput(userId, wordCountInput, message) {
   let desiredWordCount = parseInt(wordCountInput.trim(), 10);
   
   // Validate the word count
-  if (isNaN(desiredWordCount) || desiredWordCount < 100 || desiredWordCount > 5000) {
-    await loadingMessage.edit(`Invalid word count. Please provide a number between 100 and 5000. You entered: "${wordCountInput}"`);
+  if (isNaN(desiredWordCount) || desiredWordCount < 100 || desiredWordCount > 3000) {
+    await loadingMessage.edit(`Invalid word count. Please provide a number between 100 and 3000. You entered: "${wordCountInput}"`);
     return false;
   }
   
