@@ -216,34 +216,36 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!financenews')) {
+  if (message.content.startsWith('!financenews') || message.content.startsWith('!fnews')) {
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
   }
 
-  if (message.content.startsWith('!financereport')) {
+  if (message.content.startsWith('!financereport') || message.content.startsWith('!freport')) {
     await handleFinanceReportCommand(message, client);
     return;
   }
 
-  if (message.content.startsWith('!generatequiz')) {
+  if (message.content.startsWith('!generatequiz') || message.content.startsWith('!quiz')) {
     await handleQuizCommand(message);
     return;
   }
   
+  // This one already has an alias
   if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
     await handleChoicesGameCommand(message);
     return;
   }
 
-  const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/);
+  // Add regex pattern for the play game command alias
+  const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!play\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
     const gameId = playGameMatch[1];
     await handlePlayGameCommand(message, gameId, GAMES_DIR, PORT, JWT_SECRET);
     return;
   }
 
-  if (message.content.startsWith('!generatestory')) {
+  if (message.content.startsWith('!generatestory') || message.content.startsWith('!story')) {
     const result = await handleStoryCommand(message);
     if (result) {
       const { characterUsers, loadingMessage } = result;
@@ -252,7 +254,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!generateimage')) {
+  if (message.content.startsWith('!generateimage') || message.content.startsWith('!image')) {
     const result = await handleImageCommand(message);
     if (result) {
       const { mentionedUsers, loadingMessage } = result;
@@ -261,7 +263,8 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  const editGameMatch = message.content.match(/^!editgame\s+([a-zA-Z0-9_-]+)$/);
+  // Add regex pattern for the edit game command alias
+  const editGameMatch = message.content.match(/^!editgame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!edit\s+([a-zA-Z0-9_-]+)$/);
   if (editGameMatch) {
     const gameId = editGameMatch[1];
     const result = await handleEditGameCommand(message, gameId, GAMES_DIR);
@@ -271,29 +274,30 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  const enhanceGameMatch = message.content.match(/^!enhance\s+([a-zA-Z0-9_-]+)$/);
+  // Add regex pattern for the enhance game command alias
+  const enhanceGameMatch = message.content.match(/^!enhance\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!enh\s+([a-zA-Z0-9_-]+)$/);
   if (enhanceGameMatch) {
     const gameId = enhanceGameMatch[1];
     await handleEnhanceGameCommand(message, gameId, GAMES_DIR);
     return;
   }
 
-  if (message.content.startsWith('!generatemusic')) {
+  if (message.content.startsWith('!generatemusic') || message.content.startsWith('!music')) {
     await handleMusicCommand(message);
     return;
   }
   
-  if (message.content.startsWith('!singlegame')) {
+  if (message.content.startsWith('!singlegame') || message.content.startsWith('!sgame')) {
     await handleSingleGameCommand(message);
     return;
   }
 
-  if (message.content.startsWith('!multigame')) {
+  if (message.content.startsWith('!multigame') || message.content.startsWith('!mgame')) {
     await handleMultiplayerGameCommand(message);
     return;
   }
 
-  if (message.content.startsWith('!generatehuman')) {
+  if (message.content.startsWith('!generatehuman') || message.content.startsWith('!human')) {
     const result = await handleHumanGeneratorCommand(message);
     if (result) {
       usersWaitingForHumanResponse.set(message.author.id, result);
@@ -301,6 +305,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  // These shorter commands don't need aliases since they're already short
   if (message.content.startsWith('!invite')) {
     await handleInviteCommand(message);
     return;
