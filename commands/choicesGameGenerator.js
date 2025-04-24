@@ -29,6 +29,22 @@ function sanitizeJson(jsonString) {
   // Fix unescaped quotes in strings
   cleaned = cleaned.replace(/"([^"]*)(?<!\\)"([^"]*)"/g, '"$1\\"$2"');
   
+  // Fix missing colons in property name:value pairs
+  cleaned = cleaned.replace(/"([^"]+)"\s+(["{[])/g, '"$1": $2');
+  
+  // Fix property names with no value (add null as value)
+  cleaned = cleaned.replace(/"([^"]+)"\s*([,}])/g, '"$1": null$2');
+  
+  // Fix trailing whitespace around colons
+  cleaned = cleaned.replace(/"([^"]+)"\s*:\s*/g, '"$1": ');
+  
+  // Remove invalid control characters
+  cleaned = cleaned.replace(/[\x00-\x1F\x7F]/g, '');
+  
+  // Fix potential BOM or other invisible characters at the start
+  cleaned = cleaned.replace(/^\uFEFF/, '');
+  cleaned = cleaned.trim();
+  
   return cleaned;
 }
 
@@ -42,6 +58,8 @@ function parseJsonWithRecovery(jsonString) {
   try {
     return JSON.parse(jsonString);
   } catch (e) {
+    console.log('Basic JSON parse failed, attempting cleanup');
+    
     // Clean up the JSON string
     const cleaned = sanitizeJson(jsonString);
     
@@ -49,6 +67,18 @@ function parseJsonWithRecovery(jsonString) {
       // Try parsing the cleaned string
       return JSON.parse(cleaned);
     } catch (e2) {
+      console.log('Cleaned JSON parse failed, attempting deeper fixes');
+      
+      // Try removing leading/trailing whitespace and special characters
+      try {
+        const trimmedJson = cleaned.trim().replace(/^\s*|\s*$/g, '');
+        if (trimmedJson.startsWith('{') && trimmedJson.endsWith('}')) {
+          return JSON.parse(trimmedJson);
+        }
+      } catch (e3) {
+        console.log('Trimmed JSON parse failed');
+      }
+      
       // More aggressive approach - find valid JSON object
       const objectMatch = jsonString.match(/\{\s*"[\s\S]*"\s*:\s*[\s\S]*\}/);
       if (objectMatch) {
@@ -57,43 +87,162 @@ function parseJsonWithRecovery(jsonString) {
           return JSON.parse(extracted);
         } catch (e3) {
           console.error('Failed to parse JSON after extraction attempt', e3);
-          throw new Error('Failed to parse game data: ' + e3.message);
         }
       }
       
-      // Try using a JSON error corrector as last resort
+      // Try using a more aggressive JSON repair approach
+      try {
+        // Try to parse the raw content line by line, reconstructing valid JSON
+        console.log('Attempting line-by-line reconstruction');
+        
+        const lines = cleaned.split('\n').map(line => line.trim());
+        let reconstructed = '';
+        let inString = false;
+        let braceLevel = 0;
+        let bracketLevel = 0;
+        
+        for (let i = 0; i < lines.length; i++) {
+          let line = lines[i];
+          
+          // Skip comment lines
+          if (line.startsWith('//')) continue;
+          
+          for (let j = 0; j < line.length; j++) {
+            const char = line[j];
+            
+            // Track string context
+            if (char === '"' && (j === 0 || line[j-1] !== '\\')) {
+              inString = !inString;
+            }
+            
+            // Track object depth
+            if (!inString) {
+              if (char === '{') braceLevel++;
+              else if (char === '}') braceLevel--;
+              else if (char === '[') bracketLevel++;
+              else if (char === ']') bracketLevel--;
+            }
+            
+            reconstructed += char;
+          }
+        }
+        
+        // Ensure all objects and arrays are closed
+        while (braceLevel > 0) {
+          reconstructed += '}';
+          braceLevel--;
+        }
+        
+        while (bracketLevel > 0) {
+          reconstructed += ']';
+          bracketLevel--;
+        }
+        
+        console.log('Attempting to parse reconstructed JSON');
+        return JSON.parse(sanitizeJson(reconstructed));
+      } catch (e4) {
+        console.error('Line-by-line reconstruction failed', e4);
+      }
+      
+      // As a last resort, try a desperate repair by removing the problematic part
       try {
         // Find the reported error position
         const posMatch = e2.message.match(/position\s+(\d+)/);
         if (posMatch) {
           const pos = parseInt(posMatch[1]);
           
-          // Get the problematic section (20 chars before and after)
-          const start = Math.max(0, pos - 20);
-          const end = Math.min(cleaned.length, pos + 20);
+          // Get the problematic section (50 chars before and after for better context)
+          const start = Math.max(0, pos - 50);
+          const end = Math.min(cleaned.length, pos + 50);
           const section = cleaned.substring(start, end);
           
           console.log(`JSON error around position ${pos}: ${section}`);
           
-          // Try to fix specific errors based on position
+          // Look for a complete property pattern to fix
+          const propertyPattern = /"([^"]+)"\s*([^:,{}\[\]]*)\s*([,}\]])/g;
           let fixedJson = cleaned;
-          // Check if there's an unquoted or unclosed string
-          if (cleaned[pos] === '"' && cleaned[pos-1] !== '\\') {
-            fixedJson = cleaned.substring(0, pos) + '\\' + cleaned.substring(pos);
-          }
-          // Missing comma between elements
-          else if (/["\d\}true|false|null]\s*["{\[]/.test(section)) {
-            fixedJson = cleaned.substring(0, pos) + ',' + cleaned.substring(pos);
-          }
           
-          return JSON.parse(fixedJson);
+          // Replace with proper property syntax
+          fixedJson = fixedJson.replace(propertyPattern, (match, propName, spacer, terminator) => {
+            if (spacer.trim() === '') {
+              return `"${propName}": null${terminator}`;
+            } else if (!spacer.includes(':')) {
+              return `"${propName}": ${spacer}${terminator}`;
+            }
+            return match;
+          });
+          
+          // Try to manually fix position by examining error context
+          const problemChar = cleaned.charAt(pos);
+          console.log(`Problem character at position ${pos}: "${problemChar}" (charCode: ${problemChar.charCodeAt(0)})`);
+          
+          if (problemChar && pos > 0) {
+            // Fix based on specific pattern
+            if (cleaned.substring(pos-10, pos).includes('"') && !cleaned.substring(pos-10, pos).includes(':')) {
+              // Missing colon after property
+              fixedJson = cleaned.substring(0, pos) + ': ' + cleaned.substring(pos);
+            } else if (/[":}\]],\s*"/.test(section)) {
+              // Possibly malformed property, try to fix
+              fixedJson = fixedJson.replace(/("[^"]+"),(\s*")/g, '$1,$2');
+            }
+            
+            console.log('Attempting one last repair with modified JSON');
+            return JSON.parse(fixedJson);
+          }
         }
-      } catch (e4) {
-        console.error('All JSON recovery methods failed', e4);
-        throw new Error('Unable to parse or repair game data JSON');
+      } catch (e5) {
+        console.error('Last resort repair failed', e5);
       }
       
-      throw e2;
+      // If all else fails, try to build a minimal working game structure
+      console.log('All JSON parsing failed. Using fallback minimal game structure.');
+      
+      // Extract any usable parts from the content using regex
+      const titleMatch = jsonString.match(/"title"\s*:\s*"([^"]+)"/);
+      const descMatch = jsonString.match(/"description"\s*:\s*"([^"]+)"/);
+      
+      // Create a minimal valid game structure with any parts we could extract
+      return {
+        title: titleMatch ? titleMatch[1] : "Emergency Backup Game",
+        description: descMatch ? descMatch[1] : "A game created from recovered fragments.",
+        startNode: "start",
+        nodes: {
+          "start": {
+            description: "Your adventure begins here. The original game data couldn't be fully recovered.",
+            question: "What will you do?",
+            choices: [
+              {text: "Continue cautiously", nextNode: "backup1", buttonStyle: "PRIMARY"},
+              {text: "Request a new game", nextNode: "backup2", buttonStyle: "DANGER"}
+            ]
+          },
+          "backup1": {
+            description: "You proceed with the broken game. It might be unstable.",
+            question: "Are you sure?",
+            choices: [
+              {text: "Yes, continue anyway", nextNode: "backupEnding1", buttonStyle: "SUCCESS"},
+              {text: "No, end this", nextNode: "backupEnding2", buttonStyle: "DANGER"}
+            ]
+          },
+          "backup2": {
+            description: "Good call. This game data was corrupted.",
+            isEnding: true,
+            endingType: "neutral",
+            endingTitle: "Try Again"
+          },
+          "backupEnding1": {
+            description: "You brave soul! Unfortunately, this is all we could salvage.",
+            isEnding: true,
+            endingType: "good",
+            endingTitle: "Adventurous Spirit"
+          },
+          "backupEnding2": {
+            description: "A wise decision. The game data was too damaged to continue.",
+            isEnding: true,
+            endingType: "good",
+            endingTitle: "Safety First"
+          }
+        }
+      };
     }
   }
 }
@@ -184,6 +333,14 @@ The output must be a valid JSON object that can be directly parsed.`
     const gameContent = response.data.choices[0].message.content;
     
     console.log('Received game content, attempting to parse JSON');
+    console.log('First few characters:', gameContent.substring(0, 30).replace(/[\n\r]/g, '\\n'));
+    
+    // Print the exact character codes at the beginning to debug BOM or hidden characters
+    const charCodes = [];
+    for (let i = 0; i < Math.min(20, gameContent.length); i++) {
+      charCodes.push(gameContent.charCodeAt(i));
+    }
+    console.log('Character codes:', charCodes.join(', '));
     
     // Try to extract and parse JSON with enhanced error handling
     let gameData;
