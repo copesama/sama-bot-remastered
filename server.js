@@ -68,7 +68,7 @@ const {
   usersWaitingForWordCount
 } = require('./commands/humanGenerator');
 
-// Import the choices game module
+// Import the choices game generator module
 const { handleChoicesGameCommand, clearUserGame } = require('./commands/choicesGameGenerator');
 
 // Initialize Discord client
@@ -216,11 +216,6 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
-    await handleChoicesGameCommand(message);
-    return;
-  }
-
   if (message.content.startsWith('!financenews')) {
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
@@ -233,6 +228,12 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.startsWith('!generatequiz')) {
     await handleQuizCommand(message);
+    return;
+  }
+
+  // Handle choices game command (with both command forms)
+  if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
+    await handleChoicesGameCommand(message);
     return;
   }
 
@@ -314,7 +315,7 @@ client.on('messageCreate', async (message) => {
 
 client.on('guildMemberRemove', (member) => {
   clearUserQuiz(member.id);
-  clearUserGame(member.id);
+  clearUserGame(member.id); // Also clear any active choices games
 });
 
 process.on('SIGINT', () => {

@@ -5,11 +5,11 @@ const axios = require('axios');
 const activeGames = new Map();
 
 /**
- * Generates a choices game based on the provided scenario using OpenRouter API
- * @param {string} scenario The scenario for the choices game
- * @returns {Object} Object containing game structure, questions, and outcomes
+ * Generates a choices game scenario based on the provided prompt using OpenRouter API
+ * @param {string} scenario The scenario topic for the game
+ * @returns {Object} Object containing the branching game content
  */
-async function generateGameContent(scenario) {
+async function generateChoicesGameContent(scenario) {
   try {
     console.log(`Generating choices game about: ${scenario}`);
     
@@ -20,59 +20,107 @@ async function generateGameContent(scenario) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert narrative and choice-based game designer. Create an engaging choice-based game about the scenario provided by the user.
+            content: `You are an expert branching narrative game designer. Create a choice-based game about the scenario provided by the user.
 
-The game should follow this exact JSON format:
+The game should follow this JSON format:
 {
-  "title": "Title of the game",
-  "description": "Brief description of the scenario and the player's role",
-  "startNode": "start",
-  "nodes": {
-    "start": {
-      "text": "Introduction text that sets up the scenario",
+  "title": "Title of the scenario",
+  "startingDescription": "Initial description of the scenario that sets the stage",
+  "firstQuestion": {
+    "id": "q1",
+    "text": "First question text",
+    "choices": [
+      {
+        "id": "q1_a",
+        "text": "Choice A text",
+        "nextQuestion": "q2",
+        "outcome": "Description of what happens when this choice is selected"
+      },
+      {
+        "id": "q1_b",
+        "text": "Choice B text",
+        "nextQuestion": "q3",
+        "outcome": "Description of what happens when this choice is selected"
+      },
+      {
+        "id": "q1_c",
+        "text": "Choice C text",
+        "nextQuestion": "q4", 
+        "outcome": "Description of what happens when this choice is selected"
+      },
+      {
+        "id": "q1_d",
+        "text": "Choice D text",
+        "nextQuestion": "q5",
+        "outcome": "Description of what happens when this choice is selected"
+      }
+    ]
+  },
+  "questions": {
+    "q2": {
+      "text": "Question after choice A was selected",
       "choices": [
-        {"text": "Choice 1", "nextNode": "node1"},
-        {"text": "Choice 2", "nextNode": "node2"},
-        {"text": "Choice 3", "nextNode": "node3"},
-        {"text": "Choice 4", "nextNode": "node4"}
+        {
+          "id": "q2_a",
+          "text": "Choice A text",
+          "nextQuestion": "q6",
+          "outcome": "Description of what happens"
+        },
+        {
+          "id": "q2_b",
+          "text": "Choice B text",
+          "nextQuestion": "q7",
+          "outcome": "Description of what happens"
+        },
+        {
+          "id": "q2_c",
+          "text": "Choice C text",
+          "nextQuestion": "q8",
+          "outcome": "Description of what happens"
+        },
+        {
+          "id": "q2_d",
+          "text": "Choice D text",
+          "nextQuestion": "ending_bad",
+          "outcome": "Description of what happens"
+        }
       ]
     },
-    "node1": {
-      "text": "Outcome of Choice 1 and followup situation",
-      "choices": [
-        {"text": "Sub-choice 1A", "nextNode": "node1a"},
-        {"text": "Sub-choice 1B", "nextNode": "node1b"},
-        {"text": "Sub-choice 1C", "nextNode": "node1c"},
-        {"text": "Sub-choice 1D", "nextNode": "node1d"}
-      ]
+    "q3": {
+      "text": "Question after choice B was selected",
+      "choices": [...]
     },
-    "node1a": {
-      "text": "Final outcome",
-      "end": true,
-      "outcome": "Success/Failure/Other outcome",
-      "summary": "Summary of the player's journey and final situation"
+    // and so on for other questions (q4, q5, q6, q7, q8, etc.)
+    "ending_good": {
+      "text": "Description of good ending",
+      "isEnding": true,
+      "endingType": "good"
+    },
+    "ending_bad": {
+      "text": "Description of bad ending",
+      "isEnding": true,
+      "endingType": "bad"
     }
-    // And so on for other nodes
   }
 }
 
 IMPORTANT REQUIREMENTS:
-1. Create a branching narrative with at least 4 meaningful decision points
-2. Each choice should lead to a distinctly different path/outcome
-3. Include at least 6 possible end states (win/lose/neutral outcomes)
-4. Each choice should have 2-4 options
-5. The scenario should adapt based on previous choices
-6. Include some end states earlier in the tree and some that require multiple choices
-7. End nodes must include the "end": true property, an "outcome" and a "summary" of the player's journey
-8. Create realistic consequences that follow logically from the player's choices
-9. Return ONLY valid JSON with no additional text, comments or markdown
-10. Create the game in the SAME LANGUAGE as the user's prompt/scenario
+1. Create a branching narrative with at least 8 questions total before any ending
+2. Each question must have 4 choices (A, B, C, D)
+3. There must be at least 2 distinct endings (good and bad)
+4. Create a meaningful branching structure where choices lead to different paths
+5. For brevity, create just enough questions to demonstrate branching (no need for hundreds)
+6. Be descriptive in outcomes and endings to make choices meaningful
+7. Return ONLY valid JSON with no additional text, comments or markdown
+8. Create the game in the SAME LANGUAGE as the user's prompt
+9. Keep outcomes between 1-3 sentences for readability
+10. The scenario should build toward either success or failure (good/bad endings)
 
-The output must be a valid JSON object that can be directly parsed.`
+The output must be a valid JSON that can be directly parsed.`
           },
           {
             role: 'user',
-            content: `Create a choices-based game about this scenario: ${scenario}`
+            content: `Create a choices-based branching narrative game about: ${scenario}`
           }
         ],
         temperature: 0.7
@@ -99,24 +147,24 @@ The output must be a valid JSON object that can be directly parsed.`
       if (jsonMatch && jsonMatch[1]) {
         gameData = JSON.parse(jsonMatch[1]);
       } else {
-        // Third attempt: look for object brackets in the content
-        const objectMatch = gameContent.match(/\{\s*"[\s\S]*\}\s*\}/);
-        if (objectMatch) {
-          gameData = JSON.parse(objectMatch[0]);
+        // Third attempt: look for JSON object in the content
+        const objMatch = gameContent.match(/\{\s*"[\s\S]*\}\s*\}/);
+        if (objMatch) {
+          gameData = JSON.parse(objMatch[0]);
         } else {
           throw new Error('Failed to parse game data from API response');
         }
       }
     }
     
-    // Validate the game structure
-    if (!gameData.title || !gameData.description || !gameData.startNode || !gameData.nodes) {
+    // Validate the game format
+    if (!gameData.title || !gameData.startingDescription || !gameData.firstQuestion || !gameData.questions) {
       throw new Error('Invalid game format: Missing required fields');
     }
     
     return gameData;
   } catch (error) {
-    console.error('Error generating game content:', error);
+    console.error('Error generating choices game content:', error);
     
     if (error.response) {
       console.error('API error response:', error.response.data);
@@ -127,66 +175,69 @@ The output must be a valid JSON object that can be directly parsed.`
 }
 
 /**
- * Creates a Discord embed for a choice node
- * @param {Object} gameData The game data
- * @param {string} nodeId The current node ID
- * @param {number} step The current step number
- * @returns {EmbedBuilder} Discord embed for the node
+ * Creates a Discord embed for a choices game question
+ * @param {string} title The game title
+ * @param {string} description The scenario description
+ * @param {string} questionText The current question text
+ * @param {string} outcome The outcome of the previous choice (if any)
+ * @param {boolean} isEnding Whether this is an ending
+ * @param {string} endingType The type of ending (good/bad)
+ * @returns {EmbedBuilder} Discord embed for the question or ending
  */
-function createNodeEmbed(gameData, nodeId, step) {
-  const node = gameData.nodes[nodeId];
-  
+function createGameEmbed(title, description, questionText, outcome = null, isEnding = false, endingType = null) {
   const embed = new EmbedBuilder()
-    .setColor('#6200EA')
-    .setTitle(gameData.title)
-    .setDescription(node.text);
+    .setTitle(title);
   
-  if (step === 1) {
-    // First node, include the game description
-    embed.setAuthor({ name: gameData.description });
-  }
-  
-  if (node.end) {
-    // This is an end node
-    embed.addFields(
-      { name: 'Outcome', value: node.outcome },
-      { name: 'Summary', value: node.summary }
-    );
-    embed.setFooter({ text: 'Game Over • Use !choicesgame to play again' });
+  if (isEnding) {
+    embed.setColor(endingType === 'good' ? '#4CAF50' : '#F44336');
+    
+    const endingEmoji = endingType === 'good' ? '🏆' : '💔';
+    embed.setDescription(`${description}\n\n${endingEmoji} **ENDING:**\n${questionText}`);
+    
+    if (outcome) {
+      embed.addFields({ name: 'Your Journey', value: outcome });
+    }
+    
+    embed.setFooter({ text: `${endingType === 'good' ? 'Good' : 'Bad'} Ending • Type !choicesgame to play again with a different scenario` });
   } else {
-    embed.setFooter({ text: `Decision ${step} • Choose your path wisely` });
+    embed.setColor('#4285F4');
+    
+    let fullDescription = description;
+    
+    if (outcome) {
+      fullDescription += `\n\n**Outcome of your choice:**\n${outcome}`;
+    }
+    
+    fullDescription += `\n\n**${questionText}**`;
+    
+    embed.setDescription(fullDescription);
+    embed.setFooter({ text: 'Make your choice by clicking a button below' });
   }
   
   return embed;
 }
 
 /**
- * Creates button components for the choices
- * @param {Array} choices The available choices
+ * Creates button components for choices
+ * @param {Array} choices Array of choice objects
  * @returns {ActionRowBuilder} Row of button components
  */
 function createChoiceButtons(choices) {
-  const rows = [];
-  const buttonsPerRow = 2;
+  const row = new ActionRowBuilder();
   
-  // Create buttons in multiple rows if needed
-  for (let i = 0; i < choices.length; i += buttonsPerRow) {
-    const row = new ActionRowBuilder();
+  // Create A, B, C, D buttons for the choices
+  choices.forEach((choice, index) => {
+    const letter = String.fromCharCode(65 + index); // A, B, C, D
     
-    for (let j = 0; j < buttonsPerRow && i + j < choices.length; j++) {
-      const choice = choices[i + j];
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`choice_${choice.nextNode}`)
-          .setLabel(choice.text)
-          .setStyle(ButtonStyle.Primary)
-      );
-    }
-    
-    rows.push(row);
-  }
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(choice.id)
+        .setLabel(letter)
+        .setStyle(ButtonStyle.Primary)
+    );
+  });
   
-  return rows;
+  return row;
 }
 
 /**
@@ -194,11 +245,11 @@ function createChoiceButtons(choices) {
  * @param {Object} message Discord message object
  */
 async function handleChoicesGameCommand(message) {
-  // Extract the command content (scenario)
+  // Extract the command content
   const commandContent = message.content.replace(/^!(?:generatechoicesgame|choicesgame)\s+/, '').trim();
   
   if (!commandContent) {
-    message.reply('Please provide a scenario for the choices game. Example: `!choicesgame space explorer on a mysterious planet` or `!generatechoicesgame medieval knight in a dragon\'s lair`');
+    message.reply('Please provide a scenario for the choices game. Example: `!choicesgame running a tech startup`');
     return;
   }
   
@@ -209,20 +260,19 @@ async function handleChoicesGameCommand(message) {
   }
   
   // Send initial loading message
-  const loadingMessage = await message.reply(`🎮 Generating a choices-based game about "${commandContent}"... This might take a minute!`);
+  const loadingMessage = await message.reply(`🎮 Generating a choices game about "${commandContent}"... This might take a minute!`);
   
   try {
     // Generate game content using the API
-    const gameData = await generateGameContent(commandContent);
+    const gameData = await generateChoicesGameContent(commandContent);
     
     // Create user game session
     const gameSession = {
       userId: message.author.id,
-      scenario: commandContent,
       gameData: gameData,
-      currentNode: gameData.startNode,
-      step: 1,
-      history: [],
+      currentQuestionId: 'firstQuestion',
+      choiceHistory: [],
+      outcomeHistory: [],
       message: null
     };
     
@@ -230,10 +280,10 @@ async function handleChoicesGameCommand(message) {
     activeGames.set(message.author.id, gameSession);
     
     // Update the loading message
-    await loadingMessage.edit(`✅ Game generated! ${message.author}, get ready to play "${gameData.title}"!`);
+    await loadingMessage.edit(`✅ Game created! ${message.author}, get ready to play "${gameData.title}"!`);
     
-    // Start the game with the first node
-    await sendGameNode(message.channel, message.author.id);
+    // Start the game with the first question
+    await sendGameState(message.channel, message.author.id);
     
   } catch (error) {
     console.error('Error in choices game command:', error);
@@ -242,119 +292,106 @@ async function handleChoicesGameCommand(message) {
 }
 
 /**
- * Sends the current game node to the channel
- * @param {Object} channel Discord channel to send the node to
+ * Sends the current game state to the channel
+ * @param {Object} channel Discord channel to send the game state to
  * @param {string} userId The user's ID
  */
-async function sendGameNode(channel, userId) {
+async function sendGameState(channel, userId) {
   const gameSession = activeGames.get(userId);
   
   if (!gameSession) {
     return;
   }
   
-  const nodeId = gameSession.currentNode;
-  const node = gameSession.gameData.nodes[nodeId];
+  const gameData = gameSession.gameData;
   
-  if (!node) {
-    channel.send(`<@${userId}> Error: Invalid game node. The game has ended.`);
-    activeGames.delete(userId);
-    return;
+  // Determine the current question
+  let currentQuestion;
+  let isEnding = false;
+  let endingType = null;
+  
+  if (gameSession.currentQuestionId === 'firstQuestion') {
+    currentQuestion = gameData.firstQuestion;
+  } else {
+    currentQuestion = gameData.questions[gameSession.currentQuestionId];
+    isEnding = currentQuestion.isEnding || false;
+    endingType = currentQuestion.endingType;
   }
   
-  // Create node embed
-  const embed = createNodeEmbed(gameSession.gameData, nodeId, gameSession.step);
+  // Get the last outcome if there is one
+  const lastOutcome = gameSession.outcomeHistory.length > 0 
+    ? gameSession.outcomeHistory[gameSession.outcomeHistory.length - 1] 
+    : null;
   
-  // If this is an end node, no choices needed
-  if (node.end) {
-    const gameMessage = await channel.send({
-      content: `<@${userId}> Your journey has reached its conclusion:`,
-      embeds: [embed]
-    });
-    
-    // Clean up
-    activeGames.delete(userId);
-    return;
+  // Create the game embed
+  const embed = createGameEmbed(
+    gameData.title,
+    gameData.startingDescription,
+    currentQuestion.text,
+    lastOutcome,
+    isEnding,
+    endingType
+  );
+  
+  let components = [];
+  
+  // If not at an ending, add choice buttons
+  if (!isEnding && currentQuestion.choices) {
+    components = [createChoiceButtons(currentQuestion.choices)];
   }
   
-  // Create buttons for choices
-  const choiceButtons = createChoiceButtons(node.choices);
-  
-  // Send the node
+  // Send the game state
   const gameMessage = await channel.send({
-    content: `<@${userId}> What will you do?`,
+    content: `<@${userId}>'s Choices Game:`,
     embeds: [embed],
-    components: choiceButtons
+    components: components
   });
   
-  // Store reference to the message for cleanup later
+  // Store reference to the message
   gameSession.message = gameMessage;
+  
+  // If this is an ending, clean up the game
+  if (isEnding) {
+    activeGames.delete(userId);
+    return;
+  }
   
   // Create a collector for button interactions
   const collector = gameMessage.createMessageComponentCollector({
     componentType: ComponentType.Button,
-    time: 300000, // 5 minute timeout per decision
-    filter: (interaction) => interaction.user.id === userId // Only the player can make choices
+    time: 300000, // 5 minute timeout per question
+    filter: (interaction) => interaction.user.id === userId // Only the game player can make choices
   });
   
   // Handle choice selection
   collector.on('collect', async (interaction) => {
-    // Parse the selected node from the button ID
-    const selectedNode = interaction.customId.split('_')[1];
+    const choiceId = interaction.customId;
     
     // Find the selected choice
-    const selectedChoice = node.choices.find(c => c.nextNode === selectedNode);
+    const selectedChoice = currentQuestion.choices.find(choice => choice.id === choiceId);
     
-    // Check if choice was found
     if (!selectedChoice) {
-      // Error: choice not found - let user know and let them try again
       await interaction.reply({
-        content: "There was an error with that choice. Please select another option.",
+        content: 'Invalid choice. Please try again.',
         ephemeral: true
       });
-      
-      console.error(`Error: Could not find choice with nextNode ${selectedNode} in node ${nodeId}`);
       return;
     }
     
-    // Update game session
-    gameSession.history.push({
-      node: nodeId,
-      choice: selectedChoice.text,
-      step: gameSession.step
+    // Store the choice and outcome in history
+    gameSession.choiceHistory.push(selectedChoice.text);
+    gameSession.outcomeHistory.push(selectedChoice.outcome);
+    
+    // Move to the next question
+    gameSession.currentQuestionId = selectedChoice.nextQuestion;
+    
+    // Update interaction
+    await interaction.update({
+      components: [] // Remove buttons after selection
     });
     
-    gameSession.currentNode = selectedNode;
-    gameSession.step++;
-    
-    // Acknowledge the interaction
-    await interaction.deferUpdate();
-    
-    // Disable all buttons
-    const disabledButtons = [];
-    for (const row of choiceButtons) {
-      const disabledRow = new ActionRowBuilder();
-      
-      row.components.forEach(button => {
-        disabledRow.addComponents(
-          ButtonBuilder.from(button)
-            .setDisabled(true)
-            .setStyle(button.data.custom_id === interaction.customId ? ButtonStyle.Success : ButtonStyle.Secondary)
-        );
-      });
-      
-      disabledButtons.push(disabledRow);
-    }
-    
-    // Update the message with disabled buttons
-    await gameMessage.edit({
-      components: disabledButtons
-    });
-    
-    // Send the next node after a short delay
-    setTimeout(() => {
-      sendGameNode(channel, userId);
-    }, 1500);
+    // Send the next game state
+    await sendGameState(channel, userId);
     
     // Stop the collector
     collector.stop();
@@ -363,44 +400,26 @@ async function sendGameNode(channel, userId) {
   // Handle collector end (timeout)
   collector.on('end', async (collected, reason) => {
     if (reason === 'time' && gameSession.message && gameSession.message.id === gameMessage.id) {
-      // Timeout - user didn't answer in time
-      const timeoutEmbed = new EmbedBuilder()
-        .setColor('#607D8B')
-        .setTitle("⏰ Time's up!")
-        .setDescription("You took too long to make a decision. The game has ended.")
-        .setFooter({ text: 'Game Over • Use !choicesgame to play again' });
-      
-      // Disable all buttons
-      const disabledButtons = [];
-      for (const row of choiceButtons) {
-        const disabledRow = new ActionRowBuilder();
-        
-        row.components.forEach(button => {
-          disabledRow.addComponents(
-            ButtonBuilder.from(button)
-              .setDisabled(true)
-              .setStyle(ButtonStyle.Secondary)
-          );
-        });
-        
-        disabledButtons.push(disabledRow);
-      }
-      
-      // Update message with timeout notification
+      // Timeout - user didn't make a choice in time
       await gameMessage.edit({
-        embeds: [timeoutEmbed],
-        components: disabledButtons
+        components: [] // Remove buttons
       });
       
-      // Clean up
+      await channel.send({
+        content: `<@${userId}> Your choices game has timed out due to inactivity. Type !choicesgame to start a new game!`,
+        ephemeral: true
+      });
+      
+      // Remove from active games
       activeGames.delete(userId);
     }
   });
 }
 
 /**
- * Clear a user's active game
+ * Clears a user's active game
  * @param {string} userId The user's ID
+ * @returns {boolean} Whether a game was cleared
  */
 function clearUserGame(userId) {
   if (activeGames.has(userId)) {
