@@ -18,9 +18,6 @@ const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } 
 // Import the quiz generator module
 const { handleQuizCommand, clearUserQuiz } = require('./commands/quizGenerator');
 
-// Import the choices game generator module
-const { handleChoicesGameCommand, clearUserChoicesGame } = require('./commands/choicesGameGenerator');
-
 // Import the music generator module
 const { handleMusicCommand, cleanupVoiceConnections } = require('./commands/musicGenerator');
 
@@ -70,6 +67,9 @@ const {
   usersWaitingForHumanResponse,
   usersWaitingForWordCount
 } = require('./commands/humanGenerator');
+
+// Import the choices game module
+const { handleChoicesGameCommand, clearUserGame } = require('./commands/choicesGameGenerator');
 
 // Initialize Discord client
 const client = new Client({
@@ -216,6 +216,11 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
+    await handleChoicesGameCommand(message);
+    return;
+  }
+
   if (message.content.startsWith('!financenews')) {
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
@@ -228,11 +233,6 @@ client.on('messageCreate', async (message) => {
 
   if (message.content.startsWith('!generatequiz')) {
     await handleQuizCommand(message);
-    return;
-  }
-
-  if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
-    await handleChoicesGameCommand(message);
     return;
   }
 
@@ -314,7 +314,7 @@ client.on('messageCreate', async (message) => {
 
 client.on('guildMemberRemove', (member) => {
   clearUserQuiz(member.id);
-  clearUserChoicesGame(member.id);
+  clearUserGame(member.id);
 });
 
 process.on('SIGINT', () => {
