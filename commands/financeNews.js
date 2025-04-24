@@ -447,7 +447,7 @@ async function generateFinancialAnalysis(newsArticles) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'qwen/qwq-32b:free',
+        model: 'deepseek/deepseek-r1:free',
         messages: [
           {
             role: 'system',
