@@ -118,6 +118,9 @@ const usersInEditMode = new Map();
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   
+  // Set bot status
+  client.user.setActivity('Generate anything. Type !help', { type: 'PLAYING' });
+  
   initFinanceNews(client, process.env.NEWSAPI_KEY);
 });
 
