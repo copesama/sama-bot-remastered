@@ -9,7 +9,6 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
   try {
     // Calculate a reasonable percentage for the image generation prompt
     const circleSizeMinPercent = 15;
-    const circleSizeMaxPercent = 20;
     
     // Create a more specific prompt that requests white circles for avatar placement with specific size requirements
     const enhancedPrompt = `${prompt}. Include exactly ${numAvatars} empty white circles where profile pictures should be placed. 

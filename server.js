@@ -1,16 +1,10 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-// Add voice-related imports
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
-const axios = require('axios');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const shortid = require('shortid');
 const http = require('http');
 const cookieParser = require('cookie-parser');
-const jwt = require('jsonwebtoken');
-const FormData = require('form-data');
 
 // Import the finance news module - update to include the handleFinanceReportCommand function
 const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } = require('./commands/financeNews');
@@ -27,11 +21,7 @@ const { handleMusicCommand, cleanupVoiceConnections } = require('./commands/musi
 // Import the game generator module with extended functions
 const { 
   handleSingleGameCommand, 
-  editGame, 
-  enhanceGame, 
   setupGameRoutes, 
-  generateGameLink, 
-  createGameEmbed,
   handlePlayGameCommand,
   handleEditGameCommand,
   handleEnhanceGameCommand,
@@ -41,14 +31,12 @@ const {
 // Import the story generator module
 const { 
   handleStoryCommand, 
-  generateAndSendStoryWithImages,
   handleStoryPromptInput
 } = require('./commands/storyGenerator');
 
 // Import the image generator module
 const { 
   handleImageCommand, 
-  processImagePrompt, 
   generateImageWithAvatars,
   handleImagePromptInput
 } = require('./commands/imageGenerator');

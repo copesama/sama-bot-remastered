@@ -1,7 +1,5 @@
 const axios = require('axios');
 const fs = require('fs');
-const path = require('path');
-const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
 
 // Function to generate a story using OpenRouter API

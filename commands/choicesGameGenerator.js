@@ -15,7 +15,7 @@ async function generateGameContent(scenario) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'sophosympatheia/rogue-rose-103b-v0.2:free',
+        model: 'microsoft/mai-ds-r1:free',
         messages: [
           {
             role: 'system',
