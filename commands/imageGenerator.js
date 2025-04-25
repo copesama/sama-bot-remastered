@@ -22,8 +22,6 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
     - Ensure each circle has a solid white fill with no patterns
     - Completely hide/replace heads with these white circles`;
     
-    console.log(`Step 1: Generating base image with enhanced prompt: ${enhancedPrompt}`);
-    
     const payload = { inputs: enhancedPrompt };
 
     const response = await axios.post(
@@ -44,18 +42,14 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
 
     // Save the temporary image file
     fs.writeFileSync(tempImagePath, Buffer.from(response.data));
-    console.log(`Base image with white circles saved to ${tempImagePath}`);
 
     return { tempImageId, tempImagePath };
   } catch (error) {
-    console.error('Error generating base image with white circles:', error);
     if (error.response) {
-      console.error('Error status:', error.response.status);
       try {
         const errorData = Buffer.from(error.response.data).toString('utf8');
-        console.error('API error response:', errorData);
       } catch (e) {
-        console.error('Could not parse error response data');
+        // Could not parse error response data
       }
     }
     throw error;
@@ -65,8 +59,6 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
 // Function to place avatars into white circles using Jimp
 async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
   try {
-    console.log(`Step 2: Placing ${avatarUrls.length} avatars into white circles`);
-    
     const { Jimp, intToRGBA } = require('jimp');
     const baseImage = await Jimp.read(baseImagePath);
     const baseWidth = baseImage.width;
@@ -76,8 +68,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
       const circles = [];
       const threshold = 230;
       const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.05;
-      
-      console.log(`Using minimum circle radius threshold: ${circleMinRadius} pixels`);
       
       for (let y = 0; y < image.height; y += 10) {
         for (let x = 0; x < image.width; x += 10) {
@@ -139,7 +129,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
                 
                 if (isNewCircle) {
                   circles.push({ centerX, centerY, radius });
-                  console.log(`Found potential circle at (${Math.round(centerX)},${Math.round(centerY)}) with radius ${Math.round(radius)} and roundness ${roundnessRatio.toFixed(2)}`);
                   x = Math.min(rightEdge + radius, image.width - 1);
                 }
               }
@@ -152,13 +141,10 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
     };
     
     let circles = await findWhiteCircles(baseImage);
-    console.log(`Found ${circles.length} potential white circles in the image that meet the size requirements`);
     
     circles.sort((a, b) => b.radius - a.radius);
     
     if (circles.length < avatarUrls.length) {
-      console.log(`Not enough circles found (${circles.length}), using automatic placement for ${avatarUrls.length} avatars`);
-      
       circles = [];
       const margin = baseWidth * 0.1;
       const avatarSize = Math.min(baseWidth, baseHeight) * 0.2;
@@ -204,8 +190,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
           avatarUrl = avatarUrl.replace('.webp', '.png');
         }
         
-        console.log(`Processing avatar ${i+1} with URL: ${avatarUrl}`);
-        
         let avatarImage;
         try {
           const avatarResponse = await axios.get(avatarUrl, { 
@@ -217,10 +201,8 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
           });
           
           const contentType = avatarResponse.headers['content-type'];
-          console.log(`Avatar ${i+1} content type: ${contentType}`);
           
           if (contentType && contentType.includes('webp')) {
-            console.log(`Avatar ${i+1} is in WebP format, using fallback circle`);
             avatarImage = new Jimp({ 
               width: radius * 2, 
               height: radius * 2, 
@@ -246,8 +228,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
             avatarImage = await Jimp.read(Buffer.from(avatarResponse.data));
           }
         } catch (avatarError) {
-          console.error(`Error downloading/processing avatar ${i+1}:`, avatarError);
-          console.log(`Using fallback circle for avatar ${i+1}`);
           avatarImage = new Jimp({ 
             width: radius * 2, 
             height: radius * 2, 
@@ -272,7 +252,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
               textHeight * 2
             );
           } catch (textError) {
-            console.error(`Error adding text to fallback circle:`, textError);
+            // Error adding text to fallback circle
           }
         }
         
@@ -312,11 +292,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
               opacitySource: 1,
               opacityDest: 1
             });
-            
-            console.log(`Placed avatar ${i+1} at (${avatarX},${avatarY}) with adjusted diameter ${scaledDiameter}`);
           } else {
-            console.warn(`Avatar ${i+1} placement partially out of bounds. Using fallback positioning.`);
-            
             const safeX = Math.max(0, Math.min(avatarX, baseImage.width - scaledDiameter));
             const safeY = Math.max(0, Math.min(avatarY, baseImage.height - scaledDiameter));
             
@@ -325,14 +301,12 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
               opacitySource: 1,
               opacityDest: 1
             });
-            
-            console.log(`Placed avatar ${i+1} at safe position (${safeX},${safeY})`);
           }
         } catch (error) {
-          console.error(`Error processing avatar ${i+1}:`, error);
+          // Error processing avatar
         }
       } catch (outerError) {
-        console.error(`Error in avatar preparation for avatar ${i+1}:`, outerError);
+        // Error in avatar preparation
       }
     }
     
@@ -340,11 +314,9 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
     const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
     
     await baseImage.write(imagePath);
-    console.log(`Final composite image saved to ${imagePath}`);
     
     return { imageId, imagePath };
   } catch (error) {
-    console.error('Error placing avatars in circles:', error);
     throw error;
   }
 }
@@ -352,22 +324,18 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
 // Function to generate image with avatars (two-step process)
 async function generateImageWithAvatars(prompt, avatarUrls, IMAGES_DIR) {
   try {
-    console.log(`Starting two-step image generation process for prompt: ${prompt}`);
-    
     const { tempImageId, tempImagePath } = await generateBaseImage(prompt, avatarUrls.length, IMAGES_DIR);
     
     const { imageId, imagePath } = await placeAvatarsInCircles(tempImagePath, avatarUrls, IMAGES_DIR);
     
     try {
       fs.unlinkSync(tempImagePath);
-      console.log(`Deleted temporary base image: ${tempImagePath}`);
     } catch (err) {
-      console.error(`Error deleting temporary image file: ${err}`);
+      // Error deleting temporary image file
     }
     
     return { imageId, imagePath };
   } catch (error) {
-    console.error('Error in two-step image generation process:', error);
     throw error;
   }
 }
@@ -395,8 +363,6 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
       user.displayAvatarURL({ format: 'png', size: 512 })
     );
     
-    console.log('Avatar URLs:', avatarUrls);
-    
     const { imageId, imagePath } = await generateImageWithAvatars(imagePrompt, avatarUrls, IMAGES_DIR);
     
     const imageEmbed = new EmbedBuilder()
@@ -418,21 +384,18 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
     try {
       await message.delete();
     } catch (error) {
-      console.error('Error deleting message:', error);
+      // Error deleting message
     }
     
     setTimeout(() => {
       try {
         fs.unlinkSync(imagePath);
-        console.log(`Deleted image file: ${imagePath}`);
       } catch (err) {
-        console.error(`Error deleting image file: ${err}`);
+        // Error deleting image file
       }
     }, 5000);
     
   } catch (error) {
-    console.error('Error:', error);
-    
     let errorMessage = 'Sorry, there was an error generating your image. Please try again later.';
     
     if (error.message && error.message.includes('timeout')) {

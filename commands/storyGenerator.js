@@ -7,9 +7,6 @@ const { EmbedBuilder } = require('discord.js');
 // Function to generate a story using OpenRouter API
 async function generateStory(prompt, characterNames) {
   try {
-    console.log(`Generating story with prompt: ${prompt}`);
-    console.log(`Characters: ${characterNames.join(', ')}`);
-    
     const enhancedPrompt = `Write a creative and engaging story based on the following scenario: ${prompt}
 
 CHARACTERS TO INCLUDE:
@@ -52,15 +49,8 @@ REQUIREMENTS:
     
     return story;
   } catch (error) {
-    console.error('Error generating story:', error);
-    
     if (error.response) {
-      console.error('Error status:', error.response.status);
-      try {
-        console.error('API error response:', error.response.data);
-      } catch (e) {
-        console.error('Could not parse error response data');
-      }
+      // Do nothing, removed console logging
     }
     
     throw error;
@@ -70,12 +60,10 @@ REQUIREMENTS:
 // Function to extract a description from a story chunk for image generation
 async function extractDescriptionFromStoryChunk(chunk, characterNames) {
   try {
-    console.log(`Extracting image description from chunk of length: ${chunk.length}`);
-    
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'microsoft/mai-ds-r1:free',
         messages: [
           {
             role: 'system',
@@ -116,11 +104,9 @@ Extract a vivid scene description for an image generator. Focus on the most visu
     );
 
     const description = response.data.choices[0].message.content.trim();
-    console.log(`Generated image description: ${description}`);
     
     return description;
   } catch (error) {
-    console.error('Error extracting description from story chunk:', error);
     return `A portrait-style scene featuring ${characterNames.length} people with their faces clearly visible, positioned at eye level with the viewer, adventurous style`;
   }
 }
@@ -161,8 +147,6 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
       }
     }
     
-    console.log(`Split story into ${storyChunks.length} chunks for processing`);
-    
     const failedChunks = [];
     
     for (let i = 0; i < storyChunks.length; i++) {
@@ -195,15 +179,12 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
         setTimeout(() => {
           try {
             fs.unlinkSync(imagePath);
-            console.log(`Deleted image file: ${imagePath}`);
           } catch (err) {
-            console.error(`Error deleting image file: ${err}`);
+            // Do nothing, removed console logging
           }
         }, 5000);
         
       } catch (error) {
-        console.error(`Error processing chunk ${chunkNumber}:`, error);
-        
         failedChunks.push({ index: i, chunkNumber, chunk });
         
         await message.channel.send({
@@ -220,7 +201,11 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
       .setDescription(`Your story "${storyPrompt}" featuring ${characterUsers.map(user => user.username).join(', ')} is now complete.`)
       .addFields(
         { name: 'Story Stats', value: `${storyChunks.length} parts\n${story.length} characters`, inline: true },
-        { name: 'Image Generation', value: `${storyChunks.length - failedChunks.length}/${storyChunks.length} successful`, inline: true }
+        { name: 'Image Generation', value: `${storyChunks.length - failedChunks.length}/${storyChunks.length} successful`, inline: true },
+        { 
+          name: '🔒 Looking for a completely anonymous chatting experience?', 
+          value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
+        }
       )
       .setFooter({ text: 'Generated using AI • Story with images created just for you' })
       .setTimestamp();
@@ -232,8 +217,6 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
     await loadingMessage.edit('✅ Story with images generated successfully!');
     
   } catch (error) {
-    console.error('Error in generateAndSendStoryWithImages:', error);
-    
     try {
       const characterNames = characterUsers.map(user => user.username);
       const story = await generateStory(storyPrompt, characterNames);
@@ -248,7 +231,6 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
       await loadingMessage.edit('⚠️ Story generated with text only (image generation failed).');
       
     } catch (fallbackError) {
-      console.error('Error in fallback story delivery:', fallbackError);
       await loadingMessage.edit('Sorry, there was an error generating your story with images. Please try again later.');
     }
   }
@@ -293,8 +275,6 @@ async function handleStoryPromptInput(userId, storyData, storyPrompt, message, i
     
     return true;
   } catch (error) {
-    console.error('Error processing story with images:', error);
-    
     let errorMessage = 'Sorry, there was an error generating your story with images. Please try again later.';
     
     if (error.message && error.message.includes('timeout')) {

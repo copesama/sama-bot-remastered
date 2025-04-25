@@ -12,12 +12,10 @@ const activeQuizzes = new Map();
  */
 async function generateQuizContent(prompt, questionCount = 10) {
   try {
-    console.log(`Generating quiz about: ${prompt} with ${questionCount} questions`);
-    
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'microsoft/mai-ds-r1:free',
         messages: [
           {
             role: 'system',
@@ -98,10 +96,8 @@ The output must be a valid JSON array that can be directly parsed.`
     
     return quizQuestions;
   } catch (error) {
-    console.error('Error generating quiz content:', error);
-    
     if (error.response) {
-      console.error('API error response:', error.response.data);
+      // API error response exists but not logging it
     }
     
     throw error;
@@ -187,7 +183,11 @@ function createResultsEmbed(score, totalQuestions, prompt, questionResults) {
   
   embed.addFields(
     { name: '✅ Correct Answers', value: correctAnswers.toString(), inline: true },
-    { name: '❌ Incorrect Answers', value: incorrectAnswers.toString(), inline: true }
+    { name: '❌ Incorrect Answers', value: incorrectAnswers.toString(), inline: true },
+    { 
+      name: '🔒 Looking for a completely anonymous chatting experience?', 
+      value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
+    }
   );
   
   // Add a summary of only incorrect answers (limited to first 5 for brevity)
@@ -289,7 +289,6 @@ async function handleQuizCommand(message) {
     await sendNextQuestion(message.channel, message.author.id);
     
   } catch (error) {
-    console.error('Error in quiz command:', error);
     await loadingMessage.edit('Sorry, there was an error generating your quiz. Please try again later.');
   }
 }

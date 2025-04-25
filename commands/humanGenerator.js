@@ -13,12 +13,11 @@ const usersWaitingForWordCount = new Map();
  */
 async function generateQuestion(topic) {
   try {
-    console.log(`Generating question about topic: ${topic}`);
     
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'microsoft/mai-ds-r1:free',
         messages: [
           {
             role: 'system',
@@ -52,10 +51,6 @@ IMPORTANT: Respond in the same language as my request (e.g., if I asked in Greek
     const question = response.data.choices[0].message.content.trim();
     return question;
   } catch (error) {
-    console.error('Error generating question:', error);
-    if (error.response) {
-      console.error('API error response:', error.response.data);
-    }
     throw new Error('Failed to generate a question. Please try again later.');
   }
 }
@@ -70,7 +65,7 @@ IMPORTANT: Respond in the same language as my request (e.g., if I asked in Greek
  */
 async function generateAcademicText(topic, userResponse, question, wordCount = 1500) {
   try {
-    console.log(`Generating academic text based on user response of length: ${userResponse.length} with target word count: ${wordCount}`);
+    
     
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -132,10 +127,6 @@ The most important aspect is to exactly match my vocabulary and grammar level. D
     const academicText = response.data.choices[0].message.content;
     return academicText;
   } catch (error) {
-    console.error('Error generating academic text:', error);
-    if (error.response) {
-      console.error('API error response:', error.response.data);
-    }
     throw new Error('Failed to generate academic text. Please try again later.');
   }
 }
@@ -173,7 +164,6 @@ async function handleHumanGeneratorCommand(message) {
     // Return information needed to set up the waiting state, including the question
     return { topic, loadingMessage, question };
   } catch (error) {
-    console.error('Error in handleHumanGeneratorCommand:', error);
     message.reply('Sorry, there was an error generating your question. Please try again later.');
     return null;
   }
@@ -263,6 +253,12 @@ async function handleWordCountInput(userId, wordCountInput, message) {
       .setColor('#27ae60')
       .setTitle(`Academic Text on ${topic}`)
       .setDescription(textChunks.length > 1 ? 'Here is your academic text (split into multiple messages):' : 'Here is your academic text:')
+      .addFields(
+        { 
+          name: '🔒 Looking for a completely anonymous chatting experience?', 
+          value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
+        }
+      )
       .setFooter({ text: `Generated based on your writing style • ${textChunks.length} part${textChunks.length > 1 ? 's' : ''} • Target: ${desiredWordCount} words` })
       .setTimestamp();
     
@@ -288,7 +284,6 @@ async function handleWordCountInput(userId, wordCountInput, message) {
     
     return true;
   } catch (error) {
-    console.error('Error processing word count input:', error);
     await loadingMessage.edit(`Sorry, there was an error generating the academic text on "${topic}". Please try again later.`);
     // Remove the user from waiting for word count
     usersWaitingForWordCount.delete(userId);

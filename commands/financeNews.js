@@ -31,10 +31,8 @@ function loadSubscribedChannels() {
     if (fs.existsSync(FINANCE_CONFIG_PATH)) {
       const data = JSON.parse(fs.readFileSync(FINANCE_CONFIG_PATH, 'utf8'));
       subscribedChannels = new Map(Object.entries(data));
-      console.log(`Loaded ${subscribedChannels.size} finance news subscriptions`);
     }
   } catch (error) {
-    console.error('Error loading finance channel subscriptions:', error);
     subscribedChannels = new Map();
   }
 }
@@ -46,9 +44,8 @@ function saveSubscribedChannels() {
   try {
     const data = Object.fromEntries(subscribedChannels);
     fs.writeFileSync(FINANCE_CONFIG_PATH, JSON.stringify(data, null, 2));
-    console.log(`Saved ${subscribedChannels.size} finance news subscriptions`);
   } catch (error) {
-    console.error('Error saving finance channel subscriptions:', error);
+    // Failed to save
   }
 }
 
@@ -96,7 +93,6 @@ async function fetchFinanceNews(apiKey, limit = 15) {
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
       (now.getTime() - lastFetchDate.getTime() < 23 * 60 * 60 * 1000)) {
-    console.log('Using cached finance news');
     return cachedNewsArticles;
   }
 
@@ -123,15 +119,9 @@ async function fetchFinanceNews(apiKey, limit = 15) {
       lastFetchDate = new Date();
       return cachedNewsArticles;
     } else {
-      console.log('No finance news found or API limit reached');
       return [];
     }
   } catch (error) {
-    console.error('Error fetching finance news:', error);
-    if (error.response) {
-      console.error('API error status:', error.response.status);
-      console.error('API error data:', error.response.data);
-    }
     throw error;
   }
 }
@@ -194,7 +184,6 @@ async function fetchStockPerformance(tickers) {
           }
           return { ticker, price: 'N/A', change: 'N/A', valid: false };
         } catch (error) {
-          console.error(`Error fetching data for ${ticker}:`, error);
           return { ticker, price: 'N/A', change: 'N/A', valid: false };
         }
       });
@@ -209,7 +198,6 @@ async function fetchStockPerformance(tickers) {
     
     return stockData.filter(stock => stock.valid);
   } catch (error) {
-    console.error('Error fetching stock performance:', error);
     return [];
   }
 }
@@ -370,17 +358,13 @@ function createMarketReportEmbed(stockData) {
  */
 async function sendMarketPerformanceReport(client) {
   try {
-    console.log('Sending market performance report');
-    
     if (!lastAnalysisStocks || lastAnalysisStocks.length === 0) {
-      console.log('No stock tickers available from last analysis');
       return;
     }
     
     const stockData = await fetchStockPerformance(lastAnalysisStocks);
     
     if (stockData.length === 0) {
-      console.log('No valid stock data available');
       return;
     }
     
@@ -399,18 +383,14 @@ async function sendMarketPerformanceReport(client) {
           });
           successCount++;
         } else {
-          console.log(`Cannot send to channel ${channelId} in guild ${guildId} - not a text channel`);
           failCount++;
         }
       } catch (error) {
-        console.error(`Error sending market report to guild ${guildId}, channel ${channelId}:`, error);
         failCount++;
       }
     }
-    
-    console.log(`Market report sent to ${successCount} channels (${failCount} failed)`);
   } catch (error) {
-    console.error('Error in market performance report:', error);
+    // Error in market performance report
   }
 }
 
@@ -423,7 +403,6 @@ async function generateFinancialAnalysis(newsArticles) {
   const now = new Date();
   if (cachedAnalysis && lastAnalysisDate && 
       (now.getTime() - lastAnalysisDate.getTime() < 23 * 60 * 60 * 1000)) {
-    console.log('Using cached financial analysis');
     return cachedAnalysis;
   }
 
@@ -487,18 +466,11 @@ async function generateFinancialAnalysis(newsArticles) {
       cachedAnalysis = response.data.choices[0].message.content;
       lastAnalysisDate = new Date();
       lastAnalysisStocks = extractStockTickers(cachedAnalysis);
-      console.log(`Extracted ${lastAnalysisStocks.length} stock tickers from analysis:`, lastAnalysisStocks);
       return cachedAnalysis;
     } else {
-      console.log('Failed to generate financial analysis');
       return "No financial analysis available at this time.";
     }
   } catch (error) {
-    console.error('Error generating financial analysis:', error);
-    if (error.response) {
-      console.error('API error status:', error.response.status);
-      console.error('API error data:', error.response.data);
-    }
     return "Failed to generate financial analysis due to an error.";
   }
 }
@@ -530,9 +502,6 @@ function createNewsEmbed(newsArticles, analysis = null) {
       const source = article.source && article.source.name ? article.source.name : 'Unknown Source';
       let description = article.description || article.content || 'No summary available';
       description = description.replace(/<[^>]*>?/gm, '');
-      // if (description.length > 500) {
-      //   description = description.substring(0, 497) + '...';
-      // }
       const timestamp = article.publishedAt 
         ? new Date(article.publishedAt).toLocaleString() 
         : 'Unknown date';
@@ -562,12 +531,9 @@ function scheduleDailyNews(client, apiKey) {
   
   dailyNewsJob = schedule.scheduleJob('0 15 13 * * *', async function() {
     try {
-      console.log('Running scheduled finance news update');
-      
       const newsArticles = await fetchFinanceNews(apiKey, 15);
       
       if (newsArticles.length === 0) {
-        console.log('No finance news to send for daily update');
         return;
       }
       
@@ -600,27 +566,20 @@ function scheduleDailyNews(client, apiKey) {
             
             successCount++;
           } else {
-            console.log(`Cannot send to channel ${channelId} in guild ${guildId} - not a text channel`);
             failCount++;
           }
         } catch (error) {
-          console.error(`Error sending news to guild ${guildId}, channel ${channelId}:`, error);
           failCount++;
         }
       }
-      
-      console.log(`Daily finance news sent to ${successCount} channels (${failCount} failed)`);
     } catch (error) {
-      console.error('Error in scheduled finance news job:', error);
+      // Error in scheduled finance news job
     }
   });
   
   dailyReportJob = schedule.scheduleJob('0 05 20 * * *', async function() {
     await sendMarketPerformanceReport(client);
   });
-  
-  console.log('Daily finance news scheduled');
-  console.log('Daily market report scheduled');
 }
 
 /**
@@ -631,7 +590,6 @@ function scheduleDailyNews(client, apiKey) {
 function initFinanceNews(client, apiKey) {
   loadSubscribedChannels();
   scheduleDailyNews(client, apiKey);
-  console.log('Finance news system initialized');
 }
 
 /**
@@ -663,11 +621,10 @@ async function handleFinanceReportCommand(message, client) {
     });
     
   } catch (error) {
-    console.error('Error generating finance report:', error);
     try {
       await message.reply('Sorry, there was an error generating the financial report. Please try again later.');
     } catch (e) {
-      console.error('Error sending error message:', e);
+      // Error sending error message
     }
   }
 }
@@ -753,12 +710,9 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
         await loadingAnalysis.edit('Sorry, I couldn\'t generate a financial analysis at this time.');
       }
     } catch (analysisError) {
-      console.error('Error generating analysis:', analysisError);
-      await message.channel.send('Sorry, there was an error generating the financial analysis.').catch(console.error);
+      await message.channel.send('Sorry, there was an error generating the financial analysis.').catch(() => {});
     }
   } catch (error) {
-    console.error('Error in finance news command:', error);
-    
     let errorMessage = 'Sorry, there was an error fetching financial news. Please try again later.';
     
     if (error.response) {
@@ -772,8 +726,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
     try {
       await message.reply(errorMessage);
     } catch (e) {
-      console.error('Error sending error message:', e);
-      await message.channel.send(errorMessage).catch(console.error);
+      await message.channel.send(errorMessage).catch(() => {});
     }
   }
 }

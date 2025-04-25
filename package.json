@@ -1,16 +1,16 @@
 {
   "name": "sama-bot-remastered",
   "version": "1.0.0",
-  "description": "Discord bot that generates games from user prompts",
+  "description": "Discord bot that generates everything from user prompts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "axios": "^1.8.4",
+    "axios": "^1.9.0",
     "discord.js": "^14.18.0",
-    "dotenv": "^16.4.7",
+    "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "shortid": "^2.2.17",
     "cookie-parser": "^1.4.7",
@@ -26,6 +26,6 @@
     "node": ">=16.x"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.10"
   }
 }

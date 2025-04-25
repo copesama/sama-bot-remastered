@@ -93,7 +93,6 @@ async function generateSinglePlayerGame(prompt) {
     
     return gameId;
   } catch (error) {
-    console.error('Error generating single player game:', error);
     throw error;
   }
 }
@@ -167,7 +166,6 @@ async function editGame(gameId, editPrompt, originalHtml) {
     
     return gameId;
   } catch (error) {
-    console.error('Error editing game:', error);
     throw error;
   }
 }
@@ -221,7 +219,6 @@ async function enhanceGame(gameId, originalHtml) {
     
     return gameId;
   } catch (error) {
-    console.error('Error enhancing game:', error);
     throw error;
   }
 }
@@ -249,7 +246,7 @@ async function handleSingleGameCommand(message) {
         { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your game.' },
         { name: 'Share Your Game', value: 'Share the Game ID with friends so they can try your game!' },
         { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
-        { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`!enhance ${gameId}\`` },
+        { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`!enhancegame ${gameId}\`` },
         { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
       )
       .setFooter({ text: 'Generated using AI • To play, use !playgame command' })
@@ -257,7 +254,6 @@ async function handleSingleGameCommand(message) {
     
     await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
   } catch (error) {
-    console.error('Error:', error);
     await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
   }
 }
@@ -293,7 +289,6 @@ function setupGameRoutes(app, jwtSecret) {
             httpOnly: false
           });
         } catch (err) {
-          console.error('Invalid token:', err);
           // Generate a guest token if the provided token is invalid
           userData = generateGuestUserData();
           res.cookie('gameUserData', JSON.stringify(userData), { 
@@ -434,7 +429,6 @@ async function handleEnhanceGameCommand(message, gameId, gamesDir) {
     await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
     
   } catch (error) {
-    console.error('Error:', error);
     await loadingMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
   }
 }
@@ -477,7 +471,6 @@ async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
     
     return true;
   } catch (error) {
-    console.error('Error:', error);
     await loadingMessage.edit('Sorry, there was an error editing your game. Please try again later.');
     return false;
   }

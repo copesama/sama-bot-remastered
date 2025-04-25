@@ -11,12 +11,11 @@ const activeGames = new Map();
  */
 async function generateGameContent(scenario) {
   try {
-    console.log(`Generating choices game about: ${scenario}`);
     
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'sophosympatheia/rogue-rose-103b-v0.2:free',
         messages: [
           {
             role: 'system',
@@ -144,12 +143,6 @@ The output must be a valid JSON object that can be directly parsed.`
     
     return gameStructure;
   } catch (error) {
-    console.error('Error generating game content:', error);
-    
-    if (error.response) {
-      console.error('API error response:', error.response.data);
-    }
-    
     throw error;
   }
 }
@@ -244,7 +237,11 @@ function createResultsEmbed(gameSession, endingNode) {
     .setTitle(`${gameSession.gameStructure.title} - ${resultType}`)
     .setDescription(endingNode.text)
     .addFields(
-      { name: 'Your Journey', value: `You made ${gameSession.path.length - 1} choices in this story.` }
+      { name: 'Your Journey', value: `You made ${gameSession.path.length - 1} choices in this story.` },
+      { 
+        name: '🔒 Looking for a completely anonymous chatting experience?', 
+        value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
+      }
     )
     .setTimestamp();
   
@@ -299,7 +296,6 @@ async function handleChoicesGameCommand(message) {
     await sendGameNode(message.channel, message.author.id);
     
   } catch (error) {
-    console.error('Error in choices game command:', error);
     await loadingMessage.edit('Sorry, there was an error generating your choices game. Please try again later.');
   }
 }
@@ -320,9 +316,8 @@ async function sendGameNode(channel, userId) {
   const currentNode = gameSession.gameStructure.nodes.find(node => node.id === gameSession.currentNode);
   
   if (!currentNode) {
-    console.error(`Node with ID ${gameSession.currentNode} not found!`);
-    channel.send(`<@${userId}> Sorry, there was an error in the game. The node couldn't be found.`);
-    activeGames.delete(userId);
+    // Instead of ending the game, handle missing node and let user retry
+    await handleMissingNode(channel, userId, gameSession);
     return;
   }
   
@@ -367,6 +362,16 @@ async function sendGameNode(channel, userId) {
     
     if (!selectedChoice || !selectedChoice.nextNode) {
       await interaction.reply({ content: 'Invalid choice or missing next node!', ephemeral: true });
+      return;
+    }
+    
+    // Check if the next node exists before navigating to it
+    const nextNode = gameSession.gameStructure.nodes.find(node => node.id === selectedChoice.nextNode);
+    if (!nextNode) {
+      await interaction.reply({ 
+        content: 'Sorry, there was an issue with that choice. Please select another option.',
+        ephemeral: true 
+      });
       return;
     }
     
@@ -441,6 +446,37 @@ async function sendGameNode(channel, userId) {
       activeGames.delete(userId);
     }
   });
+}
+
+/**
+ * Handle node not found scenario and allow user to make another choice
+ * @param {Object} channel Discord channel to send the message to
+ * @param {string} userId The user's ID
+ * @param {Object} gameSession The current game session
+ */
+async function handleMissingNode(channel, userId, gameSession) {
+  // If we have a previous node in path, go back to it
+  if (gameSession.path.length > 1) {
+    // Remove the invalid node from the path
+    gameSession.path.pop();
+    
+    // Get the previous node ID
+    const previousNodeId = gameSession.path[gameSession.path.length - 1];
+    gameSession.currentNode = previousNodeId;
+    
+    // Notify the user about the issue
+    await channel.send({
+      content: `<@${userId}> Sorry, there was an issue with that choice. Please select another option.`,
+      ephemeral: true
+    });
+    
+    // Send the previous node again for the user to make a new choice
+    await sendGameNode(channel, userId);
+  } else {
+    // If we can't go back (we're at the start), inform the user and end the game
+    channel.send(`<@${userId}> Sorry, there was an error in the game. The story node couldn't be found.`);
+    activeGames.delete(userId);
+  }
 }
 
 /**

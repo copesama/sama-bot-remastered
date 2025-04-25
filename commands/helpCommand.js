@@ -30,8 +30,8 @@ function createHelpEmbed() {
           '`!singlegame [prompt]` (`!sgame`) - Generate a personalized HTML5 game based on your prompt\n' +
           '`!playgame [gameId]` (`!play`) - Play a previously generated game with your Discord info integrated\n' +
           '`!editgame [gameId]` (`!edit`) - Edit features or mechanics of a game you created\n' +
-          '`!enhance [gameId]` (`!enh`) - Automatically improve your game with bug fixes and optimizations\n' +
-          '`!multigame` (`!mgame`) - Create a multiplayer game experience'
+          '`!enhancegame [gameId]` (`!enhance`) - Automatically improve your game with bug fixes and optimizations\n' +
+          '`!multigame` (`!mgame`) - Create a multiplayer game experience (Coming soon!)'
       },
       { 
         name: '📊 Finance Commands', 
@@ -117,9 +117,9 @@ function createHelpEmbed() {
       {
         name: '🤖 AI Attribution',
         value: 
-          'Game Generator: Google Gemini 2.0 Flash via OpenRouter\n' +
-          'Story Generator: Sophosympatheia Rogue Rose (story) & Gemini 2.0 Flash (scene descriptions) via OpenRouter\n' +
-          'Quiz Generator: Google Gemini 2.0 Flash via OpenRouter\n' +
+          'Game Generator: Microsoft MAI-DS-R1 via OpenRouter\n' +
+          'Story Generator: Sophosympatheia Rogue Rose (story) & Microsoft MAI-DS-R1 (scene descriptions) via OpenRouter\n' +
+          'Quiz Generator: Microsoft MAI-DS-R1 via OpenRouter\n' +
           'Image Generator: FLUX.1 Model via Hugging Face\n' +
           'Music Generator: MiniMax-01 Model via Segmind API\n' +
           'Financial Analysis: Microsoft MAI-DS-R1 via OpenRouter\n' +

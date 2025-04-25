@@ -34,9 +34,6 @@ async function generateMusic(prompt, lyrics, songFileUrl = null) {
     const songFile = songFileUrl || 'https://replicate.delivery/pbxt/M9zum1Y6qujy02jeigHTJzn0lBTQOemB7OkH5XmmPSC5OUoO/MiniMax-Electronic.wav';
     formData.append('song_file', songFile);
     requestParams.song_file = songFile;
-    
-    // Log parameters
-    console.log('Sending music generation request with parameters:', requestParams);
 
     const response = await axios.post(
       'https://api.segmind.com/v1/minimax-music-01',
@@ -57,7 +54,6 @@ async function generateMusic(prompt, lyrics, songFileUrl = null) {
       let errorMessage;
       try {
         errorMessage = Buffer.from(response.data).toString('utf8');
-        console.error('Music API error response:', errorMessage);
         
         // Try to parse as JSON for better error messaging
         try {
@@ -81,22 +77,9 @@ async function generateMusic(prompt, lyrics, songFileUrl = null) {
 
     // Save the music file
     fs.writeFileSync(musicPath, Buffer.from(response.data));
-    console.log(`Music file saved to ${musicPath}`);
 
     return { musicId, musicPath };
   } catch (error) {
-    console.error('Error generating music:', error);
-    
-    if (error.response) {
-      console.error('Error status:', error.response.status);
-      try {
-        const errorData = Buffer.from(error.response.data).toString('utf8');
-        console.error('API error response:', errorData);
-      } catch (e) {
-        console.error('Could not parse error response data');
-      }
-    }
-    
     // Add more detailed error for timeouts
     if (error.code === 'ECONNABORTED') {
       throw new Error('Music generation timed out. The server took too long to respond.');
@@ -146,9 +129,8 @@ async function playMusicInVoiceChannel(voiceChannel, musicPath) {
         // Clean up the file
         try {
           fs.unlinkSync(musicPath);
-          console.log(`Deleted music file: ${musicPath}`);
         } catch (err) {
-          console.error(`Error deleting music file: ${err}`);
+          // Error handling without console.error
         }
         
         resolve();
@@ -156,7 +138,6 @@ async function playMusicInVoiceChannel(voiceChannel, musicPath) {
       
       // Add error handling for player errors
       player.on('error', error => {
-        console.error(`Error playing audio: ${error.message}`);
         connection.destroy();
         voiceConnections.delete(voiceChannel.guild.id);
         audioPlayers.delete(voiceChannel.guild.id);
@@ -164,16 +145,14 @@ async function playMusicInVoiceChannel(voiceChannel, musicPath) {
         // Clean up the file
         try {
           fs.unlinkSync(musicPath);
-          console.log(`Deleted music file (after error): ${musicPath}`);
         } catch (err) {
-          console.error(`Error deleting music file: ${err}`);
+          // Error handling without console.error
         }
         
         reject(error);
       });
     });
   } catch (error) {
-    console.error('Error connecting to voice channel:', error);
     throw error;
   }
 }
@@ -211,7 +190,6 @@ async function handleMusicCommand(message) {
     
     if (isAudio) {
       songFileUrl = attachment.url;
-      console.log(`Using user-provided song file: ${songFileUrl}`);
     } else {
       await message.reply('The attached file is not recognized as an audio file. Using the default sample instead.');
     }
@@ -239,23 +217,19 @@ async function handleMusicCommand(message) {
     try {
       await playMusicInVoiceChannel(voiceChannel, musicPath);
     } catch (voiceError) {
-      console.error('Error playing music in voice channel:', voiceError);
       message.channel.send('Failed to play the music in your voice channel. Please check permissions or try again later.');
       
       // Ensure file cleanup if voice playback fails
       setTimeout(() => {
         try {
           fs.unlinkSync(musicPath);
-          console.log(`Deleted music file (voice error): ${musicPath}`);
         } catch (err) {
-          console.error(`Error deleting music file: ${err}`);
+          // Error handling without console.error
         }
       }, 10000); // 10 seconds delay
     }
     
   } catch (error) {
-    console.error('Error generating music:', error);
-    
     // Provide more helpful error message to the user
     let errorMessage = 'Sorry, there was an error generating your music. Please try again later.';
     

@@ -8,19 +8,18 @@ const usageCounts = new Map();
 // Default limit configurations for commands
 const defaultLimits = {
   'singlegame': { limit: 5, resetIntervalHours: 24 },
-  'multigame': { limit: 5, resetIntervalHours: 24 },
-  'story': { limit: 5, resetIntervalHours: 24 },
-  'image': { limit: 5, resetIntervalHours: 24 },
-  'music': { limit: 5, resetIntervalHours: 24 },
+  'multigame': { limit: 999, resetIntervalHours: 24 },
+  'story': { limit: 3, resetIntervalHours: 24 },
+  'image': { limit: 10, resetIntervalHours: 24 },
+  'music': { limit: 1, resetIntervalHours: 24 },
   'quiz': { limit: 5, resetIntervalHours: 24 },
   'choicesgame': { limit: 5, resetIntervalHours: 24 },
-  'financenews': { limit: 5, resetIntervalHours: 24 },
-  'financereport': { limit: 5, resetIntervalHours: 24 },
-  'play': { limit: 10, resetIntervalHours: 24 }, // Higher limit for playing games
+  'financenews': { limit: 999, resetIntervalHours: 24 },
+  'financereport': { limit: 3, resetIntervalHours: 24 },
+  'play': { limit: 999, resetIntervalHours: 24 },
   'edit': { limit: 5, resetIntervalHours: 24 },
   'enhance': { limit: 5, resetIntervalHours: 24 },
   'human': { limit: 5, resetIntervalHours: 24 },
-  // help and invite commands are excluded - they should be always available
 };
 
 /**
