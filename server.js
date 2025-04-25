@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -118,8 +118,8 @@ const usersInEditMode = new Map();
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   
-  // Set bot status
-  client.user.setActivity('Generate anything. Type !help', { type: 'PLAYING' });
+  // Set bot status correctly
+  client.user.setActivity('Generate anything. Type !help', { type: ActivityType.Playing });
   
   initFinanceNews(client, process.env.NEWSAPI_KEY);
 });

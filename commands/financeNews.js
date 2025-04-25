@@ -439,6 +439,7 @@ async function generateFinancialAnalysis(newsArticles) {
                - Include a mix of well-known and lesser-known stocks
                - Display the stock tickers like this $STOCK:
                - Don't display any tickers in the reasoning
+               - Don't add any other category than BUY and SELL/AVOID
             
             IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
 
