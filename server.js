@@ -71,6 +71,9 @@ const {
   usersWaitingForWordCount
 } = require('./commands/humanGenerator');
 
+// Import the rate limiter utility
+const { checkRateLimit, incrementUsage, formatResetTime } = require('./utils/rateLimiter');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -217,35 +220,167 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content.startsWith('!financenews') || message.content.startsWith('!fnews')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'financenews');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !financenews command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'financenews');
+    }
+    
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
   }
 
   if (message.content.startsWith('!financereport') || message.content.startsWith('!freport')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'financereport');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !financereport command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'financereport');
+    }
+    
     await handleFinanceReportCommand(message, client);
     return;
   }
 
   if (message.content.startsWith('!generatequiz') || message.content.startsWith('!quiz')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'quiz');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !quiz command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'quiz');
+    }
+    
     await handleQuizCommand(message);
     return;
   }
   
-  // This one already has an alias
   if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'choicesgame');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !choicesgame command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'choicesgame');
+    }
+    
     await handleChoicesGameCommand(message);
     return;
   }
 
-  // Add regex pattern for the play game command alias
+  // Handle play game command with rate limit
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!play\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
     const gameId = playGameMatch[1];
+    
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'play');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !play command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'play');
+    }
+    
     await handlePlayGameCommand(message, gameId, GAMES_DIR, PORT, JWT_SECRET);
     return;
   }
 
   if (message.content.startsWith('!generatestory') || message.content.startsWith('!story')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'story');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !story command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'story');
+    }
+    
     const result = await handleStoryCommand(message);
     if (result) {
       const { characterUsers, loadingMessage } = result;
@@ -255,6 +390,28 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content.startsWith('!generateimage') || message.content.startsWith('!image')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'image');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !image command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'image');
+    }
+    
     const result = await handleImageCommand(message);
     if (result) {
       const { mentionedUsers, loadingMessage } = result;
@@ -263,10 +420,33 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Add regex pattern for the edit game command alias
+  // Handle edit game command with rate limit
   const editGameMatch = message.content.match(/^!editgame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!edit\s+([a-zA-Z0-9_-]+)$/);
   if (editGameMatch) {
     const gameId = editGameMatch[1];
+    
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'edit');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !edit command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'edit');
+    }
+    
     const result = await handleEditGameCommand(message, gameId, GAMES_DIR);
     if (result) {
       usersInEditMode.set(message.author.id, result);
@@ -274,30 +454,142 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Add regex pattern for the enhance game command alias
+  // Handle enhance game command with rate limit
   const enhanceGameMatch = message.content.match(/^!enhance\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!enh\s+([a-zA-Z0-9_-]+)$/);
   if (enhanceGameMatch) {
     const gameId = enhanceGameMatch[1];
+    
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'enhance');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !enhance command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'enhance');
+    }
+    
     await handleEnhanceGameCommand(message, gameId, GAMES_DIR);
     return;
   }
 
   if (message.content.startsWith('!generatemusic') || message.content.startsWith('!music')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'music');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !music command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'music');
+    }
+    
     await handleMusicCommand(message);
     return;
   }
   
   if (message.content.startsWith('!singlegame') || message.content.startsWith('!sgame')) {
+    // Check rate limit for the server
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'singlegame');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !singlegame command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      // If not limited, increment the usage and proceed
+      incrementUsage(serverId, 'singlegame');
+    }
+    
     await handleSingleGameCommand(message);
     return;
   }
 
   if (message.content.startsWith('!multigame') || message.content.startsWith('!mgame')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'multigame');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !multigame command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'multigame');
+    }
+    
     await handleMultiplayerGameCommand(message);
     return;
   }
 
   if (message.content.startsWith('!generatehuman') || message.content.startsWith('!human')) {
+    // Apply rate limit
+    const serverId = message.guild?.id;
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'human');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !human command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+      
+      incrementUsage(serverId, 'human');
+    }
+    
     const result = await handleHumanGeneratorCommand(message);
     if (result) {
       usersWaitingForHumanResponse.set(message.author.id, result);
@@ -305,7 +597,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // These shorter commands don't need aliases since they're already short
+  // Keep invite and help commands unrestricted
   if (message.content.startsWith('!invite')) {
     await handleInviteCommand(message);
     return;
