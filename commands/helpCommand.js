@@ -118,7 +118,7 @@ function createHelpEmbed() {
         name: '🤖 AI Attribution',
         value: 
           'Game Generator: Microsoft MAI-DS-R1 via OpenRouter\n' +
-          'Story Generator: Sophosympatheia Rogue Rose (story) & Microsoft MAI-DS-R1 (scene descriptions) via OpenRouter\n' +
+          'Story Generator: Microsoft MAI-DS-R1 (story) & Microsoft MAI-DS-R1 (scene descriptions) via OpenRouter\n' +
           'Quiz Generator: Microsoft MAI-DS-R1 via OpenRouter\n' +
           'Image Generator: FLUX.1 Model via Hugging Face\n' +
           'Music Generator: MiniMax-01 Model via Segmind API\n' +
