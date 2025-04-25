@@ -239,7 +239,7 @@ function createResultsEmbed(gameSession, endingNode) {
     .addFields(
       { name: 'Your Journey', value: `You made ${gameSession.path.length - 1} choices in this story.` },
       { 
-        name: '🔒 Looking for a completely anonymous chatting experience?', 
+        name: '💬 Looking for a completely anonymous chatting experience?', 
         value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
       }
     )

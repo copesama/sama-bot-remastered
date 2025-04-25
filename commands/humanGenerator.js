@@ -255,7 +255,7 @@ async function handleWordCountInput(userId, wordCountInput, message) {
       .setDescription(textChunks.length > 1 ? 'Here is your academic text (split into multiple messages):' : 'Here is your academic text:')
       .addFields(
         { 
-          name: '🔒 Looking for a completely anonymous chatting experience?', 
+          name: '💬 Looking for a completely anonymous chatting experience?', 
           value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
         }
       )

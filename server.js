@@ -119,7 +119,7 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   
   // Set bot status
-  client.user.setActivity('Generate anything. Type !help', { type: 'PLAYING' });
+  client.user.setActivity('Generate anything. Type !help', {type: ActivityType.Listening });
   
   initFinanceNews(client, process.env.NEWSAPI_KEY);
 });

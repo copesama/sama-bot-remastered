@@ -185,7 +185,7 @@ function createResultsEmbed(score, totalQuestions, prompt, questionResults) {
     { name: '✅ Correct Answers', value: correctAnswers.toString(), inline: true },
     { name: '❌ Incorrect Answers', value: incorrectAnswers.toString(), inline: true },
     { 
-      name: '🔒 Looking for a completely anonymous chatting experience?', 
+      name: '💬 Looking for a completely anonymous chatting experience?', 
       value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
     }
   );
