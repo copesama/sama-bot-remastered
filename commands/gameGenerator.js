@@ -14,7 +14,7 @@ async function generateSinglePlayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'microsoft/mai-ds-r1:free',
+        model: 'tngtech/deepseek-r1t-chimera:free',
         messages: [
           {
             role: 'system',
@@ -127,7 +127,7 @@ async function editGame(gameId, editPrompt, originalHtml) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'microsoft/mai-ds-r1:free',
+        model: 'tngtech/deepseek-r1t-chimera:free',
         messages: [
           {
             role: 'system',
@@ -176,7 +176,7 @@ async function enhanceGame(gameId, originalHtml) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'microsoft/mai-ds-r1:free',
+        model: 'tngtech/deepseek-r1t-chimera:free',
         messages: [
           {
             role: 'system',
