@@ -53,12 +53,20 @@ function saveSubscribedChannels() {
  * Subscribe a channel to daily finance news
  * @param {string} guildId - Discord server ID
  * @param {string} channelId - Channel ID to receive news
- * @returns {boolean} - Success status
+ * @returns {boolean} - Success status and whether it was already subscribed
  */
 function subscribeChannel(guildId, channelId) {
+  // Check if already subscribed to this channel
+  const existingChannelId = subscribedChannels.get(guildId);
+  const alreadySubscribed = existingChannelId === channelId;
+  
   subscribedChannels.set(guildId, channelId);
   saveSubscribedChannels();
-  return true;
+  
+  return {
+    success: true,
+    alreadySubscribed: alreadySubscribed
+  };
 }
 
 /**
@@ -522,6 +530,7 @@ function createNewsEmbed(newsArticles, analysis = null) {
  * @param {string} apiKey - NewsAPI API key
  */
 function scheduleDailyNews(client, apiKey) {
+  // Cancel existing jobs if they exist
   if (dailyNewsJob) {
     dailyNewsJob.cancel();
   }
@@ -530,6 +539,8 @@ function scheduleDailyNews(client, apiKey) {
     dailyReportJob.cancel();
   }
   
+  // Schedule new jobs with proper cron format
+  // Run at 8:15 AM EST/EDT (13:15 UTC) for morning news
   dailyNewsJob = schedule.scheduleJob('0 15 13 * * *', async function() {
     try {
       const newsArticles = await fetchFinanceNews(apiKey, 15);
@@ -578,7 +589,8 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  dailyReportJob = schedule.scheduleJob('0 05 20 * * *', async function() {
+  // Run at 4:05 PM EST/EDT (20:05 UTC) for market performance report
+  dailyReportJob = schedule.scheduleJob('0 5 20 * * *', async function() {
     await sendMarketPerformanceReport(client);
   });
 }
@@ -651,8 +663,12 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       const action = parts[1];
       
       if (action === 'subscribe') {
-        subscribeChannel(message.guild.id, message.channel.id);
-        await message.reply('✅ This channel will now receive daily financial analysis 15 minutes before market opening and a financial report 5 minutes after closing');
+        const result = subscribeChannel(message.guild.id, message.channel.id);
+        if (result.alreadySubscribed) {
+          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:15 AM EST and market reports at 4:05 PM EST.');
+        } else {
+          await message.reply('✅ This channel will now receive daily financial analysis at 8:15 AM EST and market performance reports at 4:05 PM EST.');
+        }
         return;
       } 
       else if (action === 'unsubscribe') {
