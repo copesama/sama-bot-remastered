@@ -1,20 +1,10 @@
 const axios = require('axios');
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 const schedule = require('node-schedule');
+const { connectToDatabase, FinanceChannel } = require('../utils/mongooseUtil');
 
-// Path for storing channel configuration
-const CONFIG_DIR = path.join(__dirname, '..', 'config');
-const FINANCE_CONFIG_PATH = path.join(CONFIG_DIR, 'finance_channels.json');
-
-// Create config directory if it doesn't exist
-if (!fs.existsSync(CONFIG_DIR)) {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-}
-
-// Store subscribed channels (guildId -> channelId)
-let subscribedChannels = new Map();
+// Store subscribed channels (guildId -> channelId) in memory cache for performance
+let subscribedChannelsCache = new Map();
 let dailyNewsJob = null;
 let dailyReportJob = null;
 let cachedNewsArticles = null;
@@ -22,30 +12,30 @@ let lastFetchDate = null;
 let cachedAnalysis = null;
 let lastAnalysisDate = null;
 let lastAnalysisStocks = null; // Store stock tickers from the last analysis
+let isDbConnected = false;
 
 /**
- * Loads subscribed channels from the configuration file
+ * Loads subscribed channels from MongoDB
  */
-function loadSubscribedChannels() {
+async function loadSubscribedChannels() {
   try {
-    if (fs.existsSync(FINANCE_CONFIG_PATH)) {
-      const data = JSON.parse(fs.readFileSync(FINANCE_CONFIG_PATH, 'utf8'));
-      subscribedChannels = new Map(Object.entries(data));
+    if (!isDbConnected) {
+      await connectToDatabase();
+      isDbConnected = true;
     }
+    
+    const channels = await FinanceChannel.find({});
+    subscribedChannelsCache = new Map();
+    
+    channels.forEach(channel => {
+      subscribedChannelsCache.set(channel.guildId, channel.channelId);
+    });
+    
+    return subscribedChannelsCache;
   } catch (error) {
-    subscribedChannels = new Map();
-  }
-}
-
-/**
- * Saves subscribed channels to the configuration file
- */
-function saveSubscribedChannels() {
-  try {
-    const data = Object.fromEntries(subscribedChannels);
-    fs.writeFileSync(FINANCE_CONFIG_PATH, JSON.stringify(data, null, 2));
-  } catch (error) {
-    // Failed to save
+    console.error('Failed to load subscribed channels from MongoDB:', error);
+    subscribedChannelsCache = new Map();
+    return subscribedChannelsCache;
   }
 }
 
@@ -53,32 +43,66 @@ function saveSubscribedChannels() {
  * Subscribe a channel to daily finance news
  * @param {string} guildId - Discord server ID
  * @param {string} channelId - Channel ID to receive news
- * @returns {boolean} - Success status and whether it was already subscribed
+ * @returns {Promise<Object>} - Success status and whether it was already subscribed
  */
-function subscribeChannel(guildId, channelId) {
-  // Check if already subscribed to this channel
-  const existingChannelId = subscribedChannels.get(guildId);
-  const alreadySubscribed = existingChannelId === channelId;
-  
-  subscribedChannels.set(guildId, channelId);
-  saveSubscribedChannels();
-  
-  return {
-    success: true,
-    alreadySubscribed: alreadySubscribed
-  };
+async function subscribeChannel(guildId, channelId) {
+  try {
+    if (!isDbConnected) {
+      await connectToDatabase();
+      isDbConnected = true;
+    }
+    
+    // Check if already subscribed to this channel
+    const existingChannelId = subscribedChannelsCache.get(guildId);
+    const alreadySubscribed = existingChannelId === channelId;
+
+    // Update database
+    await FinanceChannel.updateOne(
+      { guildId },
+      { guildId, channelId },
+      { upsert: true }
+    );
+    
+    // Update cache
+    subscribedChannelsCache.set(guildId, channelId);
+    
+    return {
+      success: true,
+      alreadySubscribed: alreadySubscribed
+    };
+  } catch (error) {
+    console.error('Failed to subscribe channel:', error);
+    return {
+      success: false,
+      alreadySubscribed: false
+    };
+  }
 }
 
 /**
  * Unsubscribe a channel from daily finance news
  * @param {string} guildId - Discord server ID
- * @returns {boolean} - Success status
+ * @returns {Promise<boolean>} - Success status
  */
-function unsubscribeChannel(guildId) {
-  const wasSubscribed = subscribedChannels.has(guildId);
-  subscribedChannels.delete(guildId);
-  saveSubscribedChannels();
-  return wasSubscribed;
+async function unsubscribeChannel(guildId) {
+  try {
+    if (!isDbConnected) {
+      await connectToDatabase();
+      isDbConnected = true;
+    }
+    
+    const wasSubscribed = subscribedChannelsCache.has(guildId);
+    
+    if (wasSubscribed) {
+      await FinanceChannel.deleteOne({ guildId });
+      subscribedChannelsCache.delete(guildId);
+    }
+    
+    return wasSubscribed;
+  } catch (error) {
+    console.error('Failed to unsubscribe channel:', error);
+    return false;
+  }
 }
 
 /**
@@ -87,7 +111,7 @@ function unsubscribeChannel(guildId) {
  * @returns {string|null} - Channel ID if subscribed, null otherwise
  */
 function getSubscribedChannel(guildId) {
-  return subscribedChannels.get(guildId) || null;
+  return subscribedChannelsCache.get(guildId) || null;
 }
 
 /**
@@ -423,7 +447,7 @@ async function sendMarketPerformanceReport(client) {
     let successCount = 0;
     let failCount = 0;
     
-    for (const [guildId, channelId] of subscribedChannels.entries()) {
+    for (const [guildId, channelId] of subscribedChannelsCache.entries()) {
       try {
         const channel = await client.channels.fetch(channelId);
         if (channel && channel.isTextBased()) {
@@ -598,7 +622,7 @@ function scheduleDailyNews(client, apiKey) {
       let successCount = 0;
       let failCount = 0;
       
-      for (const [guildId, channelId] of subscribedChannels.entries()) {
+      for (const [guildId, channelId] of subscribedChannelsCache.entries()) {
         try {
           const channel = await client.channels.fetch(channelId);
           if (channel && channel.isTextBased()) {
@@ -642,9 +666,13 @@ function scheduleDailyNews(client, apiKey) {
  * @param {Object} client - Discord client
  * @param {string} apiKey - NewsAPI API key
  */
-function initFinanceNews(client, apiKey) {
-  loadSubscribedChannels();
-  scheduleDailyNews(client, apiKey);
+async function initFinanceNews(client, apiKey) {
+  try {
+    await loadSubscribedChannels();
+    scheduleDailyNews(client, apiKey);
+  } catch (error) {
+    console.error('Failed to initialize finance news:', error);
+  }
 }
 
 /**
@@ -705,7 +733,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       const action = parts[1];
       
       if (action === 'subscribe') {
-        const result = subscribeChannel(message.guild.id, message.channel.id);
+        const result = await subscribeChannel(message.guild.id, message.channel.id);
         if (result.alreadySubscribed) {
           await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:15 AM EST and market reports at 4:05 PM EST.');
         } else {
@@ -714,7 +742,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
         return;
       } 
       else if (action === 'unsubscribe') {
-        const wasSubscribed = unsubscribeChannel(message.guild.id);
+        const wasSubscribed = await unsubscribeChannel(message.guild.id);
         if (wasSubscribed) {
           await message.reply('✅ This server will no longer receive daily financial news updates.');
         } else {

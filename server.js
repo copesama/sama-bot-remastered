@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const cookieParser = require('cookie-parser');
+const { connectToDatabase } = require('./utils/mongooseUtil');
 
 // Import the finance news module - update to include the handleFinanceReportCommand function
 const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } = require('./commands/financeNews');
@@ -115,13 +116,22 @@ const usersWaitingForStoryPrompt = new Map();
 const usersInEditMode = new Map();
 
 // Discord bot event handlers
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   
   // Set bot status correctly
   client.user.setActivity('Generate anything. Type !help', { type: ActivityType.Playing });
   
-  initFinanceNews(client, process.env.NEWSAPI_KEY);
+  // Connect to MongoDB before initializing features that depend on it
+  try {
+    await connectToDatabase();
+    console.log('MongoDB connected successfully');
+    
+    // Initialize modules that need database access
+    initFinanceNews(client, process.env.NEWSAPI_KEY);
+  } catch (error) {
+    console.error('Failed to connect to MongoDB:', error);
+  }
 });
 
 client.on('messageCreate', async (message) => {
