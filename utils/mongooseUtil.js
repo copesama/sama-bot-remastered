@@ -102,7 +102,19 @@ function sanitizeHtmlForTemplate(html) {
 function sanitizeGameHtml(html) {
   if (!html) return '';
   
-  return sanitizeHtml(html, {
+  // Critical fix: Temporarily protect script content before sanitization
+  const scriptPlaceholders = [];
+  let protectedHtml = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (match, scriptContent, index) => {
+    const placeholder = `SCRIPT_PLACEHOLDER_${scriptPlaceholders.length}`;
+    scriptPlaceholders.push({
+      placeholder,
+      original: match,
+      content: scriptContent
+    });
+    return placeholder;
+  });
+  
+  const sanitized = sanitizeHtml(protectedHtml, {
     allowedTags: [
       // Standard HTML structure
       'html', 'head', 'body', 'title', 'meta', 'style', 'script', 'link',
@@ -152,7 +164,7 @@ function sanitizeGameHtml(html) {
     // Allow inline styles and scripts for game functionality
     allowVulnerableTags: true,
     allowedScriptTypes: ['text/javascript', 'application/javascript'],
-    // CRITICAL FIX: Remove script from nonTextTags to preserve script content
+    // Remove script from nonTextTags
     nonTextTags: ['style', 'textarea', 'option', 'noscript'],
     // Additional options for games
     parser: {
@@ -160,6 +172,14 @@ function sanitizeGameHtml(html) {
       lowerCaseAttributeNames: false // Preserve attribute casing
     }
   });
+  
+  // Restore script tags with their original content
+  let finalHtml = sanitized;
+  scriptPlaceholders.forEach(({placeholder, original}) => {
+    finalHtml = finalHtml.replace(placeholder, original);
+  });
+  
+  return finalHtml;
 }
 
 // Initialize models
