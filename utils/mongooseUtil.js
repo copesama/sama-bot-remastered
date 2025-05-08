@@ -152,8 +152,8 @@ function sanitizeGameHtml(html) {
     // Allow inline styles and scripts for game functionality
     allowVulnerableTags: true,
     allowedScriptTypes: ['text/javascript', 'application/javascript'],
-    // Don't filter script contents - important for game functionality
-    nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'canvas'],
+    // CRITICAL FIX: Remove script from nonTextTags to preserve script content
+    nonTextTags: ['style', 'textarea', 'option', 'noscript'],
     // Additional options for games
     parser: {
       lowerCaseTags: false, // Preserve tag casing
