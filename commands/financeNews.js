@@ -117,7 +117,7 @@ function getSubscribedChannel(guildId) {
  * @param {number} limit - Maximum number of news items to return
  * @returns {Promise<Array>} - Array of news articles
  */
-async function fetchFinanceNews(apiKey, limit = 15) {
+async function fetchFinanceNews(apiKey, limit = 14) {
   // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
@@ -130,8 +130,6 @@ async function fetchFinanceNews(apiKey, limit = 15) {
     const today = new Date();
     const formattedDate = today.toISOString().split('T')[0];
     
-    console.log(`Fetching finance news from NewsAPI with API key ending in: ...${apiKey.substr(-4)}`);
-    
     // Fetch financial news from NewsAPI
     const response = await axios.get('https://newsapi.org/v2/top-headlines', {
       params: {
@@ -143,8 +141,6 @@ async function fetchFinanceNews(apiKey, limit = 15) {
       }
     });
 
-    console.log(`NewsAPI response status: ${response.status}, total results: ${response.data?.totalResults || 'unknown'}`);
-
     // Check if we got valid results
     if (response.data && response.data.articles && response.data.articles.length > 0) {
       // Cache the results
@@ -152,14 +148,9 @@ async function fetchFinanceNews(apiKey, limit = 15) {
       lastFetchDate = new Date();
       return cachedNewsArticles;
     } else {
-      console.error('NewsAPI returned empty or invalid response:', response.data);
       return [];
     }
   } catch (error) {
-    console.error('Error fetching finance news:', error.message);
-    if (error.response) {
-      console.error(`Status: ${error.response.status}, Data:`, error.response.data);
-    }
     throw error;
   }
 }
@@ -687,7 +678,7 @@ function scheduleDailyNews(client, apiKey) {
   // Run at 8:15 AM EST/EDT (13:15 UTC) for morning news
   dailyNewsJob = schedule.scheduleJob('0 15 13 * * *', async function() {
     try {
-      const newsArticles = await fetchFinanceNews(apiKey, 15);
+      const newsArticles = await fetchFinanceNews(apiKey, 14);
       
       if (newsArticles.length === 0) {
         return;
@@ -846,101 +837,55 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
     const loadingMessage = await message.reply('📊 Fetching the latest financial news headlines and analysis...');
     
     if (!apiKey) {
-      console.error('NewsAPI key is not configured.');
       await loadingMessage.edit('Error: NewsAPI key is not configured. Please check the server configuration.');
       return;
     }
     
-    if (apiKey.trim() === '') {
-      console.error('NewsAPI key is empty.');
-      await loadingMessage.edit('Error: NewsAPI key is empty. Please add a valid API key to your environment variables.');
-      return;
-    }
+    const newsArticles = await fetchFinanceNews(apiKey, 14);
+    
+    const newsEmbed = createNewsEmbed(newsArticles);
+    await loadingMessage.edit({ 
+      content: '📈 Here are today\'s top financial news headlines:', 
+      embeds: [newsEmbed] 
+    });
     
     try {
-      console.log('Attempting to fetch financial news...');
-      const newsArticles = await fetchFinanceNews(apiKey, 15);
+      const loadingAnalysis = await message.channel.send('📊 Generating market analysis...');
+      const analysis = await generateFinancialAnalysis(newsArticles);
       
-      if (!newsArticles || newsArticles.length === 0) {
-        console.warn('No financial news articles were returned.');
-        await loadingMessage.edit('Could not retrieve any financial news articles. The API may be experiencing issues or your API key may have exceeded its rate limit.');
-        return;
-      }
-      
-      console.log(`Successfully retrieved ${newsArticles.length} financial news articles.`);
-      const newsEmbed = createNewsEmbed(newsArticles);
-      await loadingMessage.edit({ 
-        content: '📈 Here are today\'s top financial news headlines:', 
-        embeds: [newsEmbed] 
-      });
-      
-      try {
-        const loadingAnalysis = await message.channel.send('📊 Generating market analysis...');
-        const analysis = await generateFinancialAnalysis(newsArticles);
-        
-        if (analysis) {
-          const analysisEmbed = new EmbedBuilder()
-            .setColor('#0099ff')
-            .setTitle('💹 Financial Market Analysis & Investment Insights')
-            .setDescription(analysis)
-            .setTimestamp()
-            .setFooter({ text: 'AI-powered market analysis • This is not financial advice' });
-            
-          await loadingAnalysis.edit({ 
-            content: '💹 Here\'s my analysis of today\'s financial news:', 
-            embeds: [analysisEmbed] 
-          });
-        } else {
-          await loadingAnalysis.edit('Sorry, I couldn\'t generate a financial analysis at this time.');
-        }
-      } catch (analysisError) {
-        await message.channel.send('Sorry, there was an error generating the financial analysis.').catch(() => {});
-      }
-    } catch (fetchError) {
-      console.error('Error in fetchFinanceNews:', fetchError);
-      let errorDetail = '';
-      
-      if (fetchError.response) {
-        const status = fetchError.response.status;
-        errorDetail = ` (HTTP ${status})`;
-        
-        if (status === 401) {
-          await loadingMessage.edit(`Error: Invalid NewsAPI API key. Please check your API key.${errorDetail}`);
-        } else if (status === 429) {
-          await loadingMessage.edit(`Error: API request limit reached. Please try again later.${errorDetail}`);
-        } else {
-          await loadingMessage.edit(`Error: The NewsAPI service returned an error.${errorDetail} Please try again later.`);
-        }
-      } else if (fetchError.code === 'ENOTFOUND' || fetchError.code === 'ETIMEDOUT') {
-        await loadingMessage.edit(`Error: Could not connect to the NewsAPI service. Check your internet connection or try again later. (${fetchError.code})`);
+      if (analysis) {
+        const analysisEmbed = new EmbedBuilder()
+          .setColor('#0099ff')
+          .setTitle('💹 Financial Market Analysis & Investment Insights')
+          .setDescription(analysis)
+          .setTimestamp()
+          .setFooter({ text: 'AI-powered market analysis • This is not financial advice' });
+          
+        await loadingAnalysis.edit({ 
+          content: '💹 Here\'s my analysis of today\'s financial news:', 
+          embeds: [analysisEmbed] 
+        });
       } else {
-        await loadingMessage.edit(`Sorry, there was an error fetching financial news. Please try again later. (${fetchError.message || 'Unknown error'})`);
+        await loadingAnalysis.edit('Sorry, I couldn\'t generate a financial analysis at this time.');
       }
-      return;
+    } catch (analysisError) {
+      await message.channel.send('Sorry, there was an error generating the financial analysis.').catch(() => {});
     }
-    
   } catch (error) {
-    console.error('Error in handleFinanceNewsCommand:', error);
     let errorMessage = 'Sorry, there was an error fetching financial news. Please try again later.';
     
     if (error.response) {
-      const status = error.response.status;
-      if (status === 401) {
+      if (error.response.status === 401) {
         errorMessage = 'Error: Invalid NewsAPI API key. Please check the server configuration.';
-      } else if (status === 429) {
+      } else if (error.response.status === 429) {
         errorMessage = 'Error: API request limit reached. Please try again later.';
-      } else {
-        errorMessage = `Error: The NewsAPI service returned an error (HTTP ${status}). Please try again later.`;
       }
-    } else if (error.code) {
-      errorMessage = `Error: ${error.code}. Please try again later.`;
     }
     
     try {
       await message.reply(errorMessage);
     } catch (e) {
-      console.error('Error sending error reply:', e);
-      await message.channel.send(errorMessage).catch(err => console.error('Failed to send fallback message:', err));
+      await message.channel.send(errorMessage).catch(() => {});
     }
   }
 }
