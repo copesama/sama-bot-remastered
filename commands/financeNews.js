@@ -244,17 +244,8 @@ async function fetchStockPerformance(tickers) {
       
       const batchPromises = batch.map(async (ticker) => {
         try {
-          // First try to get intraday data for most current price
-          const intradayResponse = await axios.get('https://www.alphavantage.co/query', {
-            params: {
-              function: 'TIME_SERIES_INTRADAY',
-              symbol: ticker,
-              interval: '5min',
-              apikey: process.env.ALPHAVANTAGE_API_KEY
-            }
-          });
-          
-          const dailyResponse = await axios.get('https://www.alphavantage.co/query', {
+          // Fetch daily time series data
+          const response = await axios.get('https://www.alphavantage.co/query', {
             params: {
               function: 'TIME_SERIES_DAILY',
               symbol: ticker,
@@ -263,57 +254,37 @@ async function fetchStockPerformance(tickers) {
             }
           });
           
-          let currentPrice = null;
-          let previousClose = null;
-          
-          // Get current price from intraday data if available
-          if (intradayResponse.data && intradayResponse.data['Time Series (5min)']) {
-            const timeSeriesData = intradayResponse.data['Time Series (5min)'];
-            const latestTimestamp = Object.keys(timeSeriesData)[0];
-            if (latestTimestamp) {
-              currentPrice = parseFloat(timeSeriesData[latestTimestamp]['4. close']);
-            }
-          }
-          
-          // Get previous close from daily data
-          if (dailyResponse.data && dailyResponse.data['Time Series (Daily)']) {
-            const timeSeriesData = dailyResponse.data['Time Series (Daily)'];
-            const dates = Object.keys(timeSeriesData).sort().reverse();
+          if (response.data && response.data['Time Series (Daily)']) {
+            const timeSeriesData = response.data['Time Series (Daily)'];
+            const dates = Object.keys(timeSeriesData).sort().reverse(); // Sort dates in descending order
             
-            if (dates.length >= 1) {
-              // Use the most recent day's close as the previous close
-              previousClose = parseFloat(timeSeriesData[dates[0]]['4. close']);
+            if (dates.length >= 2) {
+              // Get current and previous day data
+              const currentDay = timeSeriesData[dates[0]];
+              const previousDay = timeSeriesData[dates[1]];
               
-              // If we didn't get current price from intraday data, use today's close
-              if (currentPrice === null) {
-                currentPrice = previousClose;
-                
-                // And use yesterday's close as previous close if available
-                if (dates.length >= 2) {
-                  previousClose = parseFloat(timeSeriesData[dates[1]]['4. close']);
-                }
-              }
+              // Current day's closing price (most recent available price)
+              const currentPrice = parseFloat(currentDay['4. close']);
+              
+              // Previous day's closing price
+              const previousClose = parseFloat(previousDay['4. close']);
+              
+              // Calculate the daily percentage change (similar to Yahoo Finance)
+              const percentChange = ((currentPrice - previousClose) / previousClose) * 100;
+              
+              // Format the percentage change (e.g., '+1.25%' or '-0.75%')
+              const formattedChange = (percentChange >= 0 ? '+' : '') + percentChange.toFixed(2) + '%';
+              
+              return {
+                ticker,
+                price: currentPrice.toFixed(2),
+                change: formattedChange,
+                valid: true
+              };
             }
           }
           
-          // If we have both prices, calculate the percentage change
-          if (currentPrice !== null && previousClose !== null) {
-            // Calculate the percentage change (current vs previous close)
-            const percentChange = ((currentPrice - previousClose) / previousClose) * 100;
-            
-            // Format the percentage change like Yahoo Finance (e.g., '+1.25%' or '-0.75%')
-            const formattedChange = (percentChange >= 0 ? '+' : '') + percentChange.toFixed(2) + '%';
-            
-            return {
-              ticker,
-              price: currentPrice.toFixed(2),
-              change: formattedChange,
-              valid: true,
-              percentValue: percentChange // Store the raw number for sorting
-            };
-          }
-          
-          // Fallback to Global Quote as a last resort
+          // Fallback to Global Quote which provides current day data directly
           const globalQuoteResponse = await axios.get('https://www.alphavantage.co/query', {
             params: {
               function: 'GLOBAL_QUOTE',
@@ -324,37 +295,43 @@ async function fetchStockPerformance(tickers) {
           
           if (globalQuoteResponse.data && globalQuoteResponse.data['Global Quote']) {
             const quote = globalQuoteResponse.data['Global Quote'];
-            const price = quote['05. price'] ? parseFloat(quote['05. price']) : null;
-            const changePercent = quote['10. change percent'] ? 
-              parseFloat(quote['10. change percent'].replace('%', '')) : 0;
             
-            if (price !== null) {
-              // Format similarly to Yahoo Finance
-              const formattedChange = (changePercent >= 0 ? '+' : '') + changePercent.toFixed(2) + '%';
-              
-              return {
-                ticker,
-                price: price.toFixed(2),
-                change: formattedChange,
-                valid: true,
-                percentValue: changePercent
-              };
+            // Current price
+            const currentPrice = quote['05. price'] ? parseFloat(quote['05. price']) : null;
+            
+            // For Global Quote, use the provided percent change directly
+            // Alpha Vantage already formats this as Yahoo Finance would
+            let changePercent = quote['10. change percent'] || '';
+            
+            // Ensure the percent sign is included and format it consistently
+            if (currentPrice && changePercent) {
+              // Remove the percent sign if it exists and parse the number
+              const numericChange = parseFloat(changePercent.replace('%', ''));
+              // Format it consistently with our other format
+              changePercent = (numericChange >= 0 ? '+' : '') + numericChange.toFixed(2) + '%';
             }
+            
+            return {
+              ticker,
+              price: currentPrice ? currentPrice.toFixed(2) : 'N/A',
+              change: changePercent || 'N/A',
+              valid: currentPrice ? true : false
+            };
           }
           
-          return { ticker, price: 'N/A', change: 'N/A', valid: false, percentValue: 0 };
+          return { ticker, price: 'N/A', change: 'N/A', valid: false };
         } catch (error) {
           console.error(`Error fetching data for ${ticker}:`, error.message);
-          return { ticker, price: 'N/A', change: 'N/A', valid: false, percentValue: 0 };
+          return { ticker, price: 'N/A', change: 'N/A', valid: false };
         }
       });
       
       const batchResults = await Promise.all(batchPromises);
       stockData.push(...batchResults);
       
-      // Avoid rate limiting with Alpha Vantage API
+      // Add a delay between batches to avoid API rate limits
       if (i + batchSize < tickers.length) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
     
@@ -387,12 +364,16 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     return embed;
   }
   
-  // Sort and categorize stocks by the raw percentage value for consistent sorting
-  stockData.sort((a, b) => b.percentValue - a.percentValue);
+  // Sort and categorize stocks
+  stockData.sort((a, b) => {
+    const changeA = parseFloat(a.change.replace('%', '')) || 0;
+    const changeB = parseFloat(b.change.replace('%', '')) || 0;
+    return changeB - changeA;
+  });
   
-  const gainers = stockData.filter(stock => stock.percentValue > 0);
-  const losers = stockData.filter(stock => stock.percentValue < 0);
-  const neutral = stockData.filter(stock => stock.percentValue === 0);
+  const gainers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) > 0);
+  const losers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) < 0);
+  const neutral = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) === 0);
   
   if (gainers.length > 0) {
     embed.addFields({ 
@@ -453,14 +434,14 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     
     // Calculate performance of BUY recommendations
     buyStocks.forEach(stock => {
-      const changeValue = stock.percentValue;
+      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
       buyPerformance += changeValue;
       buyCount++;
     });
     
     // Calculate performance of SELL recommendations
     sellStocks.forEach(stock => {
-      const changeValue = stock.percentValue;
+      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
       sellPerformance -= changeValue; // Negate the change for sell recommendations
       sellCount++;
     });
@@ -475,7 +456,8 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
       const buySign = buyPerformance >= 0 ? '+' : '';
       performanceSummary += `**BUY Recommendations (${buySign}${buyPerformance.toFixed(2)}%)**\n`;
       performanceSummary += buyStocks.map(stock => {
-        return `$${stock.ticker}: $${stock.price} (${stock.change}) ${stock.percentValue > 0 ? '✅' : '❌'}`;
+        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+        return `$${stock.ticker}: ${stock.change} (${changeValue > 0 ? '✅' : '❌'})`;
       }).join('\n') + '\n\n';
     } else if (buyTickers.length > 0) {
       performanceSummary += `**BUY Recommendations**\n`;
@@ -486,7 +468,8 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
       const sellSign = sellPerformance >= 0 ? '+' : '';
       performanceSummary += `**SELL/AVOID Recommendations (${sellSign}${sellPerformance.toFixed(2)}%)**\n`;
       performanceSummary += sellStocks.map(stock => {
-        return `$${stock.ticker}: $${stock.price} (${stock.change}) ${stock.percentValue < 0 ? '✅' : '❌'}`;
+        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+        return `$${stock.ticker}: ${stock.change} (${changeValue < 0 ? '✅' : '❌'})`;
       }).join('\n') + '\n\n';
     } else if (sellTickers.length > 0) {
       performanceSummary += `**SELL/AVOID Recommendations**\n`;
