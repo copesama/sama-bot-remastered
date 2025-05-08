@@ -244,48 +244,7 @@ async function fetchStockPerformance(tickers) {
       
       const batchPromises = batch.map(async (ticker) => {
         try {
-          // Fetch daily time series data
           const response = await axios.get('https://www.alphavantage.co/query', {
-            params: {
-              function: 'TIME_SERIES_DAILY',
-              symbol: ticker,
-              outputsize: 'compact',
-              apikey: process.env.ALPHAVANTAGE_API_KEY
-            }
-          });
-          
-          if (response.data && response.data['Time Series (Daily)']) {
-            const timeSeriesData = response.data['Time Series (Daily)'];
-            const dates = Object.keys(timeSeriesData).sort().reverse(); // Sort dates in descending order
-            
-            if (dates.length >= 2) {
-              // Get current and previous day data
-              const currentDay = timeSeriesData[dates[0]];
-              const previousDay = timeSeriesData[dates[1]];
-              
-              // Current day's closing price (most recent available price)
-              const currentPrice = parseFloat(currentDay['4. close']);
-              
-              // Previous day's closing price
-              const previousClose = parseFloat(previousDay['4. close']);
-              
-              // Calculate the daily percentage change (similar to Yahoo Finance)
-              const percentChange = ((currentPrice - previousClose) / previousClose) * 100;
-              
-              // Format the percentage change (e.g., '+1.25%' or '-0.75%')
-              const formattedChange = (percentChange >= 0 ? '+' : '') + percentChange.toFixed(2) + '%';
-              
-              return {
-                ticker,
-                price: currentPrice.toFixed(2),
-                change: formattedChange,
-                valid: true
-              };
-            }
-          }
-          
-          // Fallback to Global Quote which provides current day data directly
-          const globalQuoteResponse = await axios.get('https://www.alphavantage.co/query', {
             params: {
               function: 'GLOBAL_QUOTE',
               symbol: ticker,
@@ -293,35 +252,17 @@ async function fetchStockPerformance(tickers) {
             }
           });
           
-          if (globalQuoteResponse.data && globalQuoteResponse.data['Global Quote']) {
-            const quote = globalQuoteResponse.data['Global Quote'];
-            
-            // Current price
-            const currentPrice = quote['05. price'] ? parseFloat(quote['05. price']) : null;
-            
-            // For Global Quote, use the provided percent change directly
-            // Alpha Vantage already formats this as Yahoo Finance would
-            let changePercent = quote['10. change percent'] || '';
-            
-            // Ensure the percent sign is included and format it consistently
-            if (currentPrice && changePercent) {
-              // Remove the percent sign if it exists and parse the number
-              const numericChange = parseFloat(changePercent.replace('%', ''));
-              // Format it consistently with our other format
-              changePercent = (numericChange >= 0 ? '+' : '') + numericChange.toFixed(2) + '%';
-            }
-            
+          if (response.data && response.data['Global Quote']) {
+            const quote = response.data['Global Quote'];
             return {
               ticker,
-              price: currentPrice ? currentPrice.toFixed(2) : 'N/A',
-              change: changePercent || 'N/A',
-              valid: currentPrice ? true : false
+              price: quote['05. price'] ? parseFloat(quote['05. price']).toFixed(2) : 'N/A',
+              change: quote['10. change percent'] ? quote['10. change percent'] : 'N/A',
+              valid: quote['05. price'] ? true : false
             };
           }
-          
           return { ticker, price: 'N/A', change: 'N/A', valid: false };
         } catch (error) {
-          console.error(`Error fetching data for ${ticker}:`, error.message);
           return { ticker, price: 'N/A', change: 'N/A', valid: false };
         }
       });
@@ -329,7 +270,6 @@ async function fetchStockPerformance(tickers) {
       const batchResults = await Promise.all(batchPromises);
       stockData.push(...batchResults);
       
-      // Add a delay between batches to avoid API rate limits
       if (i + batchSize < tickers.length) {
         await new Promise(resolve => setTimeout(resolve, 1500));
       }
@@ -337,7 +277,6 @@ async function fetchStockPerformance(tickers) {
     
     return stockData.filter(stock => stock.valid);
   } catch (error) {
-    console.error('Error in fetchStockPerformance:', error);
     return [];
   }
 }
