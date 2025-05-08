@@ -326,9 +326,10 @@ async function fetchStockPerformance(tickers) {
 /**
  * Creates a Discord embed with stock performance data
  * @param {Array} stockData - Array of stock performance data
+ * @param {Object|null} latestAnalysis - Latest financial analysis from database
  * @returns {EmbedBuilder} - Discord embed with formatted stock performance
  */
-function createMarketReportEmbed(stockData) {
+function createMarketReportEmbed(stockData, latestAnalysis = null) {
   const embed = new EmbedBuilder()
     .setColor('#0099ff')
     .setTitle('📊 Daily Market Performance Report')
@@ -376,112 +377,100 @@ function createMarketReportEmbed(stockData) {
     });
   }
   
-  // Calculate AI Performance
-  (async () => {
-    try {
-      const latestAnalysis = await getLatestFinancialAnalysis();
-      
-      if (latestAnalysis && latestAnalysis.content) {
-        const cachedAnalysis = latestAnalysis.content;
-        
-        // Find stocks mentioned in the analysis
-        const buySection = cachedAnalysis.match(/BUY\s*([\s\S]*?)(?:SELL|AVOID|DISCLAIMER|$)/i);
-        const sellSection = cachedAnalysis.match(/(?:SELL|AVOID)\s*([\s\S]*?)(?:DISCLAIMER|$)/i);
-        
-        let buyTickers = [];
-        let sellTickers = [];
-        
-        // Extract tickers from BUY section
-        if (buySection && buySection[1]) {
-          const buyMatches = [...buySection[1].matchAll(/\$([A-Z]{1,5})\b/g)];
-          buyTickers = buyMatches.map(match => match[1]);
-        }
-        
-        // Extract tickers from SELL section
-        if (sellSection && sellSection[1]) {
-          const sellMatches = [...sellSection[1].matchAll(/\$([A-Z]{1,5})\b/g)];
-          sellTickers = sellMatches.map(match => match[1]);
-        }
-        
-        // Remove duplicates and ensure no ticker is in both lists
-        buyTickers = [...new Set(buyTickers)].filter(ticker => !sellTickers.includes(ticker));
-        sellTickers = [...new Set(sellTickers)].filter(ticker => !buyTickers.includes(ticker));
-        
-        // Match with stock data
-        const buyStocks = stockData.filter(stock => buyTickers.includes(stock.ticker));
-        const sellStocks = stockData.filter(stock => sellTickers.includes(stock.ticker));
-        
-        let buyPerformance = 0;
-        let sellPerformance = 0;
-        let buyCount = 0;
-        let sellCount = 0;
-        
-        // Calculate performance of BUY recommendations
-        buyStocks.forEach(stock => {
-          const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
-          buyPerformance += changeValue;
-          buyCount++;
-        });
-        
-        // Calculate performance of SELL recommendations
-        sellStocks.forEach(stock => {
-          const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
-          sellPerformance -= changeValue; // Negate the change for sell recommendations
-          sellCount++;
-        });
-        
-        const totalPerformance = (buyPerformance + sellPerformance).toFixed(2);
-        const sign = parseFloat(totalPerformance) >= 0 ? '+' : '';
-        
-        // Create performance summary
-        let performanceSummary = `**AI Recommendation Performance: ${sign}${totalPerformance}%**\n\n`;
-        
-        if (buyStocks.length > 0) {
-          const buySign = buyPerformance >= 0 ? '+' : '';
-          performanceSummary += `**BUY Recommendations (${buySign}${buyPerformance.toFixed(2)}%)**\n`;
-          performanceSummary += buyStocks.map(stock => {
-            const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
-            return `$${stock.ticker}: ${stock.change} (${changeValue > 0 ? '✅' : '❌'})`;
-          }).join('\n') + '\n\n';
-        } else if (buyTickers.length > 0) {
-          performanceSummary += `**BUY Recommendations**\n`;
-          performanceSummary += `Could not retrieve market data for the recommended buy stocks.\n\n`;
-        }
-        
-        if (sellStocks.length > 0) {
-          const sellSign = sellPerformance >= 0 ? '+' : '';
-          performanceSummary += `**SELL/AVOID Recommendations (${sellSign}${sellPerformance.toFixed(2)}%)**\n`;
-          performanceSummary += sellStocks.map(stock => {
-            const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
-            return `$${stock.ticker}: ${stock.change} (${changeValue < 0 ? '✅' : '❌'})`;
-          }).join('\n') + '\n\n';
-        } else if (sellTickers.length > 0) {
-          performanceSummary += `**SELL/AVOID Recommendations**\n`;
-          performanceSummary += `Could not retrieve market data for the recommended sell stocks.\n\n`;
-        }
-        
-        performanceSummary += `*For BUY recommendations, positive changes are good.*\n`;
-        performanceSummary += `*For SELL recommendations, negative changes are good.*\n`;
-        performanceSummary += `*Total performance: +${Math.abs(buyPerformance.toFixed(2))}% (BUY) ${sellPerformance >= 0 ? '+' : ''}${sellPerformance.toFixed(2)}% (SELL) = ${sign}${totalPerformance}%*`;
-        
-        embed.addFields({ 
-          name: '🤖 AI Recommendation Performance',
-          value: performanceSummary
-        });
-      } else {
-        embed.addFields({ 
-          name: '🤖 AI Recommendation Performance',
-          value: 'No AI analysis available to evaluate performance.'
-        });
-      }
-    } catch (error) {
-      console.error('Error calculating AI performance:', error);
-      embed.addFields({ 
-        name: '🤖 AI Recommendation Performance',
-        value: 'Error calculating AI recommendation performance.'
-      });
+  // Add AI performance data if available
+  if (latestAnalysis && latestAnalysis.content) {
+    const cachedAnalysis = latestAnalysis.content;
+    
+    // Find stocks mentioned in the analysis
+    const buySection = cachedAnalysis.match(/BUY\s*([\s\S]*?)(?:SELL|AVOID|DISCLAIMER|$)/i);
+    const sellSection = cachedAnalysis.match(/(?:SELL|AVOID)\s*([\s\S]*?)(?:DISCLAIMER|$)/i);
+    
+    let buyTickers = [];
+    let sellTickers = [];
+    
+    // Extract tickers from BUY section
+    if (buySection && buySection[1]) {
+      const buyMatches = [...buySection[1].matchAll(/\$([A-Z]{1,5})\b/g)];
+      buyTickers = buyMatches.map(match => match[1]);
     }
-  })();
+    
+    // Extract tickers from SELL section
+    if (sellSection && sellSection[1]) {
+      const sellMatches = [...sellSection[1].matchAll(/\$([A-Z]{1,5})\b/g)];
+      sellTickers = sellMatches.map(match => match[1]);
+    }
+    
+    // Remove duplicates and ensure no ticker is in both lists
+    buyTickers = [...new Set(buyTickers)].filter(ticker => !sellTickers.includes(ticker));
+    sellTickers = [...new Set(sellTickers)].filter(ticker => !buyTickers.includes(ticker));
+    
+    // Match with stock data
+    const buyStocks = stockData.filter(stock => buyTickers.includes(stock.ticker));
+    const sellStocks = stockData.filter(stock => sellTickers.includes(stock.ticker));
+    
+    let buyPerformance = 0;
+    let sellPerformance = 0;
+    let buyCount = 0;
+    let sellCount = 0;
+    
+    // Calculate performance of BUY recommendations
+    buyStocks.forEach(stock => {
+      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+      buyPerformance += changeValue;
+      buyCount++;
+    });
+    
+    // Calculate performance of SELL recommendations
+    sellStocks.forEach(stock => {
+      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+      sellPerformance -= changeValue; // Negate the change for sell recommendations
+      sellCount++;
+    });
+    
+    const totalPerformance = (buyPerformance + sellPerformance).toFixed(2);
+    const sign = parseFloat(totalPerformance) >= 0 ? '+' : '';
+    
+    // Create performance summary
+    let performanceSummary = `**AI Recommendation Performance: ${sign}${totalPerformance}%**\n\n`;
+    
+    if (buyStocks.length > 0) {
+      const buySign = buyPerformance >= 0 ? '+' : '';
+      performanceSummary += `**BUY Recommendations (${buySign}${buyPerformance.toFixed(2)}%)**\n`;
+      performanceSummary += buyStocks.map(stock => {
+        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+        return `$${stock.ticker}: ${stock.change} (${changeValue > 0 ? '✅' : '❌'})`;
+      }).join('\n') + '\n\n';
+    } else if (buyTickers.length > 0) {
+      performanceSummary += `**BUY Recommendations**\n`;
+      performanceSummary += `Could not retrieve market data for the recommended buy stocks.\n\n`;
+    }
+    
+    if (sellStocks.length > 0) {
+      const sellSign = sellPerformance >= 0 ? '+' : '';
+      performanceSummary += `**SELL/AVOID Recommendations (${sellSign}${sellPerformance.toFixed(2)}%)**\n`;
+      performanceSummary += sellStocks.map(stock => {
+        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+        return `$${stock.ticker}: ${stock.change} (${changeValue < 0 ? '✅' : '❌'})`;
+      }).join('\n') + '\n\n';
+    } else if (sellTickers.length > 0) {
+      performanceSummary += `**SELL/AVOID Recommendations**\n`;
+      performanceSummary += `Could not retrieve market data for the recommended sell stocks.\n\n`;
+    }
+    
+    performanceSummary += `*For BUY recommendations, positive changes are good.*\n`;
+    performanceSummary += `*For SELL recommendations, negative changes are good.*\n`;
+    performanceSummary += `*Total performance: +${Math.abs(buyPerformance.toFixed(2))}% (BUY) ${sellPerformance >= 0 ? '+' : ''}${sellPerformance.toFixed(2)}% (SELL) = ${sign}${totalPerformance}%*`;
+    
+    embed.addFields({ 
+      name: '🤖 AI Recommendation Performance',
+      value: performanceSummary
+    });
+  } else {
+    embed.addFields({ 
+      name: '🤖 AI Recommendation Performance',
+      value: 'No AI analysis available to evaluate performance.'
+    });
+  }
   
   return embed;
 }
@@ -504,7 +493,7 @@ async function sendMarketPerformanceReport(client) {
       return;
     }
     
-    const reportEmbed = createMarketReportEmbed(stockData);
+    const reportEmbed = createMarketReportEmbed(stockData, latestAnalysis);
     
     let successCount = 0;
     let failCount = 0;
@@ -767,7 +756,8 @@ async function handleFinanceReportCommand(message, client) {
       return;
     }
     
-    const reportEmbed = createMarketReportEmbed(stockData);
+    // Create the embed with all data available synchronously
+    const reportEmbed = createMarketReportEmbed(stockData, latestAnalysis);
     
     await loadingMessage.edit({ 
       content: '📊 Here\'s the market performance report for stocks mentioned in our analysis:', 
