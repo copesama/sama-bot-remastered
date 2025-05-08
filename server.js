@@ -5,7 +5,9 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const cookieParser = require('cookie-parser');
-const { connectToDatabase } = require('./utils/mongooseUtil');
+const { connectToDatabase, Game, sanitizeGameHtml } = require('./utils/mongooseUtil');
+// Import security middleware
+const { securityHeaders, sanitizeCookies } = require('./utils/securityMiddleware');
 
 // Import the finance news module - update to include the handleFinanceReportCommand function
 const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } = require('./commands/financeNews');
@@ -81,6 +83,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
 // Create HTTP server using Express app
 const server = http.createServer(app);
 
+// Use a stronger JWT_SECRET in production
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-key') {
+  console.warn('WARNING: Using default JWT secret in production environment. Set JWT_SECRET environment variable.');
+}
+
 // Create games directory if it doesn't exist
 const GAMES_DIR = path.join(__dirname, 'games');
 if (!fs.existsSync(GAMES_DIR)) {
@@ -99,9 +106,19 @@ if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR);
 }
 
-// Serve static game files
-app.use('/games', express.static(GAMES_DIR));
+// Add security middleware
+app.use(securityHeaders);
 app.use(cookieParser());
+app.use(sanitizeCookies);
+
+// Serve static game files with added security
+app.use('/games', (req, res, next) => {
+  // Only allow access to .html files from games directory
+  if (!req.path.endsWith('.html')) {
+    return res.status(404).send('Not Found');
+  }
+  next();
+}, express.static(GAMES_DIR));
 
 // Set up game routes with authentication
 setupGameRoutes(app, JWT_SECRET);
