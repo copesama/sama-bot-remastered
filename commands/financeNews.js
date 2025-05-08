@@ -1,41 +1,47 @@
 const axios = require('axios');
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const schedule = require('node-schedule');
-const { connectToDatabase, FinanceChannel } = require('../utils/mongooseUtil');
+const { 
+  connectToDatabase, 
+  FinanceChannel, 
+  FinanceNewsCache, 
+  FinanceAnalysisCache,
+  ScheduledJob 
+} = require('../utils/mongooseUtil');
 
-// Store subscribed channels (guildId -> channelId) in memory cache for performance
-let subscribedChannelsCache = new Map();
 let dailyNewsJob = null;
 let dailyReportJob = null;
-let cachedNewsArticles = null;
-let lastFetchDate = null;
-let cachedAnalysis = null;
-let lastAnalysisDate = null;
-let lastAnalysisStocks = null; // Store stock tickers from the last analysis
 let isDbConnected = false;
 
 /**
- * Loads subscribed channels from MongoDB
+ * Ensures database connection is established
  */
-async function loadSubscribedChannels() {
+async function ensureDbConnection() {
+  if (!isDbConnected) {
+    await connectToDatabase();
+    isDbConnected = true;
+  }
+}
+
+/**
+ * Gets all subscribed channels from database
+ * @returns {Promise<Map>} - Map of guildId -> channelId
+ */
+async function getSubscribedChannels() {
   try {
-    if (!isDbConnected) {
-      await connectToDatabase();
-      isDbConnected = true;
-    }
+    await ensureDbConnection();
     
     const channels = await FinanceChannel.find({});
-    subscribedChannelsCache = new Map();
+    const channelsMap = new Map();
     
     channels.forEach(channel => {
-      subscribedChannelsCache.set(channel.guildId, channel.channelId);
+      channelsMap.set(channel.guildId, channel.channelId);
     });
     
-    return subscribedChannelsCache;
+    return channelsMap;
   } catch (error) {
     console.error('Failed to load subscribed channels from MongoDB:', error);
-    subscribedChannelsCache = new Map();
-    return subscribedChannelsCache;
+    return new Map();
   }
 }
 
@@ -47,14 +53,11 @@ async function loadSubscribedChannels() {
  */
 async function subscribeChannel(guildId, channelId) {
   try {
-    if (!isDbConnected) {
-      await connectToDatabase();
-      isDbConnected = true;
-    }
+    await ensureDbConnection();
     
     // Check if already subscribed to this channel
-    const existingChannelId = subscribedChannelsCache.get(guildId);
-    const alreadySubscribed = existingChannelId === channelId;
+    const existingChannel = await FinanceChannel.findOne({ guildId });
+    const alreadySubscribed = existingChannel && existingChannel.channelId === channelId;
 
     // Update database
     await FinanceChannel.updateOne(
@@ -62,9 +65,6 @@ async function subscribeChannel(guildId, channelId) {
       { guildId, channelId },
       { upsert: true }
     );
-    
-    // Update cache
-    subscribedChannelsCache.set(guildId, channelId);
     
     return {
       success: true,
@@ -86,16 +86,13 @@ async function subscribeChannel(guildId, channelId) {
  */
 async function unsubscribeChannel(guildId) {
   try {
-    if (!isDbConnected) {
-      await connectToDatabase();
-      isDbConnected = true;
-    }
+    await ensureDbConnection();
     
-    const wasSubscribed = subscribedChannelsCache.has(guildId);
+    const existingChannel = await FinanceChannel.findOne({ guildId });
+    const wasSubscribed = !!existingChannel;
     
     if (wasSubscribed) {
       await FinanceChannel.deleteOne({ guildId });
-      subscribedChannelsCache.delete(guildId);
     }
     
     return wasSubscribed;
@@ -108,10 +105,18 @@ async function unsubscribeChannel(guildId) {
 /**
  * Check if a guild is subscribed to finance news
  * @param {string} guildId - Discord server ID
- * @returns {string|null} - Channel ID if subscribed, null otherwise
+ * @returns {Promise<string|null>} - Channel ID if subscribed, null otherwise
  */
-function getSubscribedChannel(guildId) {
-  return subscribedChannelsCache.get(guildId) || null;
+async function getSubscribedChannel(guildId) {
+  try {
+    await ensureDbConnection();
+    
+    const channel = await FinanceChannel.findOne({ guildId });
+    return channel ? channel.channelId : null;
+  } catch (error) {
+    console.error('Failed to get subscribed channel:', error);
+    return null;
+  }
 }
 
 /**
@@ -121,11 +126,15 @@ function getSubscribedChannel(guildId) {
  * @returns {Promise<Array>} - Array of news articles
  */
 async function fetchFinanceNews(apiKey, limit = 15) {
+  await ensureDbConnection();
+  
   // Check if we already have fresh news (less than 24 hours old)
+  const cachedNews = await FinanceNewsCache.findOne().sort({ fetchDate: -1 });
   const now = new Date();
-  if (cachedNewsArticles && lastFetchDate && 
-      (now.getTime() - lastFetchDate.getTime() < 23 * 60 * 60 * 1000)) {
-    return cachedNewsArticles;
+  
+  if (cachedNews && 
+      (now.getTime() - cachedNews.fetchDate.getTime() < 23 * 60 * 60 * 1000)) {
+    return cachedNews.newsArticles;
   }
 
   try {
@@ -146,10 +155,19 @@ async function fetchFinanceNews(apiKey, limit = 15) {
 
     // Check if we got valid results
     if (response.data && response.data.articles && response.data.articles.length > 0) {
-      // Cache the results
-      cachedNewsArticles = response.data.articles.slice(0, limit);
-      lastFetchDate = new Date();
-      return cachedNewsArticles;
+      // Cache the results in MongoDB
+      const newsArticles = response.data.articles.slice(0, limit);
+      
+      // Delete old cache entries first
+      await FinanceNewsCache.deleteMany({});
+      
+      // Create new cache entry
+      await FinanceNewsCache.create({
+        newsArticles: newsArticles,
+        fetchDate: now
+      });
+      
+      return newsArticles;
     } else {
       return [];
     }
@@ -279,9 +297,11 @@ async function fetchStockPerformance(tickers) {
 /**
  * Creates a Discord embed with stock performance data
  * @param {Array} stockData - Array of stock performance data
- * @returns {EmbedBuilder} - Discord embed with formatted stock performance
+ * @returns {Promise<EmbedBuilder>} - Discord embed with formatted stock performance
  */
-function createMarketReportEmbed(stockData) {
+async function createMarketReportEmbed(stockData) {
+  await ensureDbConnection();
+  
   const embed = new EmbedBuilder()
     .setColor('#0099ff')
     .setTitle('📊 Daily Market Performance Report')
@@ -328,8 +348,12 @@ function createMarketReportEmbed(stockData) {
     });
   }
   
-  // Calculate AI Performance
-  if (cachedAnalysis) {
+  // Get the latest analysis from database
+  const latestAnalysis = await FinanceAnalysisCache.findOne().sort({ analysisDate: -1 });
+  
+  if (latestAnalysis) {
+    const cachedAnalysis = latestAnalysis.analysis;
+    
     // Find stocks mentioned in the analysis
     const buySection = cachedAnalysis.match(/BUY\s*([\s\S]*?)(?:SELL|AVOID|DISCLAIMER|$)/i);
     const sellSection = cachedAnalysis.match(/(?:SELL|AVOID)\s*([\s\S]*?)(?:DISCLAIMER|$)/i);
@@ -432,22 +456,27 @@ function createMarketReportEmbed(stockData) {
  */
 async function sendMarketPerformanceReport(client) {
   try {
-    if (!lastAnalysisStocks || lastAnalysisStocks.length === 0) {
+    await ensureDbConnection();
+    
+    const latestAnalysis = await FinanceAnalysisCache.findOne().sort({ analysisDate: -1 });
+    if (!latestAnalysis || !latestAnalysis.analyzedStocks || latestAnalysis.analyzedStocks.length === 0) {
       return;
     }
     
-    const stockData = await fetchStockPerformance(lastAnalysisStocks);
+    const stockData = await fetchStockPerformance(latestAnalysis.analyzedStocks);
     
     if (stockData.length === 0) {
       return;
     }
     
-    const reportEmbed = createMarketReportEmbed(stockData);
+    const reportEmbed = await createMarketReportEmbed(stockData);
     
     let successCount = 0;
     let failCount = 0;
     
-    for (const [guildId, channelId] of subscribedChannelsCache.entries()) {
+    const subscribedChannels = await getSubscribedChannels();
+    
+    for (const [guildId, channelId] of subscribedChannels.entries()) {
       try {
         const channel = await client.channels.fetch(channelId);
         if (channel && channel.isTextBased()) {
@@ -463,9 +492,29 @@ async function sendMarketPerformanceReport(client) {
         failCount++;
       }
     }
+    
+    // Update job run info in database
+    await ScheduledJob.updateOne(
+      { jobName: 'dailyReport' },
+      { 
+        jobName: 'dailyReport',
+        lastRun: new Date(),
+        nextRun: getNextRunTime('0 5 20 * * *')
+      },
+      { upsert: true }
+    );
   } catch (error) {
-    // Error in market performance report
+    console.error('Error in market performance report:', error);
   }
+}
+
+/**
+ * Helper function to calculate next run time based on cron expression
+ * @param {string} cronExpression - Cron expression for job scheduling
+ * @returns {Date} - Next run time
+ */
+function getNextRunTime(cronExpression) {
+  return schedule.scheduleJob(cronExpression, () => {}).nextInvocation();
 }
 
 /**
@@ -474,10 +523,15 @@ async function sendMarketPerformanceReport(client) {
  * @returns {Promise<string>} - Financial analysis and stock advice
  */
 async function generateFinancialAnalysis(newsArticles) {
+  await ensureDbConnection();
+  
+  // Check if we already have fresh analysis (less than 24 hours old)
+  const latestAnalysis = await FinanceAnalysisCache.findOne().sort({ analysisDate: -1 });
   const now = new Date();
-  if (cachedAnalysis && lastAnalysisDate && 
-      (now.getTime() - lastAnalysisDate.getTime() < 23 * 60 * 60 * 1000)) {
-    return cachedAnalysis;
+  
+  if (latestAnalysis && 
+      (now.getTime() - latestAnalysis.analysisDate.getTime() < 23 * 60 * 60 * 1000)) {
+    return latestAnalysis.analysis;
   }
 
   try {
@@ -538,14 +592,25 @@ async function generateFinancialAnalysis(newsArticles) {
     );
 
     if (response.data && response.data.choices && response.data.choices[0].message.content) {
-      cachedAnalysis = response.data.choices[0].message.content;
-      lastAnalysisDate = new Date();
-      lastAnalysisStocks = extractStockTickers(cachedAnalysis);
-      return cachedAnalysis;
+      const analysis = response.data.choices[0].message.content;
+      const analyzedStocks = extractStockTickers(analysis);
+      
+      // Delete old analysis entries first
+      await FinanceAnalysisCache.deleteMany({});
+      
+      // Create new analysis entry
+      await FinanceAnalysisCache.create({
+        analysis: analysis,
+        analyzedStocks: analyzedStocks,
+        analysisDate: now
+      });
+      
+      return analysis;
     } else {
       return "No financial analysis available at this time.";
     }
   } catch (error) {
+    console.error('Error generating financial analysis:', error);
     return "Failed to generate financial analysis due to an error.";
   }
 }
@@ -595,7 +660,9 @@ function createNewsEmbed(newsArticles, analysis = null) {
  * @param {Object} client - Discord client
  * @param {string} apiKey - NewsAPI API key
  */
-function scheduleDailyNews(client, apiKey) {
+async function scheduleDailyNews(client, apiKey) {
+  await ensureDbConnection();
+  
   // Cancel existing jobs if they exist
   if (dailyNewsJob) {
     dailyNewsJob.cancel();
@@ -604,6 +671,10 @@ function scheduleDailyNews(client, apiKey) {
   if (dailyReportJob) {
     dailyReportJob.cancel();
   }
+  
+  // Get the job info from database
+  const newsJobInfo = await ScheduledJob.findOne({ jobName: 'dailyNews' });
+  const reportJobInfo = await ScheduledJob.findOne({ jobName: 'dailyReport' });
   
   // Schedule new jobs with proper cron format
   // Run at 8:15 AM EST/EDT (13:15 UTC) for morning news
@@ -622,7 +693,9 @@ function scheduleDailyNews(client, apiKey) {
       let successCount = 0;
       let failCount = 0;
       
-      for (const [guildId, channelId] of subscribedChannelsCache.entries()) {
+      const subscribedChannels = await getSubscribedChannels();
+      
+      for (const [guildId, channelId] of subscribedChannels.entries()) {
         try {
           const channel = await client.channels.fetch(channelId);
           if (channel && channel.isTextBased()) {
@@ -650,8 +723,19 @@ function scheduleDailyNews(client, apiKey) {
           failCount++;
         }
       }
+      
+      // Update job run info in database
+      await ScheduledJob.updateOne(
+        { jobName: 'dailyNews' },
+        { 
+          jobName: 'dailyNews',
+          lastRun: new Date(),
+          nextRun: getNextRunTime('0 15 13 * * *')
+        },
+        { upsert: true }
+      );
     } catch (error) {
-      // Error in scheduled finance news job
+      console.error('Error in scheduled finance news job:', error);
     }
   });
   
@@ -659,6 +743,25 @@ function scheduleDailyNews(client, apiKey) {
   dailyReportJob = schedule.scheduleJob('0 5 20 * * *', async function() {
     await sendMarketPerformanceReport(client);
   });
+  
+  // Update next run time in database
+  await ScheduledJob.updateOne(
+    { jobName: 'dailyNews' },
+    { 
+      jobName: 'dailyNews',
+      nextRun: getNextRunTime('0 15 13 * * *')
+    },
+    { upsert: true }
+  );
+  
+  await ScheduledJob.updateOne(
+    { jobName: 'dailyReport' },
+    { 
+      jobName: 'dailyReport',
+      nextRun: getNextRunTime('0 5 20 * * *')
+    },
+    { upsert: true }
+  );
 }
 
 /**
@@ -668,8 +771,8 @@ function scheduleDailyNews(client, apiKey) {
  */
 async function initFinanceNews(client, apiKey) {
   try {
-    await loadSubscribedChannels();
-    scheduleDailyNews(client, apiKey);
+    await ensureDbConnection();
+    await scheduleDailyNews(client, apiKey);
   } catch (error) {
     console.error('Failed to initialize finance news:', error);
   }
@@ -684,19 +787,23 @@ async function handleFinanceReportCommand(message, client) {
   try {
     const loadingMessage = await message.reply('📊 Generating market performance report...');
     
-    if (!lastAnalysisStocks || lastAnalysisStocks.length === 0) {
+    await ensureDbConnection();
+    
+    const latestAnalysis = await FinanceAnalysisCache.findOne().sort({ analysisDate: -1 });
+    
+    if (!latestAnalysis || !latestAnalysis.analyzedStocks || latestAnalysis.analyzedStocks.length === 0) {
       await loadingMessage.edit('No stock tickers available. Please run `!financenews` first to generate financial analysis.');
       return;
     }
     
-    const stockData = await fetchStockPerformance(lastAnalysisStocks);
+    const stockData = await fetchStockPerformance(latestAnalysis.analyzedStocks);
     
     if (stockData.length === 0) {
       await loadingMessage.edit('Could not retrieve stock data for any of the analyzed stocks. Please try again later.');
       return;
     }
     
-    const reportEmbed = createMarketReportEmbed(stockData);
+    const reportEmbed = await createMarketReportEmbed(stockData);
     
     await loadingMessage.edit({ 
       content: '📊 Here\'s the market performance report for stocks mentioned in our analysis:', 
@@ -704,6 +811,7 @@ async function handleFinanceReportCommand(message, client) {
     });
     
   } catch (error) {
+    console.error('Error generating finance report:', error);
     try {
       await message.reply('Sorry, there was an error generating the financial report. Please try again later.');
     } catch (e) {
@@ -751,7 +859,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
         return;
       }
       else if (action === 'status') {
-        const subscribedChannelId = getSubscribedChannel(message.guild.id);
+        const subscribedChannelId = await getSubscribedChannel(message.guild.id);
         if (subscribedChannelId) {
           const channelMention = `<#${subscribedChannelId}>`;
           await message.reply(`This server is subscribed to daily financial news in channel ${channelMention}.`);
@@ -797,9 +905,11 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
         await loadingAnalysis.edit('Sorry, I couldn\'t generate a financial analysis at this time.');
       }
     } catch (analysisError) {
+      console.error('Error generating analysis:', analysisError);
       await message.channel.send('Sorry, there was an error generating the financial analysis.').catch(() => {});
     }
   } catch (error) {
+    console.error('Error handling finance news command:', error);
     let errorMessage = 'Sorry, there was an error fetching financial news. Please try again later.';
     
     if (error.response) {
