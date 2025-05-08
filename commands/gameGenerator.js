@@ -4,8 +4,9 @@ const path = require('path');
 const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
 const jwt = require('jsonwebtoken');
+const { Game, connectToDatabase } = require('../utils/mongooseUtil');
 
-// Path to games directory (relative to project root)
+// Path to games directory (relative to project root) - kept for backwards compatibility
 const GAMES_DIR = path.join(__dirname, '..', 'games');
 
 // Function to generate a single-player game using OpenRouter API
@@ -86,9 +87,24 @@ async function generateSinglePlayerGame(prompt) {
     
     // Generate unique ID for the game
     const gameId = shortid.generate();
-    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     
-    // Save the game HTML to file
+    // Connect to MongoDB
+    await connectToDatabase();
+    
+    // Save the game to MongoDB
+    const game = new Game({
+      gameId: gameId,
+      html: htmlGame,
+      prompt: prompt
+    });
+    
+    await game.save();
+    
+    // Also save to file system for backwards compatibility
+    if (!fs.existsSync(GAMES_DIR)) {
+      fs.mkdirSync(GAMES_DIR, { recursive: true });
+    }
+    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     fs.writeFileSync(gamePath, htmlGame);
     
     return gameId;
@@ -161,6 +177,16 @@ async function editGame(gameId, editPrompt, originalHtml) {
     const gameCode = response.data.choices[0].message.content;
     const editedHtml = extractHtmlFromResponse(gameCode);
     
+    // Connect to MongoDB
+    await connectToDatabase();
+    
+    // Update the game in MongoDB
+    await Game.updateOne({ gameId: gameId }, { 
+      html: editedHtml,
+      updatedAt: new Date()
+    });
+    
+    // Also update in file system for backwards compatibility
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     fs.writeFileSync(gamePath, editedHtml);
     
@@ -214,6 +240,16 @@ async function enhanceGame(gameId, originalHtml) {
     const gameCode = response.data.choices[0].message.content;
     const enhancedHtml = extractHtmlFromResponse(gameCode);
     
+    // Connect to MongoDB
+    await connectToDatabase();
+    
+    // Update the game in MongoDB
+    await Game.updateOne({ gameId: gameId }, { 
+      html: enhancedHtml,
+      updatedAt: new Date()
+    });
+    
+    // Also update in file system for backwards compatibility
     const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     fs.writeFileSync(gamePath, enhancedHtml);
     
@@ -271,43 +307,95 @@ function generateGuestUserData() {
 
 // Handle game route and authentication
 function setupGameRoutes(app, jwtSecret) {
-  app.get('/game/:gameId', (req, res) => {
+  app.get('/game/:gameId', async (req, res) => {
     const gameId = req.params.gameId;
     const userToken = req.query.token;
-    const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
     
-    if (fs.existsSync(gamePath)) {
-      // If we have a user token, verify it
-      let userData = null;
+    try {
+      // Connect to MongoDB
+      await connectToDatabase();
       
-      if (userToken) {
-        try {
-          userData = jwt.verify(userToken, jwtSecret);
-          // Set cookie with user data for the game
-          res.cookie('gameUserData', JSON.stringify(userData), { 
-            maxAge: 3600000, // 1 hour
-            httpOnly: false
-          });
-        } catch (err) {
-          // Generate a guest token if the provided token is invalid
+      // Retrieve game from MongoDB
+      const game = await Game.findOne({ gameId: gameId });
+      
+      if (game) {
+        // If we have a user token, verify it
+        let userData = null;
+        
+        if (userToken) {
+          try {
+            userData = jwt.verify(userToken, jwtSecret);
+            // Set cookie with user data for the game
+            res.cookie('gameUserData', JSON.stringify(userData), { 
+              maxAge: 3600000, // 1 hour
+              httpOnly: false
+            });
+          } catch (err) {
+            // Generate a guest token if the provided token is invalid
+            userData = generateGuestUserData();
+            res.cookie('gameUserData', JSON.stringify(userData), { 
+              maxAge: 3600000, 
+              httpOnly: false 
+            });
+          }
+        } else {
+          // If no token provided, create a guest user
           userData = generateGuestUserData();
           res.cookie('gameUserData', JSON.stringify(userData), { 
             maxAge: 3600000, 
             httpOnly: false 
           });
         }
+        
+        // Serve the game HTML directly from the database
+        res.send(game.html);
       } else {
-        // If no token provided, create a guest user
-        userData = generateGuestUserData();
-        res.cookie('gameUserData', JSON.stringify(userData), { 
-          maxAge: 3600000, 
-          httpOnly: false 
-        });
+        // Try to fall back to file system for backwards compatibility
+        const gamePath = path.join(GAMES_DIR, `${gameId}.html`);
+        if (fs.existsSync(gamePath)) {
+          // If we have a user token, verify it
+          let userData = null;
+          
+          if (userToken) {
+            try {
+              userData = jwt.verify(userToken, jwtSecret);
+              res.cookie('gameUserData', JSON.stringify(userData), { 
+                maxAge: 3600000, 
+                httpOnly: false 
+              });
+            } catch (err) {
+              userData = generateGuestUserData();
+              res.cookie('gameUserData', JSON.stringify(userData), { 
+                maxAge: 3600000, 
+                httpOnly: false 
+              });
+            }
+          } else {
+            userData = generateGuestUserData();
+            res.cookie('gameUserData', JSON.stringify(userData), { 
+              maxAge: 3600000, 
+              httpOnly: false 
+            });
+          }
+          
+          // Import game from file system to MongoDB for future use
+          const gameHtml = fs.readFileSync(gamePath, 'utf8');
+          const newGame = new Game({
+            gameId: gameId,
+            html: gameHtml,
+            prompt: "Imported from file system"
+          });
+          
+          await newGame.save();
+          
+          res.sendFile(gamePath);
+        } else {
+          res.status(404).send('Game not found');
+        }
       }
-      
-      res.sendFile(gamePath);
-    } else {
-      res.status(404).send('Game not found');
+    } catch (error) {
+      console.error("Error retrieving game:", error);
+      res.status(500).send('Error retrieving the game');
     }
   });
 }
@@ -346,26 +434,46 @@ function createGameEmbed(gameId, gamePrompt, gameUrl) {
  * @param {string} jwtSecret - Secret for JWT token generation
  */
 async function handlePlayGameCommand(message, gameId, gamesDir, port, jwtSecret) {
-  const path = require('path');
-  const fs = require('fs');
-  const { EmbedBuilder } = require('discord.js');
-  
-  const gamePath = path.join(gamesDir, `${gameId}.html`);
-  if (!fs.existsSync(gamePath)) {
-    message.reply(`Error: Game with ID ${gameId} not found.`);
-    return;
-  }
-  
-  const serverUrl = process.env.SERVER_URL || `http://localhost:${port}`;
-  const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+  try {
+    // Connect to MongoDB
+    await connectToDatabase();
+    
+    // Check if game exists in MongoDB
+    const game = await Game.findOne({ gameId: gameId });
+    
+    if (!game) {
+      // Try file system as fallback for backwards compatibility
+      const gamePath = path.join(gamesDir, `${gameId}.html`);
+      if (!fs.existsSync(gamePath)) {
+        message.reply(`Error: Game with ID ${gameId} not found.`);
+        return;
+      }
+      
+      // Import game from file system to MongoDB for future use
+      const gameHtml = fs.readFileSync(gamePath, 'utf8');
+      const newGame = new Game({
+        gameId: gameId,
+        html: gameHtml,
+        prompt: "Imported from file system"
+      });
+      
+      await newGame.save();
+    }
+    
+    const serverUrl = process.env.SERVER_URL || `http://localhost:${port}`;
+    const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
 
-  // Generate game link
-  const gameUrl = generateGameLink(gameId, message.author, baseUrl, jwtSecret);
-  
-  // Create game embed
-  const gameEmbed = createGameEmbed(gameId, null, gameUrl);
-  
-  await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
+    // Generate game link
+    const gameUrl = generateGameLink(gameId, message.author, baseUrl, jwtSecret);
+    
+    // Create game embed
+    const gameEmbed = createGameEmbed(gameId, game?.prompt || null, gameUrl);
+    
+    await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
+  } catch (error) {
+    console.error("Error handling play game command:", error);
+    message.reply("Sorry, there was an error retrieving your game. Please try again later.");
+  }
 }
 
 /**
@@ -376,18 +484,30 @@ async function handlePlayGameCommand(message, gameId, gamesDir, port, jwtSecret)
  * @returns {Object|null} - Object with gameId and loadingMessage if successful, null otherwise
  */
 async function handleEditGameCommand(message, gameId, gamesDir) {
-  const path = require('path');
-  const fs = require('fs');
-  
-  const gamePath = path.join(gamesDir, `${gameId}.html`);
-  if (!fs.existsSync(gamePath)) {
-    message.reply(`Error: Game with ID ${gameId} not found.`);
+  try {
+    // Connect to MongoDB
+    await connectToDatabase();
+    
+    // Check if game exists in MongoDB
+    const game = await Game.findOne({ gameId: gameId });
+    
+    if (!game) {
+      // Try file system as fallback for backwards compatibility
+      const gamePath = path.join(gamesDir, `${gameId}.html`);
+      if (!fs.existsSync(gamePath)) {
+        message.reply(`Error: Game with ID ${gameId} not found.`);
+        return null;
+      }
+    }
+    
+    const loadingMessage = await message.reply(`Game ${gameId} found. Please send your edit request in the next message.`);
+    
+    return { gameId, loadingMessage };
+  } catch (error) {
+    console.error("Error handling edit game command:", error);
+    message.reply("Sorry, there was an error retrieving your game. Please try again later.");
     return null;
   }
-  
-  const loadingMessage = await message.reply(`Game ${gameId} found. Please send your edit request in the next message.`);
-  
-  return { gameId, loadingMessage };
 }
 
 /**
@@ -397,39 +517,51 @@ async function handleEditGameCommand(message, gameId, gamesDir) {
  * @param {string} gamesDir - Directory where games are stored
  */
 async function handleEnhanceGameCommand(message, gameId, gamesDir) {
-  const path = require('path');
-  const fs = require('fs');
-  const { EmbedBuilder } = require('discord.js');
-  
-  const gamePath = path.join(gamesDir, `${gameId}.html`);
-  if (!fs.existsSync(gamePath)) {
-    message.reply(`Error: Game with ID ${gameId} not found.`);
-    return;
-  }
-  
-  const loadingMessage = await message.reply(`🔄 Enhancing game ${gameId}... This might take a minute or two!`);
-  
   try {
-    const originalHtml = fs.readFileSync(gamePath, 'utf8');
+    // Connect to MongoDB
+    await connectToDatabase();
     
-    await enhanceGame(gameId, originalHtml);
+    // Check if game exists in MongoDB
+    const game = await Game.findOne({ gameId: gameId });
+    let originalHtml;
     
-    const gameEmbed = new EmbedBuilder()
-      .setColor('#5533ff')
-      .setTitle('✨ Your Game Has Been Enhanced!')
-      .setDescription('Your game has been automatically improved with bug fixes and enhanced features!')
-      .addFields(
-        { name: 'Game ID', value: `\`${gameId}\`` },
-        { name: 'Enhancements Applied', value: '• Bug fixes\n• Improved game mechanics\n• Enhanced visuals\n• Performance optimization\n• Mobile compatibility improvements' },
-        { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your enhanced game.' }
-      )
-      .setFooter({ text: 'Auto-enhanced using AI • To play, use !playgame command' })
-      .setTimestamp();
+    if (game) {
+      originalHtml = game.html;
+    } else {
+      // Try file system as fallback for backwards compatibility
+      const gamePath = path.join(gamesDir, `${gameId}.html`);
+      if (!fs.existsSync(gamePath)) {
+        message.reply(`Error: Game with ID ${gameId} not found.`);
+        return;
+      }
+      originalHtml = fs.readFileSync(gamePath, 'utf8');
+    }
     
-    await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
+    const loadingMessage = await message.reply(`🔄 Enhancing game ${gameId}... This might take a minute or two!`);
     
+    try {
+      await enhanceGame(gameId, originalHtml);
+      
+      const gameEmbed = new EmbedBuilder()
+        .setColor('#5533ff')
+        .setTitle('✨ Your Game Has Been Enhanced!')
+        .setDescription('Your game has been automatically improved with bug fixes and enhanced features!')
+        .addFields(
+          { name: 'Game ID', value: `\`${gameId}\`` },
+          { name: 'Enhancements Applied', value: '• Bug fixes\n• Improved game mechanics\n• Enhanced visuals\n• Performance optimization\n• Mobile compatibility improvements' },
+          { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your enhanced game.' }
+        )
+        .setFooter({ text: 'Auto-enhanced using AI • To play, use !playgame command' })
+        .setTimestamp();
+      
+      await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
+      
+    } catch (error) {
+      console.error("Error enhancing game:", error);
+      await loadingMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
+    }
   } catch (error) {
-    await loadingMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
+    message.reply('Sorry, there was an error retrieving your game. Please try again later.');
   }
 }
 
@@ -446,13 +578,24 @@ async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
   await loadingMessage.edit('🔄 Editing your game... This might take a minute!');
   
   try {
-    const gamePath = path.join(gamesDir, `${gameId}.html`);
-    if (!fs.existsSync(gamePath)) {
-      await loadingMessage.edit(`Error: Game with ID ${gameId} not found.`);
-      return;
-    }
+    // Connect to MongoDB
+    await connectToDatabase();
     
-    const originalHtml = fs.readFileSync(gamePath, 'utf8');
+    // Check if game exists in MongoDB
+    const game = await Game.findOne({ gameId: gameId });
+    let originalHtml;
+    
+    if (game) {
+      originalHtml = game.html;
+    } else {
+      // Try file system as fallback for backwards compatibility
+      const gamePath = path.join(gamesDir, `${gameId}.html`);
+      if (!fs.existsSync(gamePath)) {
+        await loadingMessage.edit(`Error: Game with ID ${gameId} not found.`);
+        return false;
+      }
+      originalHtml = fs.readFileSync(gamePath, 'utf8');
+    }
     
     await editGame(gameId, editPrompt, originalHtml);
     
@@ -471,6 +614,7 @@ async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
     
     return true;
   } catch (error) {
+    console.error("Error handling game edit:", error);
     await loadingMessage.edit('Sorry, there was an error editing your game. Please try again later.');
     return false;
   }

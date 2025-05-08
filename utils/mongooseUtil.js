@@ -48,9 +48,43 @@ const financeAnalysisSchema = new mongoose.Schema({
   }
 });
 
+/**
+ * Game schema - stores HTML games
+ */
+const gameSchema = new mongoose.Schema({
+  gameId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true
+  },
+  html: {
+    type: String,
+    required: true
+  },
+  prompt: {
+    type: String,
+    required: false
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// Update the timestamp when document is updated
+gameSchema.pre('updateOne', function() {
+  this.set({ updatedAt: new Date() });
+});
+
 // Initialize models
 const FinanceChannel = mongoose.model('FinanceChannel', financeChannelSchema);
 const FinanceAnalysis = mongoose.model('FinanceAnalysis', financeAnalysisSchema);
+const Game = mongoose.model('Game', gameSchema);
 
 /**
  * Connect to MongoDB
@@ -81,5 +115,6 @@ const connectToDatabase = async () => {
 module.exports = {
   connectToDatabase,
   FinanceChannel,
-  FinanceAnalysis
+  FinanceAnalysis,
+  Game
 };
