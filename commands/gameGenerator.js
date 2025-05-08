@@ -5,13 +5,38 @@ const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
 const jwt = require('jsonwebtoken');
 const { Game, connectToDatabase } = require('../utils/mongooseUtil');
+const DOMPurify = require('dompurify'); // Need to add this dependency
+const { JSDOM } = require('jsdom'); // Need to add this dependency too
 
 // Path to games directory (relative to project root) - kept for backwards compatibility
 const GAMES_DIR = path.join(__dirname, '..', 'games');
 
+// Function to sanitize HTML content to prevent XSS
+function sanitizeHtml(html) {
+  const window = new JSDOM('').window;
+  const purify = DOMPurify(window);
+  return purify.sanitize(html);
+}
+
+// Function to sanitize user input
+function sanitizeUserInput(input) {
+  if (typeof input !== 'string') return '';
+  // Remove any potentially dangerous characters
+  return input.replace(/[<>]/g, '');
+}
+
+// Function to add Content Security Policy to HTML
+function addCSP(html) {
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src * data:; connect-src 'none';">`;
+  return html.replace('<head>', `<head>${cspMeta}`);
+}
+
 // Function to generate a single-player game using OpenRouter API
 async function generateSinglePlayerGame(prompt) {
   try {
+    // Sanitize the user prompt
+    const sanitizedPrompt = sanitizeUserInput(prompt);
+    
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
@@ -28,6 +53,10 @@ async function generateSinglePlayerGame(prompt) {
             3. Test all game logic in your response
             4. INCLUDE a clickable "Powered by Luck Off" link that opens https://luckoff.chat/ in a new tab
             5. The "Powered by Luck Off" link must be visible and properly styled in the game interface
+            6. DO NOT include any user text input fields that could be used for code injection or XSS attacks
+            7. DO NOT use eval(), Function(), setTimeout() with string arguments, or other unsafe JavaScript practices
+            8. DO NOT enable any form of remote code execution
+            9. If a game requires user input, use only safe controls like buttons, sliders, or predetermined selection options
             
             USER DATA IMPLEMENTATION:
             - Extract user data from cookie:
@@ -40,7 +69,7 @@ async function generateSinglePlayerGame(prompt) {
           },
           {
             role: 'user',
-            content: `Create a browser game based on this prompt: ${prompt}. 
+            content: `Create a browser game based on this prompt: ${sanitizedPrompt}. 
             
             TECHNICAL IMPLEMENTATION GUIDELINES:
             1. Focus on a SIMPLE game concept optimized for single-player
@@ -56,6 +85,12 @@ async function generateSinglePlayerGame(prompt) {
             3. Win/lose conditions where appropriate
             4. A footer or header with a styled "Powered by Luck Off" link to https://luckoff.chat/
             5. Always display the user's username and avatar (from gameUserData cookie) in the game interface
+            
+            SECURITY REQUIREMENTS:
+            1. DO NOT include any text input fields that allow free-form text entry
+            2. If user input is needed, use only button clicks, keyboard controls, or select dropdowns with predefined options
+            3. DO NOT use unsafe JavaScript functions like eval()
+            4. DO NOT include any database connectivity features or user data storage beyond cookies
             
             CODE STRUCTURE:
             1. Initialize game variables first
@@ -83,7 +118,13 @@ async function generateSinglePlayerGame(prompt) {
 
     // Extract HTML game code from response
     const gameCode = response.data.choices[0].message.content;
-    const htmlGame = extractHtmlFromResponse(gameCode);
+    let htmlGame = extractHtmlFromResponse(gameCode);
+    
+    // Add Content Security Policy
+    htmlGame = addCSP(htmlGame);
+    
+    // Sanitize the HTML to prevent XSS
+    htmlGame = sanitizeHtml(htmlGame);
     
     // Generate unique ID for the game
     const gameId = shortid.generate();
@@ -95,7 +136,7 @@ async function generateSinglePlayerGame(prompt) {
     const game = new Game({
       gameId: gameId,
       html: htmlGame,
-      prompt: prompt
+      prompt: sanitizedPrompt // Store sanitized prompt
     });
     
     await game.save();
@@ -140,6 +181,9 @@ function extractHtmlFromResponse(response) {
 // Function to edit an existing game
 async function editGame(gameId, editPrompt, originalHtml) {
   try {
+    // Sanitize the user prompt
+    const sanitizedEditPrompt = sanitizeUserInput(editPrompt);
+    
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
@@ -156,12 +200,16 @@ async function editGame(gameId, editPrompt, originalHtml) {
             4. Return the complete HTML file with your modifications
             5. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
             6. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
+            7. DO NOT include any user text input fields that could be used for code injection or XSS attacks
+            8. DO NOT use eval(), Function(), setTimeout() with string arguments, or other unsafe JavaScript practices
+            9. DO NOT enable any form of remote code execution
+            10. If a game requires user input, use only safe controls like buttons, sliders, or predetermined selection options
             
             Make targeted modifications to fulfill the edit request while maintaining all existing functionality.`
           },
           {
             role: 'user',
-            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab.`
+            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${sanitizedEditPrompt}\n\nIMPORTANT: Ensure the game includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab.`
           }
         ],
         temperature: 0.6
@@ -175,7 +223,13 @@ async function editGame(gameId, editPrompt, originalHtml) {
     );
 
     const gameCode = response.data.choices[0].message.content;
-    const editedHtml = extractHtmlFromResponse(gameCode);
+    let editedHtml = extractHtmlFromResponse(gameCode);
+    
+    // Add Content Security Policy
+    editedHtml = addCSP(editedHtml);
+    
+    // Sanitize the HTML to prevent XSS
+    editedHtml = sanitizeHtml(editedHtml);
     
     // Connect to MongoDB
     await connectToDatabase();
@@ -218,6 +272,10 @@ async function enhanceGame(gameId, originalHtml) {
             7. Add helpful game instructions if they're missing or unclear
             8. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
             9. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
+            10. DO NOT introduce any user text input fields that could be used for code injection
+            11. DO NOT use eval(), Function(), setTimeout() with string arguments, or other unsafe JavaScript practices
+            12. DO NOT enable any form of remote code execution
+            13. Use only safe controls like buttons, sliders, or predetermined selection options
             
             Analyze the game thoroughly and implement enhancements that improve the player experience while maintaining the core gameplay concept.
             Return the complete enhanced HTML file.`
@@ -238,7 +296,13 @@ async function enhanceGame(gameId, originalHtml) {
     );
 
     const gameCode = response.data.choices[0].message.content;
-    const enhancedHtml = extractHtmlFromResponse(gameCode);
+    let enhancedHtml = extractHtmlFromResponse(gameCode);
+    
+    // Add Content Security Policy
+    enhancedHtml = addCSP(enhancedHtml);
+    
+    // Sanitize the HTML to prevent XSS
+    enhancedHtml = sanitizeHtml(enhancedHtml);
     
     // Connect to MongoDB
     await connectToDatabase();
@@ -309,6 +373,11 @@ function generateGuestUserData() {
 function setupGameRoutes(app, jwtSecret) {
   app.get('/game/:gameId', async (req, res) => {
     const gameId = req.params.gameId;
+    // Sanitize gameId to prevent path traversal
+    if (!gameId || !gameId.match(/^[a-zA-Z0-9_-]+$/)) {
+      return res.status(400).send('Invalid game ID format');
+    }
+    
     const userToken = req.query.token;
     
     try {
@@ -325,17 +394,26 @@ function setupGameRoutes(app, jwtSecret) {
         if (userToken) {
           try {
             userData = jwt.verify(userToken, jwtSecret);
+            // Sanitize user data before setting cookie
+            const sanitizedUserData = {
+              id: String(userData.id || '').replace(/[^\w-]/g, ''),
+              username: String(userData.username || '').replace(/[<>'"]/g, ''),
+              avatar: String(userData.avatar || '').includes('http') ? userData.avatar : ''
+            };
+            
             // Set cookie with user data for the game
-            res.cookie('gameUserData', JSON.stringify(userData), { 
+            res.cookie('gameUserData', JSON.stringify(sanitizedUserData), { 
               maxAge: 3600000, // 1 hour
-              httpOnly: false
+              httpOnly: false,
+              sameSite: 'strict'
             });
           } catch (err) {
             // Generate a guest token if the provided token is invalid
             userData = generateGuestUserData();
             res.cookie('gameUserData', JSON.stringify(userData), { 
               maxAge: 3600000, 
-              httpOnly: false 
+              httpOnly: false,
+              sameSite: 'strict'
             });
           }
         } else {
@@ -343,9 +421,15 @@ function setupGameRoutes(app, jwtSecret) {
           userData = generateGuestUserData();
           res.cookie('gameUserData', JSON.stringify(userData), { 
             maxAge: 3600000, 
-            httpOnly: false 
+            httpOnly: false,
+            sameSite: 'strict'
           });
         }
+        
+        // Add security headers
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src * data:; connect-src 'none'");
         
         // Serve the game HTML directly from the database
         res.send(game.html);
@@ -359,27 +443,42 @@ function setupGameRoutes(app, jwtSecret) {
           if (userToken) {
             try {
               userData = jwt.verify(userToken, jwtSecret);
-              res.cookie('gameUserData', JSON.stringify(userData), { 
+              // Sanitize user data before setting cookie
+              const sanitizedUserData = {
+                id: String(userData.id || '').replace(/[^\w-]/g, ''),
+                username: String(userData.username || '').replace(/[<>'"]/g, ''),
+                avatar: String(userData.avatar || '').includes('http') ? userData.avatar : ''
+              };
+              
+              res.cookie('gameUserData', JSON.stringify(sanitizedUserData), { 
                 maxAge: 3600000, 
-                httpOnly: false 
+                httpOnly: false,
+                sameSite: 'strict'
               });
             } catch (err) {
               userData = generateGuestUserData();
               res.cookie('gameUserData', JSON.stringify(userData), { 
                 maxAge: 3600000, 
-                httpOnly: false 
+                httpOnly: false,
+                sameSite: 'strict'
               });
             }
           } else {
             userData = generateGuestUserData();
             res.cookie('gameUserData', JSON.stringify(userData), { 
               maxAge: 3600000, 
-              httpOnly: false 
+              httpOnly: false,
+              sameSite: 'strict'
             });
           }
           
           // Import game from file system to MongoDB for future use
-          const gameHtml = fs.readFileSync(gamePath, 'utf8');
+          let gameHtml = fs.readFileSync(gamePath, 'utf8');
+          
+          // Add Content Security Policy and sanitize before importing to DB
+          gameHtml = addCSP(gameHtml);
+          gameHtml = sanitizeHtml(gameHtml);
+          
           const newGame = new Game({
             gameId: gameId,
             html: gameHtml,
@@ -388,7 +487,13 @@ function setupGameRoutes(app, jwtSecret) {
           
           await newGame.save();
           
-          res.sendFile(gamePath);
+          // Add security headers
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          res.setHeader('X-Frame-Options', 'DENY');
+          res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src * data:; connect-src 'none'");
+          
+          // Send the sanitized HTML
+          res.send(gameHtml);
         } else {
           res.status(404).send('Game not found');
         }
@@ -402,11 +507,14 @@ function setupGameRoutes(app, jwtSecret) {
 
 // Generate a game link with user authentication
 function generateGameLink(gameId, user, baseUrl, jwtSecret) {
-  const userToken = jwt.sign({
-    id: user.id,
-    username: user.username,
-    avatar: user.displayAvatarURL({ format: 'png' })
-  }, jwtSecret);
+  // Sanitize user data before creating token
+  const sanitizedUser = {
+    id: String(user.id || '').replace(/[^\w-]/g, ''),
+    username: String(user.username || '').replace(/[<>'"]/g, ''),
+    avatar: user.displayAvatarURL ? user.displayAvatarURL({ format: 'png' }) : ''
+  };
+  
+  const userToken = jwt.sign(sanitizedUser, jwtSecret, { expiresIn: '1h' });
   
   return `${baseUrl}/game/${gameId}?token=${userToken}`;
 }
