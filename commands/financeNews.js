@@ -244,8 +244,17 @@ async function fetchStockPerformance(tickers) {
       
       const batchPromises = batch.map(async (ticker) => {
         try {
-          // Fetch daily time series data instead of just global quote
-          const response = await axios.get('https://www.alphavantage.co/query', {
+          // First try to get intraday data for most current price
+          const intradayResponse = await axios.get('https://www.alphavantage.co/query', {
+            params: {
+              function: 'TIME_SERIES_INTRADAY',
+              symbol: ticker,
+              interval: '5min',
+              apikey: process.env.ALPHAVANTAGE_API_KEY
+            }
+          });
+          
+          const dailyResponse = await axios.get('https://www.alphavantage.co/query', {
             params: {
               function: 'TIME_SERIES_DAILY',
               symbol: ticker,
@@ -254,37 +263,57 @@ async function fetchStockPerformance(tickers) {
             }
           });
           
-          if (response.data && response.data['Time Series (Daily)']) {
-            const timeSeriesData = response.data['Time Series (Daily)'];
-            const dates = Object.keys(timeSeriesData).sort().reverse(); // Sort dates in descending order
-            
-            if (dates.length >= 2) {
-              // Get current and previous day data
-              const currentDay = timeSeriesData[dates[0]];
-              const previousDay = timeSeriesData[dates[1]];
-              
-              // Current closing price
-              const currentClose = parseFloat(currentDay['4. close']);
-              
-              // Previous day closing price
-              const previousClose = parseFloat(previousDay['4. close']);
-              
-              // Calculate the percentage change
-              const percentChange = ((currentClose - previousClose) / previousClose) * 100;
-              
-              // Format the percentage change (e.g., '+1.25%' or '-0.75%')
-              const formattedChange = (percentChange >= 0 ? '+' : '') + percentChange.toFixed(2) + '%';
-              
-              return {
-                ticker,
-                price: currentClose.toFixed(2),
-                change: formattedChange,
-                valid: true
-              };
+          let currentPrice = null;
+          let previousClose = null;
+          
+          // Get current price from intraday data if available
+          if (intradayResponse.data && intradayResponse.data['Time Series (5min)']) {
+            const timeSeriesData = intradayResponse.data['Time Series (5min)'];
+            const latestTimestamp = Object.keys(timeSeriesData)[0];
+            if (latestTimestamp) {
+              currentPrice = parseFloat(timeSeriesData[latestTimestamp]['4. close']);
             }
           }
           
-          // Fallback to Global Quote if TIME_SERIES_DAILY failed or had insufficient data
+          // Get previous close from daily data
+          if (dailyResponse.data && dailyResponse.data['Time Series (Daily)']) {
+            const timeSeriesData = dailyResponse.data['Time Series (Daily)'];
+            const dates = Object.keys(timeSeriesData).sort().reverse();
+            
+            if (dates.length >= 1) {
+              // Use the most recent day's close as the previous close
+              previousClose = parseFloat(timeSeriesData[dates[0]]['4. close']);
+              
+              // If we didn't get current price from intraday data, use today's close
+              if (currentPrice === null) {
+                currentPrice = previousClose;
+                
+                // And use yesterday's close as previous close if available
+                if (dates.length >= 2) {
+                  previousClose = parseFloat(timeSeriesData[dates[1]]['4. close']);
+                }
+              }
+            }
+          }
+          
+          // If we have both prices, calculate the percentage change
+          if (currentPrice !== null && previousClose !== null) {
+            // Calculate the percentage change (current vs previous close)
+            const percentChange = ((currentPrice - previousClose) / previousClose) * 100;
+            
+            // Format the percentage change like Yahoo Finance (e.g., '+1.25%' or '-0.75%')
+            const formattedChange = (percentChange >= 0 ? '+' : '') + percentChange.toFixed(2) + '%';
+            
+            return {
+              ticker,
+              price: currentPrice.toFixed(2),
+              change: formattedChange,
+              valid: true,
+              percentValue: percentChange // Store the raw number for sorting
+            };
+          }
+          
+          // Fallback to Global Quote as a last resort
           const globalQuoteResponse = await axios.get('https://www.alphavantage.co/query', {
             params: {
               function: 'GLOBAL_QUOTE',
@@ -295,30 +324,43 @@ async function fetchStockPerformance(tickers) {
           
           if (globalQuoteResponse.data && globalQuoteResponse.data['Global Quote']) {
             const quote = globalQuoteResponse.data['Global Quote'];
-            return {
-              ticker,
-              price: quote['05. price'] ? parseFloat(quote['05. price']).toFixed(2) : 'N/A',
-              change: quote['10. change percent'] ? quote['10. change percent'] : 'N/A',
-              valid: quote['05. price'] ? true : false
-            };
+            const price = quote['05. price'] ? parseFloat(quote['05. price']) : null;
+            const changePercent = quote['10. change percent'] ? 
+              parseFloat(quote['10. change percent'].replace('%', '')) : 0;
+            
+            if (price !== null) {
+              // Format similarly to Yahoo Finance
+              const formattedChange = (changePercent >= 0 ? '+' : '') + changePercent.toFixed(2) + '%';
+              
+              return {
+                ticker,
+                price: price.toFixed(2),
+                change: formattedChange,
+                valid: true,
+                percentValue: changePercent
+              };
+            }
           }
           
-          return { ticker, price: 'N/A', change: 'N/A', valid: false };
+          return { ticker, price: 'N/A', change: 'N/A', valid: false, percentValue: 0 };
         } catch (error) {
-          return { ticker, price: 'N/A', change: 'N/A', valid: false };
+          console.error(`Error fetching data for ${ticker}:`, error.message);
+          return { ticker, price: 'N/A', change: 'N/A', valid: false, percentValue: 0 };
         }
       });
       
       const batchResults = await Promise.all(batchPromises);
       stockData.push(...batchResults);
       
+      // Avoid rate limiting with Alpha Vantage API
       if (i + batchSize < tickers.length) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
     
     return stockData.filter(stock => stock.valid);
   } catch (error) {
+    console.error('Error in fetchStockPerformance:', error);
     return [];
   }
 }
@@ -345,16 +387,12 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     return embed;
   }
   
-  // Sort and categorize stocks
-  stockData.sort((a, b) => {
-    const changeA = parseFloat(a.change.replace('%', '')) || 0;
-    const changeB = parseFloat(b.change.replace('%', '')) || 0;
-    return changeB - changeA;
-  });
+  // Sort and categorize stocks by the raw percentage value for consistent sorting
+  stockData.sort((a, b) => b.percentValue - a.percentValue);
   
-  const gainers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) > 0);
-  const losers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) < 0);
-  const neutral = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) === 0);
+  const gainers = stockData.filter(stock => stock.percentValue > 0);
+  const losers = stockData.filter(stock => stock.percentValue < 0);
+  const neutral = stockData.filter(stock => stock.percentValue === 0);
   
   if (gainers.length > 0) {
     embed.addFields({ 
@@ -415,14 +453,14 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     
     // Calculate performance of BUY recommendations
     buyStocks.forEach(stock => {
-      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+      const changeValue = stock.percentValue;
       buyPerformance += changeValue;
       buyCount++;
     });
     
     // Calculate performance of SELL recommendations
     sellStocks.forEach(stock => {
-      const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
+      const changeValue = stock.percentValue;
       sellPerformance -= changeValue; // Negate the change for sell recommendations
       sellCount++;
     });
@@ -437,8 +475,7 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
       const buySign = buyPerformance >= 0 ? '+' : '';
       performanceSummary += `**BUY Recommendations (${buySign}${buyPerformance.toFixed(2)}%)**\n`;
       performanceSummary += buyStocks.map(stock => {
-        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
-        return `$${stock.ticker}: ${stock.change} (${changeValue > 0 ? '✅' : '❌'})`;
+        return `$${stock.ticker}: $${stock.price} (${stock.change}) ${stock.percentValue > 0 ? '✅' : '❌'}`;
       }).join('\n') + '\n\n';
     } else if (buyTickers.length > 0) {
       performanceSummary += `**BUY Recommendations**\n`;
@@ -449,8 +486,7 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
       const sellSign = sellPerformance >= 0 ? '+' : '';
       performanceSummary += `**SELL/AVOID Recommendations (${sellSign}${sellPerformance.toFixed(2)}%)**\n`;
       performanceSummary += sellStocks.map(stock => {
-        const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
-        return `$${stock.ticker}: ${stock.change} (${changeValue < 0 ? '✅' : '❌'})`;
+        return `$${stock.ticker}: $${stock.price} (${stock.change}) ${stock.percentValue < 0 ? '✅' : '❌'}`;
       }).join('\n') + '\n\n';
     } else if (sellTickers.length > 0) {
       performanceSummary += `**SELL/AVOID Recommendations**\n`;
