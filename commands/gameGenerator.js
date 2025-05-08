@@ -57,7 +57,7 @@ function extractHtmlFromResponse(response) {
   if (htmlMatch && htmlMatch[1]) {
     htmlContent = htmlMatch[1];
   } else {
-    // If no HTML tags or code blocks found, assume the entire response is HTML
+    // If no HTML tags or code blocks found, assume the entire response is HTML content
     htmlContent = `<!DOCTYPE html>
 <html>
 <head>
@@ -66,6 +66,23 @@ function extractHtmlFromResponse(response) {
 </head>
 <body>
   ${response}
+</body>
+</html>`;
+  }
+  
+  // Check if it has the basic structure before sanitizing
+  const hasHtmlStructure = /<html.*?>[\s\S]*?<\/html>/i.test(htmlContent);
+  
+  // If it doesn't have proper HTML structure, wrap it
+  if (!hasHtmlStructure) {
+    htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Generated Game</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  ${htmlContent}
 </body>
 </html>`;
   }
