@@ -154,6 +154,9 @@ async function handlePrefixCommand(message) {
     return;
   }
   
+  // Get the current prefix before changing it
+  const previousPrefix = await getPrefix(message.guild.id);
+  
   const success = await setPrefix(message.guild.id, newPrefix);
   
   if (success) {
@@ -162,7 +165,7 @@ async function handlePrefixCommand(message) {
       .setTitle('Prefix Changed')
       .setDescription(`Server prefix has been updated to: \`${newPrefix}\``)
       .addFields(
-        { name: 'New Usage', value: `Commands now start with \`${newPrefix}\` instead of \`!\`` },
+        { name: 'New Usage', value: `Commands now start with \`${newPrefix}\` instead of \`${previousPrefix}\`` },
         { name: 'Example', value: `Use \`${newPrefix}help\` to see all commands` }
       );
     
