@@ -769,8 +769,14 @@ async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
 async function handleGameButtonInteraction(interaction, gamesDir, port, jwtSecret) {
   try {
     await interaction.deferUpdate();
-    const gameId = interaction.customId.split('_')[1];
-    const actionType = interaction.customId.split('_')[0];
+    
+    // Fix: Extract the full gameId by properly joining the parts after the first underscore
+    // This handles cases where the gameId itself might contain underscores
+    const parts = interaction.customId.split('_');
+    const actionType = parts[0];
+    const gameId = parts.slice(1).join('_');
+    
+    console.log(`Button pressed: ${actionType} for game ${gameId}`);
     
     switch(actionType) {
       case 'play':
