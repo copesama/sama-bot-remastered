@@ -669,7 +669,7 @@ function scheduleDailyNews(client, apiKey) {
   });
   
   // Run at 4:10 PM EST/EDT (20:10 UTC) for market performance report
-  dailyReportJob = schedule.scheduleJob('0 10 20 * * *', async function() {
+  dailyReportJob = schedule.scheduleJob('0 15 20 * * *', async function() {
     await sendMarketPerformanceReport(client);
   });
 }
@@ -750,9 +750,9 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       if (action === 'subscribe') {
         const result = await subscribeChannel(message.guild.id, message.channel.id);
         if (result.alreadySubscribed) {
-          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:25 AM EST and market reports at 4:10 PM EST.');
+          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:25 AM EST and market reports at 4:15 PM EST.');
         } else {
-          await message.reply('✅ This channel will now receive daily financial analysis at 8:25 AM EST and market performance reports at 4:10 PM EST.');
+          await message.reply('✅ This channel will now receive daily financial analysis at 8:25 AM EST and market performance reports at 4:15 PM EST.');
         }
         return;
       } 

@@ -48,7 +48,7 @@ function createHelpEmbed(prefix = '!') {
           `\`${prefix}financenews status\` - Check if your server is subscribed to daily financial updates\n\n` +
           'Subscribed channels receive:\n' +
           '   - Morning financial news and market analysis (5 minutes before market open)\n' +
-          '   - Evening performance report of mentioned stocks (10 minutes after market close)'
+          '   - Evening performance report of mentioned stocks (15 minutes after market close)'
       },
       { 
         name: '🎓 Quiz Command', 
@@ -113,8 +113,8 @@ function createHelpEmbed(prefix = '!') {
       { 
         name: '⚙️ Configuration Commands', 
         value: 
-          '`!prefix` - Show current command prefix\n' +
-          '`!prefix <new-prefix>` - Change the command prefix (Admin only)\n' +
+          `\`${prefix}prefix\` - Show current command prefix\n` +
+          `\`${prefix}prefix <new-prefix>\` - Change the command prefix (Admin only)\n` +
           `\`${prefix}invite\` - Get an invite link to add this bot to another server\n` +
           `\`${prefix}help\` - Show this help message`
       }
