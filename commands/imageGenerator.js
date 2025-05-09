@@ -24,81 +24,34 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
     
     const payload = { inputs: enhancedPrompt };
 
-    // Add retry logic with exponential backoff
-    const maxRetries = 3;
-    let retryCount = 0;
-    let lastError = null;
-
-    while (retryCount < maxRetries) {
-      try {
-        console.log(`Image generation attempt ${retryCount + 1}/${maxRetries}`);
-        
-        // Increase timeout to 120 seconds (2 minutes)
-        const response = await axios.post(
-          'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev',
-          payload,
-          {
-            headers: {
-              'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            responseType: 'arraybuffer',
-            timeout: 120000, // 2 minute timeout
-          }
-        );
-
-        // Generate temporary ID for the intermediate image file
-        const tempImageId = `temp_${shortid.generate()}`;
-        const tempImagePath = path.join(IMAGES_DIR, `${tempImageId}.png`);
-
-        // Save the temporary image file
-        fs.writeFileSync(tempImagePath, Buffer.from(response.data));
-
-        console.log(`Successfully generated base image: ${tempImagePath}`);
-        return { tempImageId, tempImagePath };
-      } catch (error) {
-        lastError = error;
-        
-        // If we get a 504 Gateway Timeout, retry
-        const isTimeoutError = 
-          (error.code === 'ECONNABORTED') || 
-          (error.response && error.response.status === 504);
-        
-        if (isTimeoutError && retryCount < maxRetries - 1) {
-          // Calculate exponential backoff delay (2^retry * 1000ms)
-          const delayMs = Math.pow(2, retryCount) * 1000;
-          console.log(`Timeout error, retrying in ${delayMs}ms...`);
-          
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-          retryCount++;
-          continue;
-        }
-        
-        // If it's not a timeout or we've reached max retries, throw the error
-        throw error;
+    const response = await axios.post(
+      'https://api-inference.huggingface.co/models/HiDream-ai/HiDream-I1-Full',
+      payload,
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        responseType: 'arraybuffer',
       }
-    }
-    
-    throw lastError; // Throw the last error if we've exhausted all retries
-    
+    );
+
+    // Generate temporary ID for the intermediate image file
+    const tempImageId = `temp_${shortid.generate()}`;
+    const tempImagePath = path.join(IMAGES_DIR, `${tempImageId}.png`);
+
+    // Save the temporary image file
+    fs.writeFileSync(tempImagePath, Buffer.from(response.data));
+
+    return { tempImageId, tempImagePath };
   } catch (error) {
-    console.error("Image generation API error details:", {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status,
-      statusText: error.response?.statusText
-    });
-    
     if (error.response) {
       try {
         const errorData = Buffer.from(error.response.data).toString('utf8');
-        console.error("API error response:", errorData);
       } catch (e) {
-        console.error("Could not parse error response data");
+        // Could not parse error response data
       }
     }
-    
     throw error;
   }
 }
@@ -432,20 +385,18 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
     try {
       await message.delete();
     } catch (error) {
-      console.error('Error deleting message:', error);
+      // Error deleting message
     }
     
-    // Increase the timeout for deleting the image file to ensure it's properly served
     setTimeout(() => {
       try {
         fs.unlinkSync(imagePath);
       } catch (err) {
-        console.error('Error deleting image file:', err);
+        // Error deleting image file
       }
-    }, 60000); // Increase to 60 seconds from 5 seconds
+    }, 5000);
     
   } catch (error) {
-    console.error('Image generation error:', error); // Log the full error for debugging
     let errorMessage = 'Sorry, there was an error generating your image. Please try again later.';
     
     if (error.message && error.message.includes('timeout')) {
