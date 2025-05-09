@@ -7,7 +7,7 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const { connectToDatabase } = require('./utils/mongooseUtil');
 // Import security middleware
-const { securityHeaders, sanitizeCookies } = require('./utils/securityMiddleware');
+// const { securityHeaders, sanitizeCookies } = require('./utils/securityMiddleware');
 
 // Import the finance news module - update to include the handleFinanceReportCommand function
 const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } = require('./commands/financeNews');
@@ -116,9 +116,9 @@ if (!fs.existsSync(IMAGES_DIR)) {
 }
 
 // Add security middleware
-app.use(securityHeaders);
-app.use(cookieParser());
-app.use(sanitizeCookies);
+// app.use(securityHeaders);
+// app.use(cookieParser());
+// app.use(sanitizeCookies);
 
 // Serve static game files with added security
 app.use('/games', (req, res, next) => {
