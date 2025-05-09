@@ -47,8 +47,8 @@ function createHelpEmbed(prefix = '!') {
           `\`${prefix}financenews unsubscribe\` - Remove daily financial updates from your server (Admin only)\n` +
           `\`${prefix}financenews status\` - Check if your server is subscribed to daily financial updates\n\n` +
           'Subscribed channels receive:\n' +
-          '   - Morning financial news and market analysis (15 minutes before market open)\n' +
-          '   - Evening performance report of mentioned stocks (5 minutes after market close)'
+          '   - Morning financial news and market analysis (5 minutes before market open)\n' +
+          '   - Evening performance report of mentioned stocks (10 minutes after market close)'
       },
       { 
         name: '🎓 Quiz Command', 

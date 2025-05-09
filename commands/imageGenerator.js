@@ -5,31 +5,6 @@ const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
 const { getPrefix } = require('./prefixCommand');
 
-// Add a function to check API status
-async function checkHuggingFaceApiStatus() {
-  try {
-    const response = await axios.get(
-      'https://api-inference.huggingface.co/status',
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`
-        },
-        timeout: 5000
-      }
-    );
-    
-    return {
-      status: response.status === 200 ? 'operational' : 'issues',
-      details: response.data
-    };
-  } catch (error) {
-    return {
-      status: 'error',
-      details: error.message || 'Unknown error checking API status'
-    };
-  }
-}
-
 // Function to generate image using Hugging Face API (step 1: text-to-image with white circles)
 async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
   try {
@@ -48,28 +23,19 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
     - Completely hide/replace heads with these white circles`;
     
     const payload = { inputs: enhancedPrompt };
-    
-    console.log(`Generating base image with prompt: "${prompt}" (enhanced with circle instructions)`);
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell',
+      'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev',
       payload,
       {
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
           'Content-Type': 'application/json',
-          'Accept': 'image/png' // Fix: Set the Accept header to image/png explicitly
+          'Accept': 'image/png'
         },
         responseType: 'arraybuffer',
-        timeout: 120000, // Increase timeout to 2 minutes
       }
     );
-
-    if (!response.data || response.data.length === 0) {
-      throw new Error('Received empty response from Hugging Face API');
-    }
-
-    console.log(`Received image data of size: ${response.data.length} bytes`);
 
     // Generate temporary ID for the intermediate image file
     const tempImageId = `temp_${shortid.generate()}`;
@@ -77,50 +43,17 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
 
     // Save the temporary image file
     fs.writeFileSync(tempImagePath, Buffer.from(response.data));
-    
-    console.log(`Saved temporary image to: ${tempImagePath}`);
 
     return { tempImageId, tempImagePath };
   } catch (error) {
-    console.error('Error in generateBaseImage:', error);
-    
     if (error.response) {
-      console.error(`API Response Status: ${error.response.status}`);
-      console.error(`API Response Headers:`, error.response.headers);
-      
       try {
-        if (error.response.data) {
-          // Handle array buffer or string response appropriately
-          let errorData;
-          if (error.response.data instanceof Buffer) {
-            errorData = Buffer.from(error.response.data).toString('utf8');
-          } else {
-            errorData = error.response.data;
-          }
-          console.error(`API Error Response: ${errorData}`);
-          
-          // If the error is related to Accept header, give more specific error
-          if (errorData.includes('Accept type') && errorData.includes('not supported')) {
-            throw new Error(`API configuration error: Incorrect Accept header. Please contact the bot administrator.`);
-          }
-        }
+        const errorData = Buffer.from(error.response.data).toString('utf8');
       } catch (e) {
-        console.error('Could not parse error response data:', e.message);
+        // Could not parse error response data
       }
     }
-    
-    // Provide more specific error messages based on error status
-    if (error.response && error.response.status === 400) {
-      throw new Error(`Invalid request to image generator API. Check API configuration and prompt content.`);
-    } else if (error.response && error.response.status === 401) {
-      throw new Error(`Authentication error with image generation API. API key may be invalid or expired.`);
-    } else if (error.response && error.response.status === 429) {
-      throw new Error(`Rate limit exceeded for image generation API. Try again later.`);
-    } else if (error.response && error.response.status >= 500) {
-      throw new Error(`Image generation service is experiencing issues. Try again later.`);
-    }
-    
-    throw new Error(`Image generation failed: ${error.message || 'Unknown error'}`);
+    throw error;
   }
 }
 
@@ -392,32 +325,18 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
 // Function to generate image with avatars (two-step process)
 async function generateImageWithAvatars(prompt, avatarUrls, IMAGES_DIR) {
   try {
-    console.log(`Starting image generation process with prompt: "${prompt}" and ${avatarUrls.length} avatars`);
-    
-    // First verify API is responding
-    const apiStatus = await checkHuggingFaceApiStatus();
-    console.log(`Hugging Face API status: ${apiStatus.status}`);
-    
-    if (apiStatus.status !== 'operational') {
-      console.warn(`API status check warns of issues: ${JSON.stringify(apiStatus.details)}`);
-    }
-    
     const { tempImageId, tempImagePath } = await generateBaseImage(prompt, avatarUrls.length, IMAGES_DIR);
-    console.log(`Base image generated successfully: ${tempImageId}`);
     
     const { imageId, imagePath } = await placeAvatarsInCircles(tempImagePath, avatarUrls, IMAGES_DIR);
-    console.log(`Avatars placed successfully, final image: ${imageId}`);
     
     try {
       fs.unlinkSync(tempImagePath);
-      console.log(`Temporary file deleted: ${tempImagePath}`);
     } catch (err) {
-      console.warn(`Error deleting temporary image file: ${err.message}`);
+      // Error deleting temporary image file
     }
     
     return { imageId, imagePath };
   } catch (error) {
-    console.error(`Image generation process failed: ${error.message}`);
     throw error;
   }
 }
@@ -437,30 +356,16 @@ async function handleImageCommand(message) {
   return { mentionedUsers, loadingMessage, prefix };
 }
 
-// Function to process the image prompt with enhanced error handling
+// Function to process the image prompt
 async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingMessage, IMAGES_DIR) {
   await loadingMessage.edit('🎨 Generating your custom image in two steps...\n1️⃣ Creating base image from your prompt with placeholder circles\n2️⃣ Adding user avatars to the circles\n\nThis process might take 2-3 minutes!');
   
   try {
-    // Verify API key is present
-    if (!process.env.HUGGINGFACE_API_KEY) {
-      throw new Error('Hugging Face API key is missing. Please check the bot configuration.');
-    }
-    
-    // Check that the images directory exists
-    if (!fs.existsSync(IMAGES_DIR)) {
-      fs.mkdirSync(IMAGES_DIR, { recursive: true });
-      console.log(`Created missing image directory: ${IMAGES_DIR}`);
-    }
-    
     const avatarUrls = mentionedUsers.map(user => 
       user.displayAvatarURL({ format: 'png', size: 512 })
     );
     
-    await loadingMessage.edit('⏳ Step 1/2: Creating base image from your prompt...');
     const { imageId, imagePath } = await generateImageWithAvatars(imagePrompt, avatarUrls, IMAGES_DIR);
-    
-    await loadingMessage.edit('⏳ Step 2/2: Adding avatars and finalizing image...');
     
     const imageEmbed = new EmbedBuilder()
       .setColor('#ff6600')
@@ -481,129 +386,25 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
     try {
       await message.delete();
     } catch (error) {
-      console.warn('Error deleting user message:', error.message);
+      // Error deleting message
     }
     
     setTimeout(() => {
       try {
         fs.unlinkSync(imagePath);
       } catch (err) {
-        console.warn(`Error deleting image file: ${err.message}`);
+        // Error deleting image file
       }
     }, 5000);
     
   } catch (error) {
-    console.error('Image generation error:', error);
-    
     let errorMessage = 'Sorry, there was an error generating your image. Please try again later.';
-    let troubleshootingTips = '';
     
     if (error.message && error.message.includes('timeout')) {
-      errorMessage = 'Sorry, image generation timed out. The AI service might be overloaded.';
-      troubleshootingTips = 'Try using a simpler prompt or try again in a few minutes.';
-    } else if (error.message && error.message.includes('ECONNREFUSED')) {
-      errorMessage = 'Sorry, could not connect to the image generation service.';
-      troubleshootingTips = 'The service might be temporarily down. Please try again later.';
-    } else if (error.message && error.message.includes('Accept header')) {
-      errorMessage = 'There is a configuration issue with the image generator.';
-      troubleshootingTips = 'This is a technical problem that needs administrator attention. Please report this issue.';
-    } else if (error.message && error.message.includes('400')) {
-      errorMessage = 'Sorry, the image generation API rejected the request.';
-      troubleshootingTips = 'Your prompt might contain forbidden content or there might be an API configuration issue. Please try a different prompt.';
-    } else if (error.message && error.message.includes('401')) {
-      errorMessage = 'There is an authentication issue with the image service.';
-      troubleshootingTips = 'Please notify the bot administrator that the API key might need to be updated.';
-    } else if (error.message && error.message.includes('429')) {
-      errorMessage = 'Rate limit exceeded on the image generation API.';
-      troubleshootingTips = 'The bot has hit usage limits. Please try again in a few minutes.';
-    } else if (error.message && error.message.includes('503')) {
-      errorMessage = 'The image generation service is currently unavailable.';
-      troubleshootingTips = 'The AI service might be undergoing maintenance. Please try again later.';
+      errorMessage = 'Sorry, image generation timed out. Please try a simpler prompt or try again later.';
     }
     
-    const errorEmbed = new EmbedBuilder()
-      .setColor('#FF0000')
-      .setTitle('❌ Image Generation Failed')
-      .setDescription(`${errorMessage}${troubleshootingTips ? `\n\n**Troubleshooting tips:**\n${troubleshootingTips}` : ''}`)
-      .setTimestamp();
-    
-    await loadingMessage.edit({ content: ' ', embeds: [errorEmbed] });
-  }
-}
-
-// Add a diagnostic command function
-async function handleImageStatusCommand(message) {
-  const loadingMessage = await message.reply('⏳ Checking image generation service status...');
-  
-  try {
-    const apiStatus = await checkHuggingFaceApiStatus();
-    
-    // Test the API configuration with a minimal request
-    let configTest = 'Not tested';
-    try {
-      const testResponse = await axios.post(
-        'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell',
-        { inputs: 'A quick test image of a blue circle' },
-        {
-          headers: {
-            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-            'Content-Type': 'application/json',
-            'Accept': 'image/png'
-          },
-          responseType: 'arraybuffer',
-          timeout: 10000,
-        }
-      );
-      configTest = testResponse.status === 200 ? 'Passed ✅' : `Failed (status: ${testResponse.status})`;
-    } catch (testErr) {
-      configTest = `Failed: ${testErr.message}`;
-      if (testErr.response && testErr.response.data) {
-        try {
-          const errorData = Buffer.from(testErr.response.data).toString('utf8');
-          configTest += ` - ${errorData}`;
-        } catch (e) {
-          // Ignore parsing error
-        }
-      }
-    }
-    
-    const statusEmbed = new EmbedBuilder()
-      .setTitle('🖼️ Image Generation Service Status')
-      .setTimestamp();
-    
-    if (apiStatus.status === 'operational' && configTest.includes('Passed')) {
-      statusEmbed
-        .setColor('#00FF00')
-        .setDescription('✅ The image generation service appears to be operational!')
-        .addFields(
-          { name: 'API Status', value: apiStatus.status },
-          { name: 'Config Test', value: configTest },
-          { name: 'API Key', value: process.env.HUGGINGFACE_API_KEY ? '✓ Configured' : '❌ Missing' }
-        );
-    } else {
-      statusEmbed
-        .setColor('#FF0000')
-        .setDescription('❌ The image generation service is experiencing issues.')
-        .addFields(
-          { name: 'API Status', value: apiStatus.status },
-          { name: 'Config Test', value: configTest },
-          { name: 'Details', value: JSON.stringify(apiStatus.details) || 'No details available' },
-          { name: 'API Key', value: process.env.HUGGINGFACE_API_KEY ? '✓ Configured' : '❌ Missing' },
-          { name: 'Troubleshooting', value: 'The error appears to be related to an API configuration issue. Please check for Hugging Face API changes or requirements.' }
-        );
-    }
-    
-    await loadingMessage.edit({ content: ' ', embeds: [statusEmbed] });
-  } catch (error) {
-    console.error('Error checking image service status:', error);
-    
-    const errorEmbed = new EmbedBuilder()
-      .setColor('#FF0000')
-      .setTitle('❌ Error Checking Service Status')
-      .setDescription(`Failed to check image generation service status: ${error.message}`)
-      .setTimestamp();
-    
-    await loadingMessage.edit({ content: ' ', embeds: [errorEmbed] });
+    await loadingMessage.edit(errorMessage);
   }
 }
 
@@ -625,7 +426,5 @@ module.exports = {
   handleImageCommand,
   processImagePrompt,
   generateImageWithAvatars,
-  handleImagePromptInput,
-  handleImageStatusCommand,
-  checkHuggingFaceApiStatus
+  handleImagePromptInput
 };

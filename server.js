@@ -7,7 +7,7 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const { connectToDatabase } = require('./utils/mongooseUtil');
 // Import security middleware
-// const { securityHeaders, sanitizeCookies } = require('./utils/securityMiddleware');
+const { securityHeaders, sanitizeCookies } = require('./utils/securityMiddleware');
 
 // Import the finance news module - update to include the handleFinanceReportCommand function
 const { handleFinanceNewsCommand, initFinanceNews, handleFinanceReportCommand } = require('./commands/financeNews');
@@ -41,9 +41,7 @@ const {
 const { 
   handleImageCommand, 
   generateImageWithAvatars,
-  handleImagePromptInput,
-  handleImageStatusCommand,
-  checkHuggingFaceApiStatus
+  handleImagePromptInput
 } = require('./commands/imageGenerator');
 
 // Import the multiplayer game module
@@ -118,9 +116,9 @@ if (!fs.existsSync(IMAGES_DIR)) {
 }
 
 // Add security middleware
-// app.use(securityHeaders);
-// app.use(cookieParser());
-// app.use(sanitizeCookies);
+app.use(securityHeaders);
+app.use(cookieParser());
+app.use(sanitizeCookies);
 
 // Serve static game files with added security
 app.use('/games', (req, res, next) => {
@@ -560,22 +558,11 @@ client.on('messageCreate', async (message) => {
       incrementUsage(serverId, 'image');
     }
     
-    try {
-      const result = await handleImageCommand(message);
-      if (result) {
-        const { mentionedUsers, loadingMessage } = result;
-        usersWaitingForImagePrompt.set(message.author.id, { mentionedUsers, loadingMessage });
-      }
-    } catch (error) {
-      console.error('Error in image command:', error);
-      await message.reply('Sorry, there was an error processing your image generation request. Please try again later.');
+    const result = await handleImageCommand(message);
+    if (result) {
+      const { mentionedUsers, loadingMessage } = result;
+      usersWaitingForImagePrompt.set(message.author.id, { mentionedUsers, loadingMessage });
     }
-    return;
-  }
-  
-  // Add new image status command to help with troubleshooting
-  if (command === 'imagestatus' || command === 'imagecheck') {
-    await handleImageStatusCommand(message);
     return;
   }
 
