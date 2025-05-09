@@ -41,7 +41,9 @@ const {
 const { 
   handleImageCommand, 
   generateImageWithAvatars,
-  handleImagePromptInput
+  handleImagePromptInput,
+  handleImageStatusCommand,
+  checkHuggingFaceApiStatus
 } = require('./commands/imageGenerator');
 
 // Import the multiplayer game module
@@ -558,11 +560,22 @@ client.on('messageCreate', async (message) => {
       incrementUsage(serverId, 'image');
     }
     
-    const result = await handleImageCommand(message);
-    if (result) {
-      const { mentionedUsers, loadingMessage } = result;
-      usersWaitingForImagePrompt.set(message.author.id, { mentionedUsers, loadingMessage });
+    try {
+      const result = await handleImageCommand(message);
+      if (result) {
+        const { mentionedUsers, loadingMessage } = result;
+        usersWaitingForImagePrompt.set(message.author.id, { mentionedUsers, loadingMessage });
+      }
+    } catch (error) {
+      console.error('Error in image command:', error);
+      await message.reply('Sorry, there was an error processing your image generation request. Please try again later.');
     }
+    return;
+  }
+  
+  // Add new image status command to help with troubleshooting
+  if (command === 'imagestatus' || command === 'imagecheck') {
+    await handleImageStatusCommand(message);
     return;
   }
 
