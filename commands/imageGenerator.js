@@ -53,16 +53,34 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
       {
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'image/png' // Explicitly request image/png as the response format
         },
         responseType: 'arraybuffer',
+        validateStatus: status => status < 500 // Allow handling of 4xx errors ourselves
       }
     );
+    
     debugLog('Received response from Hugging Face API', {
       status: response.status,
       dataLength: response.data?.length || 0,
       headers: response.headers
     });
+
+    // Check if response status is not successful
+    if (response.status !== 200) {
+      let errorMsg = 'Unknown error';
+      try {
+        if (response.data) {
+          const errorText = Buffer.from(response.data).toString('utf8');
+          errorMsg = errorText;
+          debugLog(`API returned non-200 status code: ${response.status}`, errorMsg);
+        }
+      } catch (e) {
+        debugLog(`Error parsing error response: ${e.message}`);
+      }
+      throw new Error(`API returned status ${response.status}: ${errorMsg}`);
+    }
 
     // Generate temporary ID for the intermediate image file
     const tempImageId = `temp_${shortid.generate()}`;
@@ -541,6 +559,8 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
     
     if (error.message && error.message.includes('timeout')) {
       errorMessage = 'Sorry, image generation timed out. Please try a simpler prompt or try again later.';
+    } else if (error.message && error.message.includes('API returned status')) {
+      errorMessage = 'Sorry, the image generation API encountered an error. This may be due to content policy restrictions or technical issues. Please try a different prompt.';
     } else if (error.message) {
       // Include specific error message but keep generic message for user
       debugLog(`Specific error: ${error.message}`);
