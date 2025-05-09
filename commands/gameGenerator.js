@@ -2,7 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const shortid = require('shortid');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const jwt = require('jsonwebtoken');
 const { Game, connectToDatabase, sanitizeGameHtml } = require('../utils/mongooseUtil');
 const { getPrefix } = require('./prefixCommand');
@@ -344,16 +344,36 @@ async function handleSingleGameCommand(message) {
       .setDescription(`**Game prompt:** ${prompt}`)
       .addFields(
         { name: 'Game ID', value: `\`${gameId}\`` },
-        { name: 'How to Play', value: `Use \`${prefix}playgame ${gameId}\` to get a personalized link to your game.` },
+        { name: 'How to Play', value: `Use \`${prefix}playgame ${gameId}\` to get a personalized link to your game or click the Play button below.` },
         { name: 'Share Your Game', value: 'Share the Game ID with friends so they can try your game!' },
-        { name: 'Edit Your Game', value: `To modify this game, use command: \`${prefix}editgame ${gameId}\`` },
-        { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`${prefix}enhancegame ${gameId}\`` },
+        { name: 'Edit Your Game', value: `To modify this game, use command: \`${prefix}editgame ${gameId}\` or click the Edit button below.` },
+        { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`${prefix}enhancegame ${gameId}\` or click the Enhance button below.` },
         { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
       )
-      .setFooter({ text: `Generated using AI • To play, use ${prefix}playgame command` })
+      .setFooter({ text: `Generated using AI • To play, use ${prefix}playgame command or click the buttons below` })
       .setTimestamp();
     
-    await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
+    // Create buttons for play, edit, and enhance actions
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`play_${gameId}`)
+          .setLabel('Play Game')
+          .setStyle(ButtonStyle.Primary)
+          .setEmoji('🎮'),
+        new ButtonBuilder()
+          .setCustomId(`edit_${gameId}`)
+          .setLabel('Edit Game')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('✏️'),
+        new ButtonBuilder()
+          .setCustomId(`enhance_${gameId}`)
+          .setLabel('Enhance Game')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('✨')
+      );
+    
+    await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed], components: [row] });
   } catch (error) {
     await loadingMessage.edit('Sorry, there was an error generating your game. Please try again later.');
   }
@@ -525,7 +545,7 @@ async function createGameEmbed(gameId, gamePrompt, gameUrl, guildId = null) {
   // Get the prefix for the guild if available
   const prefix = await getPrefix(guildId);
   
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor('#00cc99')
     .setTitle('🎮 Here\'s Your Personal Game Link!')
     .setDescription(`**Game ID:** \`${gameId}\``)
@@ -535,6 +555,8 @@ async function createGameEmbed(gameId, gamePrompt, gameUrl, guildId = null) {
     )
     .setFooter({ text: `Generated using AI • Link personalized for you • Use ${prefix}playgame to play other games` })
     .setTimestamp();
+  
+  return embed;
 }
 
 /**
@@ -737,6 +759,140 @@ async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
   }
 }
 
+/**
+ * Handles button interactions for games
+ * @param {Object} interaction - Discord interaction object
+ * @param {string} gamesDir - Directory where games are stored
+ * @param {number} port - Server port number
+ * @param {string} jwtSecret - JWT secret for token generation
+ */
+async function handleGameButtonInteraction(interaction, gamesDir, port, jwtSecret) {
+  try {
+    await interaction.deferUpdate();
+    const gameId = interaction.customId.split('_')[1];
+    const actionType = interaction.customId.split('_')[0];
+    
+    switch(actionType) {
+      case 'play':
+        // Handle play game button
+        const serverUrl = process.env.SERVER_URL || `http://localhost:${port}`;
+        const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+        
+        // Generate game link for the user
+        const gameUrl = generateGameLink(gameId, interaction.user, baseUrl, jwtSecret);
+        
+        // Create game embed with guild ID for prefix
+        const gameEmbed = await createGameEmbed(gameId, null, gameUrl, interaction.guildId);
+        
+        // Send the game link as a follow-up message to avoid cluttering the channel
+        await interaction.followUp({ 
+          content: `${interaction.user} Here's your personal game link:`, 
+          embeds: [gameEmbed], 
+          ephemeral: true 
+        });
+        break;
+        
+      case 'edit':
+        // Handle edit game button
+        await connectToDatabase();
+        const game = await Game.findOne({ gameId: gameId });
+        
+        if (!game) {
+          // Check filesystem as fallback
+          const gamePath = path.join(gamesDir, `${gameId}.html`);
+          if (!fs.existsSync(gamePath)) {
+            await interaction.followUp({ 
+              content: `Error: Game with ID ${gameId} not found.`,
+              ephemeral: true 
+            });
+            return;
+          }
+        }
+        
+        await interaction.followUp({ 
+          content: `Please reply with your edit request for game ${gameId}. Be specific about what you want to change.`,
+          ephemeral: true 
+        });
+        break;
+        
+      case 'enhance':
+        // Handle enhance game button
+        await connectToDatabase();
+        
+        // Check if game exists
+        const gameToEnhance = await Game.findOne({ gameId: gameId });
+        let originalHtml;
+        
+        if (gameToEnhance) {
+          originalHtml = gameToEnhance.html;
+        } else {
+          // Try file system as fallback
+          const gamePath = path.join(gamesDir, `${gameId}.html`);
+          if (!fs.existsSync(gamePath)) {
+            await interaction.followUp({ 
+              content: `Error: Game with ID ${gameId} not found.`,
+              ephemeral: true 
+            });
+            return;
+          }
+          originalHtml = fs.readFileSync(gamePath, 'utf8');
+        }
+        
+        const enhanceMessage = await interaction.followUp({ 
+          content: `🔄 Enhancing game ${gameId}... This might take a minute or two!`,
+          ephemeral: false,
+          fetchReply: true
+        });
+        
+        try {
+          await enhanceGame(gameId, originalHtml);
+          
+          // Get custom prefix
+          const prefix = await getPrefix(interaction.guildId);
+          
+          const enhanceEmbed = new EmbedBuilder()
+            .setColor('#5533ff')
+            .setTitle('✨ Your Game Has Been Enhanced!')
+            .setDescription('Your game has been automatically improved with bug fixes and enhanced features!')
+            .addFields(
+              { name: 'Game ID', value: `\`${gameId}\`` },
+              { name: 'Enhancements Applied', value: '• Bug fixes\n• Improved game mechanics\n• Enhanced visuals\n• Performance optimization\n• Mobile compatibility improvements' },
+              { name: 'How to Play', value: `Use \`${prefix}playgame ${gameId}\` to get a personalized link to your enhanced game.` }
+            )
+            .setFooter({ text: `Auto-enhanced using AI • To play, use ${prefix}playgame command` })
+            .setTimestamp();
+          
+          // Create a button for the enhanced game
+          const enhancedRow = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(`play_${gameId}`)
+                .setLabel('Play Enhanced Game')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('🎮')
+            );
+          
+          await enhanceMessage.edit({ 
+            content: '✅ Game successfully enhanced!', 
+            embeds: [enhanceEmbed],
+            components: [enhancedRow]
+          });
+          
+        } catch (error) {
+          console.error("Error enhancing game:", error);
+          await enhanceMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
+        }
+        break;
+    }
+  } catch (error) {
+    console.error("Error handling game button interaction:", error);
+    await interaction.followUp({ 
+      content: 'An error occurred while processing your request.', 
+      ephemeral: true 
+    });
+  }
+}
+
 module.exports = {
   handleSingleGameCommand,
   generateSinglePlayerGame,
@@ -750,5 +906,6 @@ module.exports = {
   handlePlayGameCommand,
   handleEditGameCommand,
   handleEnhanceGameCommand,
-  handleGameEditInput
+  handleGameEditInput,
+  handleGameButtonInteraction
 };

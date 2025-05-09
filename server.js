@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType, Events } = require('discord.js');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -28,7 +28,8 @@ const {
   handlePlayGameCommand,
   handleEditGameCommand,
   handleEnhanceGameCommand,
-  handleGameEditInput
+  handleGameEditInput,
+  handleGameButtonInteraction
 } = require('./commands/gameGenerator');
 
 // Import the story generator module
@@ -758,6 +759,19 @@ client.on('messageCreate', async (message) => {
   if (command === 'help') {
     await handleHelpCommand(message);
     return;
+  }
+});
+
+// Handle button interactions
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isButton()) return;
+  
+  // Check if this is a game-related button
+  if (interaction.customId.startsWith('play_') || 
+      interaction.customId.startsWith('edit_') || 
+      interaction.customId.startsWith('enhance_')) {
+    
+    await handleGameButtonInteraction(interaction, GAMES_DIR, PORT, JWT_SECRET);
   }
 });
 
