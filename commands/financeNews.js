@@ -121,7 +121,7 @@ async function fetchFinanceNews(apiKey, limit = 14) {
   // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
-      (now.getTime() - lastFetchDate.getTime() < 23 * 60 * 60 * 1000)) {
+      (now.getTime() - lastFetchDate.getTime() < 3 * 60 * 60 * 1000)) {
     return cachedNewsArticles;
   }
 
@@ -489,7 +489,7 @@ async function generateFinancialAnalysis(newsArticles) {
     const now = new Date();
     
     if (latestAnalysis && latestAnalysis.createdAt && 
-        (now.getTime() - latestAnalysis.createdAt.getTime() < 23 * 60 * 60 * 1000)) {
+        (now.getTime() - latestAnalysis.createdAt.getTime() < (23 * 60 * 60 * 1000) + (59 * 60 * 1000))) {
       return latestAnalysis.content;
     }
 
@@ -622,9 +622,13 @@ function scheduleDailyNews(client, apiKey) {
   }
   
   // Schedule new jobs with proper cron format
-  // Run at 8:15 AM EST/EDT (13:15 UTC) for morning news
-  dailyNewsJob = schedule.scheduleJob('0 15 13 * * *', async function() {
+  // Run at 8:25 AM EST/EDT (13:25 UTC) for morning news
+  dailyNewsJob = schedule.scheduleJob('0 25 13 * * *', async function() {
     try {
+      // Clear cached articles to ensure fresh data
+      cachedNewsArticles = null;
+      lastFetchDate = null;
+      
       const newsArticles = await fetchFinanceNews(apiKey, 14);
       
       if (newsArticles.length === 0) {
@@ -671,8 +675,8 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  // Run at 4:05 PM EST/EDT (20:05 UTC) for market performance report
-  dailyReportJob = schedule.scheduleJob('0 5 20 * * *', async function() {
+  // Run at 4:10 PM EST/EDT (20:10 UTC) for market performance report
+  dailyReportJob = schedule.scheduleJob('0 10 20 * * *', async function() {
     await sendMarketPerformanceReport(client);
   });
 }
@@ -755,9 +759,9 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       if (action === 'subscribe') {
         const result = await subscribeChannel(message.guild.id, message.channel.id);
         if (result.alreadySubscribed) {
-          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:15 AM EST and market reports at 4:05 PM EST.');
+          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:25 AM EST and market reports at 4:10 PM EST.');
         } else {
-          await message.reply('✅ This channel will now receive daily financial analysis at 8:15 AM EST and market performance reports at 4:05 PM EST.');
+          await message.reply('✅ This channel will now receive daily financial analysis at 8:25 AM EST and market performance reports at 4:10 PM EST.');
         }
         return;
       } 
