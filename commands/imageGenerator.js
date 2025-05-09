@@ -57,7 +57,8 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
       {
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'image/png' // Fix: Set the Accept header to image/png explicitly
         },
         responseType: 'arraybuffer',
         timeout: 120000, // Increase timeout to 2 minutes
@@ -89,12 +90,34 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
       
       try {
         if (error.response.data) {
-          const errorData = Buffer.from(error.response.data).toString('utf8');
+          // Handle array buffer or string response appropriately
+          let errorData;
+          if (error.response.data instanceof Buffer) {
+            errorData = Buffer.from(error.response.data).toString('utf8');
+          } else {
+            errorData = error.response.data;
+          }
           console.error(`API Error Response: ${errorData}`);
+          
+          // If the error is related to Accept header, give more specific error
+          if (errorData.includes('Accept type') && errorData.includes('not supported')) {
+            throw new Error(`API configuration error: Incorrect Accept header. Please contact the bot administrator.`);
+          }
         }
       } catch (e) {
         console.error('Could not parse error response data:', e.message);
       }
+    }
+    
+    // Provide more specific error messages based on error status
+    if (error.response && error.response.status === 400) {
+      throw new Error(`Invalid request to image generator API. Check API configuration and prompt content.`);
+    } else if (error.response && error.response.status === 401) {
+      throw new Error(`Authentication error with image generation API. API key may be invalid or expired.`);
+    } else if (error.response && error.response.status === 429) {
+      throw new Error(`Rate limit exceeded for image generation API. Try again later.`);
+    } else if (error.response && error.response.status >= 500) {
+      throw new Error(`Image generation service is experiencing issues. Try again later.`);
     }
     
     throw new Error(`Image generation failed: ${error.message || 'Unknown error'}`);
@@ -481,9 +504,15 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
     } else if (error.message && error.message.includes('ECONNREFUSED')) {
       errorMessage = 'Sorry, could not connect to the image generation service.';
       troubleshootingTips = 'The service might be temporarily down. Please try again later.';
+    } else if (error.message && error.message.includes('Accept header')) {
+      errorMessage = 'There is a configuration issue with the image generator.';
+      troubleshootingTips = 'This is a technical problem that needs administrator attention. Please report this issue.';
     } else if (error.message && error.message.includes('400')) {
       errorMessage = 'Sorry, the image generation API rejected the request.';
-      troubleshootingTips = 'Your prompt might contain forbidden content. Please try a different prompt.';
+      troubleshootingTips = 'Your prompt might contain forbidden content or there might be an API configuration issue. Please try a different prompt.';
+    } else if (error.message && error.message.includes('401')) {
+      errorMessage = 'There is an authentication issue with the image service.';
+      troubleshootingTips = 'Please notify the bot administrator that the API key might need to be updated.';
     } else if (error.message && error.message.includes('429')) {
       errorMessage = 'Rate limit exceeded on the image generation API.';
       troubleshootingTips = 'The bot has hit usage limits. Please try again in a few minutes.';
@@ -509,23 +538,58 @@ async function handleImageStatusCommand(message) {
   try {
     const apiStatus = await checkHuggingFaceApiStatus();
     
+    // Test the API configuration with a minimal request
+    let configTest = 'Not tested';
+    try {
+      const testResponse = await axios.post(
+        'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell',
+        { inputs: 'A quick test image of a blue circle' },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+            'Content-Type': 'application/json',
+            'Accept': 'image/png'
+          },
+          responseType: 'arraybuffer',
+          timeout: 10000,
+        }
+      );
+      configTest = testResponse.status === 200 ? 'Passed ✅' : `Failed (status: ${testResponse.status})`;
+    } catch (testErr) {
+      configTest = `Failed: ${testErr.message}`;
+      if (testErr.response && testErr.response.data) {
+        try {
+          const errorData = Buffer.from(testErr.response.data).toString('utf8');
+          configTest += ` - ${errorData}`;
+        } catch (e) {
+          // Ignore parsing error
+        }
+      }
+    }
+    
     const statusEmbed = new EmbedBuilder()
       .setTitle('🖼️ Image Generation Service Status')
       .setTimestamp();
     
-    if (apiStatus.status === 'operational') {
+    if (apiStatus.status === 'operational' && configTest.includes('Passed')) {
       statusEmbed
         .setColor('#00FF00')
         .setDescription('✅ The image generation service appears to be operational!')
-        .addFields({ name: 'API Key', value: process.env.HUGGINGFACE_API_KEY ? '✓ Configured' : '❌ Missing' });
+        .addFields(
+          { name: 'API Status', value: apiStatus.status },
+          { name: 'Config Test', value: configTest },
+          { name: 'API Key', value: process.env.HUGGINGFACE_API_KEY ? '✓ Configured' : '❌ Missing' }
+        );
     } else {
       statusEmbed
         .setColor('#FF0000')
         .setDescription('❌ The image generation service is experiencing issues.')
         .addFields(
-          { name: 'Status', value: apiStatus.status },
+          { name: 'API Status', value: apiStatus.status },
+          { name: 'Config Test', value: configTest },
           { name: 'Details', value: JSON.stringify(apiStatus.details) || 'No details available' },
-          { name: 'API Key', value: process.env.HUGGINGFACE_API_KEY ? '✓ Configured' : '❌ Missing' }
+          { name: 'API Key', value: process.env.HUGGINGFACE_API_KEY ? '✓ Configured' : '❌ Missing' },
+          { name: 'Troubleshooting', value: 'The error appears to be related to an API configuration issue. Please check for Hugging Face API changes or requirements.' }
         );
     }
     
