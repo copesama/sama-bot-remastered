@@ -346,6 +346,7 @@ async function handleSingleGameCommand(message) {
         { name: 'Game ID', value: `\`${gameId}\`` },
         { name: 'How to Play', value: `Use \`${prefix}playgame ${gameId}\` to get a personalized link to your game or click the Play button below.` },
         { name: 'Share Your Game', value: 'Share the Game ID with friends so they can try your game!' },
+        { name: 'Edit Your Game', value: `To modify this game, use command: \`${prefix}editgame ${gameId}\` or click the Edit button below.` },
         { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`${prefix}enhancegame ${gameId}\` or click the Enhance button below.` },
         { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
       )
