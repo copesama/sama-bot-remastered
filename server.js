@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const cookieParser = require('cookie-parser');
-const { connectToDatabase, Game, sanitizeGameHtml } = require('./utils/mongooseUtil');
+const { connectToDatabase } = require('./utils/mongooseUtil');
 // Import security middleware
 const { securityHeaders, sanitizeCookies } = require('./utils/securityMiddleware');
 
@@ -62,8 +62,14 @@ const {
   usersWaitingForWordCount
 } = require('./commands/humanGenerator');
 
-// Import the rate limiter utility
-const { checkRateLimit, incrementUsage, formatResetTime } = require('./utils/rateLimiter');
+// Import the rate limiter utility with new user-based functions
+const { 
+  checkRateLimit, 
+  incrementUsage, 
+  formatResetTime,
+  checkUserRateLimit,
+  incrementUserUsage
+} = require('./utils/rateLimiter');
 
 // Initialize Discord client
 const client = new Client({
@@ -238,8 +244,10 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content.startsWith('!financenews') || message.content.startsWith('!fnews')) {
-    // Apply rate limit
+    // Apply server rate limit
     const serverId = message.guild?.id;
+    const userId = message.author.id;
+    
     if (serverId) {
       const rateLimitResult = checkRateLimit(serverId, 'financenews');
       
@@ -256,17 +264,37 @@ client.on('messageCreate', async (message) => {
         await message.reply({ embeds: [embed] });
         return;
       }
-      
-      incrementUsage(serverId, 'financenews');
     }
+    
+    // Apply user rate limit
+    const userRateLimitResult = checkUserRateLimit(userId, 'financenews');
+    if (userRateLimitResult.isLimited) {
+      const embed = new EmbedBuilder()
+        .setTitle('Personal Rate Limit')
+        .setDescription(`You have reached your daily limit for the !financenews command.`)
+        .addFields(
+          { name: 'Your Daily Limit', value: `${userRateLimitResult.limit} uses per ${userRateLimitResult.resetTimeHours} hours` },
+          { name: 'Next Reset', value: formatResetTime(userRateLimitResult.resetTimeMs) }
+        )
+        .setColor('#FF0000');
+      
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+    
+    // Increment both server and user usage
+    if (serverId) incrementUsage(serverId, 'financenews');
+    incrementUserUsage(userId, 'financenews');
     
     await handleFinanceNewsCommand(message, process.env.NEWSAPI_KEY, client);
     return;
   }
 
   if (message.content.startsWith('!financereport') || message.content.startsWith('!freport')) {
-    // Apply rate limit
+    // Apply server rate limit
     const serverId = message.guild?.id;
+    const userId = message.author.id;
+    
     if (serverId) {
       const rateLimitResult = checkRateLimit(serverId, 'financereport');
       
@@ -283,17 +311,37 @@ client.on('messageCreate', async (message) => {
         await message.reply({ embeds: [embed] });
         return;
       }
-      
-      incrementUsage(serverId, 'financereport');
     }
+    
+    // Apply user rate limit
+    const userRateLimitResult = checkUserRateLimit(userId, 'financereport');
+    if (userRateLimitResult.isLimited) {
+      const embed = new EmbedBuilder()
+        .setTitle('Personal Rate Limit')
+        .setDescription(`You have reached your daily limit for the !financereport command.`)
+        .addFields(
+          { name: 'Your Daily Limit', value: `${userRateLimitResult.limit} uses per ${userRateLimitResult.resetTimeHours} hours` },
+          { name: 'Next Reset', value: formatResetTime(userRateLimitResult.resetTimeMs) }
+        )
+        .setColor('#FF0000');
+      
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+    
+    // Increment both server and user usage
+    if (serverId) incrementUsage(serverId, 'financereport');
+    incrementUserUsage(userId, 'financereport');
     
     await handleFinanceReportCommand(message, client);
     return;
   }
 
   if (message.content.startsWith('!generatequiz') || message.content.startsWith('!quiz')) {
-    // Apply rate limit
+    // Apply server rate limit
     const serverId = message.guild?.id;
+    const userId = message.author.id;
+    
     if (serverId) {
       const rateLimitResult = checkRateLimit(serverId, 'quiz');
       
@@ -310,17 +358,37 @@ client.on('messageCreate', async (message) => {
         await message.reply({ embeds: [embed] });
         return;
       }
-      
-      incrementUsage(serverId, 'quiz');
     }
+    
+    // Apply user rate limit
+    const userRateLimitResult = checkUserRateLimit(userId, 'quiz');
+    if (userRateLimitResult.isLimited) {
+      const embed = new EmbedBuilder()
+        .setTitle('Personal Rate Limit')
+        .setDescription(`You have reached your daily limit for the !quiz command.`)
+        .addFields(
+          { name: 'Your Daily Limit', value: `${userRateLimitResult.limit} uses per ${userRateLimitResult.resetTimeHours} hours` },
+          { name: 'Next Reset', value: formatResetTime(userRateLimitResult.resetTimeMs) }
+        )
+        .setColor('#FF0000');
+      
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+    
+    // Increment both server and user usage
+    if (serverId) incrementUsage(serverId, 'quiz');
+    incrementUserUsage(userId, 'quiz');
     
     await handleQuizCommand(message);
     return;
   }
   
   if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
-    // Apply rate limit
+    // Apply server rate limit
     const serverId = message.guild?.id;
+    const userId = message.author.id;
+    
     if (serverId) {
       const rateLimitResult = checkRateLimit(serverId, 'choicesgame');
       
@@ -337,9 +405,27 @@ client.on('messageCreate', async (message) => {
         await message.reply({ embeds: [embed] });
         return;
       }
-      
-      incrementUsage(serverId, 'choicesgame');
     }
+    
+    // Apply user rate limit
+    const userRateLimitResult = checkUserRateLimit(userId, 'choicesgame');
+    if (userRateLimitResult.isLimited) {
+      const embed = new EmbedBuilder()
+        .setTitle('Personal Rate Limit')
+        .setDescription(`You have reached your daily limit for the !choicesgame command.`)
+        .addFields(
+          { name: 'Your Daily Limit', value: `${userRateLimitResult.limit} uses per ${userRateLimitResult.resetTimeHours} hours` },
+          { name: 'Next Reset', value: formatResetTime(userRateLimitResult.resetTimeMs) }
+        )
+        .setColor('#FF0000');
+      
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+    
+    // Increment both server and user usage
+    if (serverId) incrementUsage(serverId, 'choicesgame');
+    incrementUserUsage(userId, 'choicesgame');
     
     await handleChoicesGameCommand(message);
     return;
@@ -349,9 +435,9 @@ client.on('messageCreate', async (message) => {
   const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!play\s+([a-zA-Z0-9_-]+)$/);
   if (playGameMatch) {
     const gameId = playGameMatch[1];
-    
-    // Apply rate limit
     const serverId = message.guild?.id;
+    const userId = message.author.id;
+    
     if (serverId) {
       const rateLimitResult = checkRateLimit(serverId, 'play');
       
@@ -368,9 +454,27 @@ client.on('messageCreate', async (message) => {
         await message.reply({ embeds: [embed] });
         return;
       }
-      
-      incrementUsage(serverId, 'play');
     }
+    
+    // Apply user rate limit
+    const userRateLimitResult = checkUserRateLimit(userId, 'play');
+    if (userRateLimitResult.isLimited) {
+      const embed = new EmbedBuilder()
+        .setTitle('Personal Rate Limit')
+        .setDescription(`You have reached your daily limit for the !play command.`)
+        .addFields(
+          { name: 'Your Daily Limit', value: `${userRateLimitResult.limit} uses per ${userRateLimitResult.resetTimeHours} hours` },
+          { name: 'Next Reset', value: formatResetTime(userRateLimitResult.resetTimeMs) }
+        )
+        .setColor('#FF0000');
+      
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+    
+    // Increment both server and user usage
+    if (serverId) incrementUsage(serverId, 'play');
+    incrementUserUsage(userId, 'play');
     
     await handlePlayGameCommand(message, gameId, GAMES_DIR, PORT, JWT_SECRET);
     return;
