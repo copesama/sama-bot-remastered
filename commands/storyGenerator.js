@@ -1,6 +1,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const { EmbedBuilder } = require('discord.js');
+const { getPrefix } = require('./prefixCommand');
 
 // Function to generate a story using OpenRouter API
 async function generateStory(prompt, characterNames) {
@@ -235,29 +236,31 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
 }
 
 // Function to handle the story command
-async function handleStoryCommand(message, generateImageWithAvatars, IMAGES_DIR) {
+async function handleStoryCommand(message) {
   const characterUsers = Array.from(message.mentions.users.values());
+  const prefix = await getPrefix(message.guild?.id);
   
   if (characterUsers.length === 0) {
-    return message.reply('Please mention at least one user to include as a character in the story. Example: `!generatestory @username1 @username2`');
+    return message.reply(`Please mention at least one user to include as a character in the story. Example: \`${prefix}generatestory @username1 @username2\``);
   }
   
   const loadingMessage = await message.reply(`I found ${characterUsers.length} character(s): ${characterUsers.map(user => user.username).join(', ')}. Now, please describe the scenario for the story in your next message.`);
   
-  // Return information needed to set up the waiting state
-  return { characterUsers, loadingMessage };
+  // Return information needed to set up the waiting state, including prefix
+  return { characterUsers, loadingMessage, prefix };
 }
 
 /**
  * Handles a user's story prompt input
  * @param {string} userId - The Discord user ID
- * @param {Object} storyData - Data containing characterUsers and loadingMessage
+ * @param {Object} storyData - Data containing characterUsers, loadingMessage, and prefix
  * @param {string} storyPrompt - The user's story prompt
+ * @param {Object} message - The Discord message object
  * @param {Function} imageGenerator - Function to generate images
  * @param {string} imagesDir - Directory to store images
  */
 async function handleStoryPromptInput(userId, storyData, storyPrompt, message, imageGenerator, imagesDir) {
-  const { characterUsers, loadingMessage } = storyData;
+  const { characterUsers, loadingMessage, prefix = '!' } = storyData;
   
   await loadingMessage.edit('📝 Generating your custom story with images... This might take several minutes as I craft a detailed narrative with visuals!');
   
@@ -273,10 +276,10 @@ async function handleStoryPromptInput(userId, storyData, storyPrompt, message, i
     
     return true;
   } catch (error) {
-    let errorMessage = 'Sorry, there was an error generating your story with images. Please try again later.';
+    let errorMessage = `Sorry, there was an error generating your story with images. Please try again later with \`${prefix}story\`.`;
     
     if (error.message && error.message.includes('timeout')) {
-      errorMessage = 'Sorry, story or image generation timed out. Please try a simpler prompt or try again later.';
+      errorMessage = `Sorry, story or image generation timed out. Please try a simpler prompt or try again later with \`${prefix}story\`.`;
     }
     
     await loadingMessage.edit(errorMessage);

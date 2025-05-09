@@ -5,6 +5,7 @@ const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
 const jwt = require('jsonwebtoken');
 const { Game, connectToDatabase, sanitizeGameHtml } = require('../utils/mongooseUtil');
+const { getPrefix } = require('./prefixCommand');
 
 // Path to games directory (relative to project root) - kept for backwards compatibility
 const GAMES_DIR = path.join(__dirname, '..', 'games');
@@ -320,10 +321,15 @@ async function enhanceGame(gameId, originalHtml) {
 
 // Main function to handle the !singlegame command
 async function handleSingleGameCommand(message) {
-  const prompt = message.content.slice('!singlegame'.length).trim();
+  // Get the custom prefix for this server
+  const prefix = await getPrefix(message.guild?.id);
+  
+  // Extract the command content (prompt) with the dynamic prefix
+  const commandName = message.content.startsWith(`${prefix}singlegame`) ? `${prefix}singlegame` : `${prefix}sgame`;
+  const prompt = message.content.slice(commandName.length).trim();
   
   if (!prompt) {
-    message.reply('Please provide a prompt for the game. Example: `!singlegame platform adventure with collectibles`');
+    message.reply(`Please provide a prompt for the game. Example: \`${prefix}singlegame platform adventure with collectibles\``);
     return;
   }
   
@@ -338,13 +344,13 @@ async function handleSingleGameCommand(message) {
       .setDescription(`**Game prompt:** ${prompt}`)
       .addFields(
         { name: 'Game ID', value: `\`${gameId}\`` },
-        { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your game.' },
+        { name: 'How to Play', value: `Use \`${prefix}playgame ${gameId}\` to get a personalized link to your game.` },
         { name: 'Share Your Game', value: 'Share the Game ID with friends so they can try your game!' },
-        { name: 'Edit Your Game', value: `To modify this game, use command: \`!editgame ${gameId}\`` },
-        { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`!enhancegame ${gameId}\`` },
+        { name: 'Edit Your Game', value: `To modify this game, use command: \`${prefix}editgame ${gameId}\`` },
+        { name: 'Auto-Enhance Your Game', value: `To automatically improve and fix bugs in your game, use command: \`${prefix}enhancegame ${gameId}\`` },
         { name: 'Features', value: '• Custom gameplay based on your prompt\n• Personal high scores\n• Discord profile integration' }
       )
-      .setFooter({ text: 'Generated using AI • To play, use !playgame command' })
+      .setFooter({ text: `Generated using AI • To play, use ${prefix}playgame command` })
       .setTimestamp();
     
     await loadingMessage.edit({ content: 'Game created successfully!', embeds: [gameEmbed] });
@@ -515,7 +521,10 @@ function generateGameLink(gameId, user, baseUrl, jwtSecret) {
 }
 
 // Create game embed for responding to users
-function createGameEmbed(gameId, gamePrompt, gameUrl) {
+async function createGameEmbed(gameId, gamePrompt, gameUrl, guildId = null) {
+  // Get the prefix for the guild if available
+  const prefix = await getPrefix(guildId);
+  
   return new EmbedBuilder()
     .setColor('#00cc99')
     .setTitle('🎮 Here\'s Your Personal Game Link!')
@@ -524,7 +533,7 @@ function createGameEmbed(gameId, gamePrompt, gameUrl) {
       { name: 'Play the game', value: `[Click here to play](${gameUrl})` },
       { name: 'About Your Link', value: 'This link is personalized for you and will display your Discord username and avatar in the game.' }
     )
-    .setFooter({ text: 'Generated using AI • Link personalized for you' })
+    .setFooter({ text: `Generated using AI • Link personalized for you • Use ${prefix}playgame to play other games` })
     .setTimestamp();
 }
 
@@ -569,8 +578,8 @@ async function handlePlayGameCommand(message, gameId, gamesDir, port, jwtSecret)
     // Generate game link
     const gameUrl = generateGameLink(gameId, message.author, baseUrl, jwtSecret);
     
-    // Create game embed
-    const gameEmbed = createGameEmbed(gameId, game?.prompt || null, gameUrl);
+    // Create game embed with guild ID for prefix
+    const gameEmbed = await createGameEmbed(gameId, game?.prompt || null, gameUrl, message.guild?.id);
     
     await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
   } catch (error) {
@@ -621,6 +630,9 @@ async function handleEditGameCommand(message, gameId, gamesDir) {
  */
 async function handleEnhanceGameCommand(message, gameId, gamesDir) {
   try {
+    // Get the custom prefix for this server
+    const prefix = await getPrefix(message.guild?.id);
+    
     // Connect to MongoDB
     await connectToDatabase();
     
@@ -652,9 +664,9 @@ async function handleEnhanceGameCommand(message, gameId, gamesDir) {
         .addFields(
           { name: 'Game ID', value: `\`${gameId}\`` },
           { name: 'Enhancements Applied', value: '• Bug fixes\n• Improved game mechanics\n• Enhanced visuals\n• Performance optimization\n• Mobile compatibility improvements' },
-          { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your enhanced game.' }
+          { name: 'How to Play', value: `Use \`${prefix}playgame ${gameId}\` to get a personalized link to your enhanced game.` }
         )
-        .setFooter({ text: 'Auto-enhanced using AI • To play, use !playgame command' })
+        .setFooter({ text: `Auto-enhanced using AI • To play, use ${prefix}playgame command` })
         .setTimestamp();
       
       await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
@@ -677,6 +689,8 @@ async function handleEnhanceGameCommand(message, gameId, gamesDir) {
  */
 async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
   const { gameId, loadingMessage } = editData;
+  const guildId = loadingMessage.guild?.id;
+  const prefix = await getPrefix(guildId);
   
   await loadingMessage.edit('🔄 Editing your game... This might take a minute!');
   
@@ -708,9 +722,9 @@ async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
       .setDescription(`**Edit request:** ${editPrompt}`)
       .addFields(
         { name: 'Game ID', value: `\`${gameId}\`` },
-        { name: 'How to Play', value: 'Use `!playgame ' + gameId + '` to get a personalized link to your game.' }
+        { name: 'How to Play', value: `Use \`${prefix}playgame ${gameId}\` to get a personalized link to your game.` }
       )
-      .setFooter({ text: 'Edited using AI • To play, use !playgame command' })
+      .setFooter({ text: `Edited using AI • To play, use ${prefix}playgame command` })
       .setTimestamp();
     
     await loadingMessage.edit({ content: 'Game updated successfully!', embeds: [gameEmbed] });

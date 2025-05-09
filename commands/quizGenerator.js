@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const axios = require('axios');
+const { getPrefix } = require('./prefixCommand');
 
 // Store active quizzes with user IDs as keys
 const activeQuizzes = new Map();
@@ -219,8 +220,14 @@ function createResultsEmbed(score, totalQuestions, prompt, questionResults) {
  * @param {Object} message Discord message object
  */
 async function handleQuizCommand(message) {
+  // Get the custom prefix for this server
+  const prefix = await getPrefix(message.guild?.id);
+  
+  // Determine command name from message content
+  const commandName = message.content.startsWith(`${prefix}generatequiz`) ? `${prefix}generatequiz` : `${prefix}quiz`;
+  
   // Extract the command content
-  const commandContent = message.content.slice('!generatequiz'.length).trim();
+  const commandContent = message.content.slice(commandName.length).trim();
   
   // Check for number and prompt
   let questionCount = 10; // Default to 10 questions
@@ -236,13 +243,13 @@ async function handleQuizCommand(message) {
     
     // Validate question count
     if (questionCount < 3 || questionCount > 20) {
-      message.reply('Please specify a number of questions between 3 and 20. Example: `!generatequiz 15 Solar System`');
+      message.reply(`Please specify a number of questions between 3 and 20. Example: \`${prefix}generatequiz 15 Solar System\``);
       return;
     }
     
     // If no prompt was provided after the number, ask for it
     if (!prompt) {
-      message.reply(`Please provide a topic for your ${questionCount}-question quiz. Example: \`!generatequiz ${questionCount} Solar System\``);
+      message.reply(`Please provide a topic for your ${questionCount}-question quiz. Example: \`${prefix}generatequiz ${questionCount} Solar System\``);
       return;
     }
   } else {
@@ -250,7 +257,7 @@ async function handleQuizCommand(message) {
     prompt = commandContent;
     
     if (!prompt) {
-      message.reply('Please provide a topic for the quiz. Example: `!generatequiz Solar System` or `!generatequiz 15 Solar System`');
+      message.reply(`Please provide a topic for the quiz. Example: \`${prefix}generatequiz Solar System\` or \`${prefix}generatequiz 15 Solar System\``);
       return;
     }
   }
@@ -276,7 +283,8 @@ async function handleQuizCommand(message) {
       currentQuestion: 0,
       score: 0,
       results: [],
-      message: null
+      message: null,
+      prefix: prefix // Store the prefix with the session
     };
     
     // Add to active quizzes
@@ -289,7 +297,7 @@ async function handleQuizCommand(message) {
     await sendNextQuestion(message.channel, message.author.id);
     
   } catch (error) {
-    await loadingMessage.edit('Sorry, there was an error generating your quiz. Please try again later.');
+    await loadingMessage.edit(`Sorry, there was an error generating your quiz. Please try again later with \`${prefix}quiz\`.`);
   }
 }
 
@@ -465,6 +473,9 @@ async function finishQuiz(channel, userId) {
     return;
   }
   
+  // Get the prefix from the session, or default to '!'
+  const prefix = quizSession.prefix || '!';
+  
   // Create and send results embed
   const resultsEmbed = createResultsEmbed(
     quizSession.score,
@@ -502,7 +513,7 @@ async function finishQuiz(channel, userId) {
     feedbackMessage = "📖 Don't worry! Everyone starts somewhere. This is a great opportunity to learn more about this topic!";
   }
   
-  await channel.send(`<@${userId}> ${feedbackMessage}\n\nUse \`!generatequiz [topic]\` to create another quiz!`);
+  await channel.send(`<@${userId}> ${feedbackMessage}\n\nUse \`${prefix}generatequiz [topic]\` to create another quiz!`);
   
   // Remove from active quizzes
   activeQuizzes.delete(userId);

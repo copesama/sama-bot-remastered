@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const axios = require('axios');
+const { getPrefix } = require('./prefixCommand');
 
 // Store active games with user IDs as keys
 const activeGames = new Map();
@@ -151,9 +152,10 @@ The output must be a valid JSON object that can be directly parsed.`
  * Creates a Discord embed for a game node
  * @param {Object} gameSession The current game session
  * @param {Object} node The current node data
+ * @param {string} prefix The server's command prefix
  * @returns {EmbedBuilder} Discord embed for the node
  */
-function createNodeEmbed(gameSession, node) {
+function createNodeEmbed(gameSession, node, prefix = '!') {
   let color = '#4285F4'; // Default color
   let title = gameSession.gameStructure.title;
   
@@ -180,11 +182,11 @@ function createNodeEmbed(gameSession, node) {
     embed.setDescription(node.text);
   }
   
-  // Add footer showing progress
+  // Add footer showing progress with the custom prefix
   if (!node.isEnding) {
     embed.setFooter({ text: 'Make your choice by clicking a button below' });
   } else {
-    embed.setFooter({ text: 'Game ended. You can play again with !choicesgame' });
+    embed.setFooter({ text: `Game ended. You can play again with ${prefix}choicesgame` });
   }
   
   return embed;
@@ -226,9 +228,10 @@ function createChoiceButtons(choices) {
  * Creates a results embed showing the game outcome
  * @param {Object} gameSession The completed game session
  * @param {Object} endingNode The ending node reached
+ * @param {string} prefix The server's command prefix
  * @returns {EmbedBuilder} Discord embed with the results
  */
-function createResultsEmbed(gameSession, endingNode) {
+function createResultsEmbed(gameSession, endingNode, prefix = '!') {
   const color = endingNode.endingType === 'good' ? '#4CAF50' : '#F44336';
   const resultType = endingNode.endingType === 'good' ? 'Success!' : 'Game Over';
   
@@ -253,12 +256,15 @@ function createResultsEmbed(gameSession, endingNode) {
  * @param {Object} message Discord message object
  */
 async function handleChoicesGameCommand(message) {
+  // Get the server's prefix
+  const prefix = await getPrefix(message.guild?.id);
+  
   // Extract the command content (scenario)
-  let commandName = message.content.startsWith('!generatechoicesgame') ? '!generatechoicesgame' : '!choicesgame';
+  let commandName = message.content.startsWith(`${prefix}generatechoicesgame`) ? `${prefix}generatechoicesgame` : `${prefix}choicesgame`;
   const scenario = message.content.slice(commandName.length).trim();
   
   if (!scenario) {
-    message.reply('Please provide a scenario for the choices game. Example: `!generatechoicesgame business CEO` or `!choicesgame space explorer`');
+    message.reply(`Please provide a scenario for the choices game. Example: \`${prefix}generatechoicesgame business CEO\` or \`${prefix}choicesgame space explorer\``);
     return;
   }
   
@@ -283,7 +289,8 @@ async function handleChoicesGameCommand(message) {
       currentNode: 'start',
       path: ['start'], // Track the path taken
       introductionShown: false,
-      message: null
+      message: null,
+      prefix: prefix // Store the prefix with the session
     };
     
     // Add to active games
@@ -321,8 +328,9 @@ async function sendGameNode(channel, userId) {
     return;
   }
   
-  // Create node embed
-  const embed = createNodeEmbed(gameSession, currentNode);
+  // Create node embed using the session's prefix
+  const prefix = gameSession.prefix || '!';
+  const embed = createNodeEmbed(gameSession, currentNode, prefix);
   
   let components = [];
   
@@ -417,11 +425,12 @@ async function sendGameNode(channel, userId) {
   collector.on('end', async (collected, reason) => {
     if (reason === 'time' && gameSession.message && gameSession.message.id === nodeMessage.id) {
       // Timeout - user didn't make a choice in time
+      const prefix = gameSession.prefix || '!';
       const timeoutEmbed = new EmbedBuilder()
         .setColor('#607D8B')
         .setTitle("⏰ Time's up!")
         .setDescription(`You took too long to make a decision. The game has ended.`)
-        .setFooter({ text: `You can start a new game with !choicesgame` });
+        .setFooter({ text: `You can start a new game with ${prefix}choicesgame` });
       
       // Disable all buttons
       const disabledComponents = components.map(row => {
@@ -492,8 +501,10 @@ async function finishGame(channel, userId, endingNode) {
     return;
   }
   
+  const prefix = gameSession.prefix || '!';
+  
   // Create and send results embed
-  const resultsEmbed = createResultsEmbed(gameSession, endingNode);
+  const resultsEmbed = createResultsEmbed(gameSession, endingNode, prefix);
   
   // Send a summary message
   await channel.send({
@@ -510,7 +521,7 @@ async function finishGame(channel, userId, endingNode) {
     feedbackMessage = "💫 Better luck next time! Every choice shapes a different story.";
   }
   
-  await channel.send(`<@${userId}> ${feedbackMessage}\n\nUse \`!choicesgame [scenario]\` to create another choices game!`);
+  await channel.send(`<@${userId}> ${feedbackMessage}\n\nUse \`${prefix}choicesgame [scenario]\` to create another choices game!`);
   
   // Remove from active games
   activeGames.delete(userId);

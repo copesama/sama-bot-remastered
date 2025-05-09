@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
+const { getPrefix } = require('./prefixCommand');
 
 // Map to track users waiting for responses to the human generation questions
 const usersWaitingForHumanResponse = new Map();
@@ -138,12 +139,18 @@ The most important aspect is to exactly match my vocabulary and grammar level. D
  */
 async function handleHumanGeneratorCommand(message) {
   try {
-    // Extract the topic from the command (everything after !generatehuman)
-    const commandPrefix = '!generatehuman';
+    // Get the server's prefix
+    const prefix = await getPrefix(message.guild?.id);
+    
+    // Extract the topic from the command (everything after prefix+generatehuman)
+    const commandPrefix = message.content.startsWith(`${prefix}generatehuman`) 
+      ? `${prefix}generatehuman` 
+      : `${prefix}human`;
+      
     let topic = message.content.slice(commandPrefix.length).trim();
     
     if (!topic) {
-      return message.reply('Please provide a topic. Example: `!generatehuman climate change`');
+      return message.reply(`Please provide a topic. Example: \`${prefix}generatehuman climate change\``);
     }
     
     const loadingMessage = await message.reply(`Generating a question about "${topic}"...`);
@@ -161,8 +168,8 @@ async function handleHumanGeneratorCommand(message) {
       embeds: [questionEmbed]
     });
     
-    // Return information needed to set up the waiting state, including the question
-    return { topic, loadingMessage, question };
+    // Return information needed to set up the waiting state, including the question and prefix
+    return { topic, loadingMessage, question, prefix };
   } catch (error) {
     message.reply('Sorry, there was an error generating your question. Please try again later.');
     return null;
@@ -172,23 +179,23 @@ async function handleHumanGeneratorCommand(message) {
 /**
  * Handles the user's response to the human generator question
  * @param {string} userId - The Discord user ID
- * @param {Object} humanData - Data containing topic, loadingMessage, and question
+ * @param {Object} humanData - Data containing topic, loadingMessage, question, and prefix
  * @param {string} userResponse - The user's response to the question
  * @param {Object} message - The Discord message object
  * @returns {Promise<boolean>} - Whether the processing was successful
  */
 async function handleHumanResponseInput(userId, humanData, userResponse, message) {
-  const { topic, loadingMessage, question } = humanData;
+  const { topic, loadingMessage, question, prefix = '!' } = humanData;
   
   // Check if the response is too short
   const wordCount = userResponse.split(/\s+/).length;
   if (wordCount < 50) {
-    await loadingMessage.edit(`Your response was only ${wordCount} words. For better results, please use the command again and provide at least 50 words in your answer.`);
+    await loadingMessage.edit(`Your response was only ${wordCount} words. For better results, please use the \`${prefix}generatehuman\` command again and provide at least 50 words in your answer.`);
     return false;
   }
   
   // Store the user's response for later use when generating the academic text
-  const responseData = { topic, loadingMessage, question, userResponse };
+  const responseData = { topic, loadingMessage, question, userResponse, prefix };
   usersWaitingForWordCount.set(userId, responseData);
   
   // Create an embed to ask for the desired word count
@@ -220,11 +227,12 @@ async function handleWordCountInput(userId, wordCountInput, message) {
   // Get the stored response data
   const responseData = usersWaitingForWordCount.get(userId);
   if (!responseData) {
-    message.reply("I couldn't find your previous response. Please start again with the !generatehuman command.");
+    const prefix = await getPrefix(message.guild?.id);
+    message.reply(`I couldn't find your previous response. Please start again with the ${prefix}generatehuman command.`);
     return false;
   }
   
-  const { topic, loadingMessage, question, userResponse } = responseData;
+  const { topic, loadingMessage, question, userResponse, prefix = '!' } = responseData;
   
   // Parse the word count input
   let desiredWordCount = parseInt(wordCountInput.trim(), 10);
@@ -277,14 +285,14 @@ async function handleWordCountInput(userId, wordCountInput, message) {
       }
     }
     
-    await loadingMessage.edit(`✅ ${desiredWordCount}-word academic text on "${topic}" generated successfully based on your writing style!`);
+    await loadingMessage.edit(`✅ ${desiredWordCount}-word academic text on "${topic}" generated successfully based on your writing style! You can use \`${prefix}human\` again to generate more content.`);
     
     // Remove the user from waiting for word count
     usersWaitingForWordCount.delete(userId);
     
     return true;
   } catch (error) {
-    await loadingMessage.edit(`Sorry, there was an error generating the academic text on "${topic}". Please try again later.`);
+    await loadingMessage.edit(`Sorry, there was an error generating the academic text on "${topic}". Please try again later with \`${prefix}human\`.`);
     // Remove the user from waiting for word count
     usersWaitingForWordCount.delete(userId);
     return false;

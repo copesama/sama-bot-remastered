@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
+const { getPrefix } = require('./prefixCommand');
 
 // Function to generate image using Hugging Face API (step 1: text-to-image with white circles)
 async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
@@ -342,15 +343,16 @@ async function generateImageWithAvatars(prompt, avatarUrls, IMAGES_DIR) {
 // Function to handle the image generation command
 async function handleImageCommand(message) {
   const mentionedUsers = Array.from(message.mentions.users.values());
+  const prefix = await getPrefix(message.guild?.id);
   
   if (mentionedUsers.length === 0) {
-    return message.reply('Please mention at least one user to include their avatar in the image. Example: `!generateimage @username1 @username2`');
+    return message.reply(`Please mention at least one user to include their avatar in the image. Example: \`${prefix}generateimage @username1 @username2\``);
   }
   
   const loadingMessage = await message.reply(`I found ${mentionedUsers.length} mentioned user(s). Now, please describe the scenario for the image in your next message.`);
   
-  // Return information needed to set up the waiting state
-  return { mentionedUsers, loadingMessage };
+  // Return information needed to set up the waiting state, including prefix
+  return { mentionedUsers, loadingMessage, prefix };
 }
 
 // Function to process the image prompt
@@ -408,8 +410,9 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
 /**
  * Handles a user's image prompt input
  * @param {string} userId - The Discord user ID
- * @param {Object} imageData - Data containing mentionedUsers and loadingMessage
+ * @param {Object} imageData - Data containing mentionedUsers, loadingMessage, and prefix
  * @param {string} imagePrompt - The user's image prompt
+ * @param {Object} message - The Discord message object
  * @param {string} imagesDir - Directory to store images
  */
 async function handleImagePromptInput(userId, imageData, imagePrompt, message, imagesDir) {

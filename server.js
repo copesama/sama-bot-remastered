@@ -249,18 +249,18 @@ client.on('messageCreate', async (message) => {
     return;
   }
   
-  // Handle the prefix command - keeping ! as the default prefix for this command
-  if (message.content.startsWith('!prefix')) {
-    await handlePrefixCommand(message);
-    return;
-  }
-
-  // Check if message starts with the custom prefix for all other commands
+  // Check if message starts with the custom prefix for all commands
   if (!message.content.startsWith(prefix)) return;
 
   // Get the command and arguments
   const args = message.content.slice(prefix.length).trim().split(/\s+/);
   const command = args[0].toLowerCase();
+
+  // Handle prefix command with the custom prefix (removed special case for !prefix)
+  if (command === 'prefix') {
+    await handlePrefixCommand(message);
+    return;
+  }
 
   // Replace startsWith checks with command matching
   if (command === 'financenews' || command === 'fnews') {

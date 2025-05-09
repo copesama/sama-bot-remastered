@@ -5,6 +5,7 @@ const FormData = require('form-data');
 const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
+const { getPrefix } = require('./prefixCommand');
 
 // Keep track of active voice connections and players (moved from server.js)
 const voiceConnections = new Map();
@@ -157,16 +158,26 @@ async function playMusicInVoiceChannel(voiceChannel, musicPath) {
   }
 }
 
-// Main handler function for the !generateemusic command
+// Main handler function for the music command
 async function handleMusicCommand(message) {
-  const fullContent = message.content.slice('!generatemusic'.length).trim();
+  // Get the custom prefix for this server
+  const prefix = await getPrefix(message.guild?.id);
+  
+  // Extract command content (handle both variations of the command)
+  const commandName = message.content.startsWith(`${prefix}generatemusic`) ? 
+    `${prefix}generatemusic` : `${prefix}music`;
+  const fullContent = message.content.slice(commandName.length).trim();
   
   // Check if there are lyrics in the format "[lyrics] ... [/lyrics]"
   let prompt, lyrics;
   const lyricsMatch = fullContent.match(/\[lyrics\]([\s\S]*?)\[\/lyrics\]/);
   
   if (!lyricsMatch) {
-    return message.reply('Please provide lyrics in the format: `!generatemusic [lyrics]Your lyrics here[/lyrics]`\nExample: `!generatemusic [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics]`\n- You can also attach an audio file to use as a base for music generation');
+    return message.reply(
+      `Please provide lyrics in the format: \`${prefix}generatemusic [lyrics]Your lyrics here[/lyrics]\`\n` +
+      `Example: \`${prefix}music [lyrics]In the silence, I hear your name\nEchoes of love that still remain[/lyrics]\`\n` +
+      `- You can also attach an audio file to use as a base for music generation`
+    );
   }
   
   // Extract lyrics from the special format and use the lyrics themselves as the prompt
@@ -231,12 +242,12 @@ async function handleMusicCommand(message) {
     
   } catch (error) {
     // Provide more helpful error message to the user
-    let errorMessage = 'Sorry, there was an error generating your music. Please try again later.';
+    let errorMessage = `Sorry, there was an error generating your music. Please try again later with \`${prefix}music\`.`;
     
     if (error.message.includes('timed out')) {
-      errorMessage = 'Sorry, music generation timed out. Please try a simpler prompt or try again later.';
+      errorMessage = `Sorry, music generation timed out. Please try a simpler prompt or try again later with \`${prefix}music\`.`;
     } else if (error.message.includes('vocal_id null not found')) {
-      errorMessage = 'Sorry, there was an issue with the music generation service. Please try a different prompt.';
+      errorMessage = `Sorry, there was an issue with the music generation service. Please try a different prompt with \`${prefix}music\`.`;
     }
     
     await loadingMessage.edit(errorMessage);
