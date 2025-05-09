@@ -53,6 +53,9 @@ const { handleInviteCommand } = require('./commands/inviteCommand');
 // Import the help command module
 const { handleHelpCommand } = require('./commands/helpCommand');
 
+// Import the prefix command module
+const { handlePrefixCommand, getPrefix, clearPrefixCache } = require('./commands/prefixCommand');
+
 // Import the human generator module with new word count functionality
 const { 
   handleHumanGeneratorCommand, 
@@ -159,6 +162,9 @@ client.once('ready', async () => {
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+  
+  // Get the custom prefix for this server (default to '!' for DMs)
+  const prefix = await getPrefix(message.guild?.id);
 
   if (usersInEditMode.has(message.author.id)) {
     const editData = usersInEditMode.get(message.author.id);
@@ -242,8 +248,22 @@ client.on('messageCreate', async (message) => {
     
     return;
   }
+  
+  // Handle the prefix command - keeping ! as the default prefix for this command
+  if (message.content.startsWith('!prefix')) {
+    await handlePrefixCommand(message);
+    return;
+  }
 
-  if (message.content.startsWith('!financenews') || message.content.startsWith('!fnews')) {
+  // Check if message starts with the custom prefix for all other commands
+  if (!message.content.startsWith(prefix)) return;
+
+  // Get the command and arguments
+  const args = message.content.slice(prefix.length).trim().split(/\s+/);
+  const command = args[0].toLowerCase();
+
+  // Replace startsWith checks with command matching
+  if (command === 'financenews' || command === 'fnews') {
     // Apply server rate limit
     const serverId = message.guild?.id;
     const userId = message.author.id;
@@ -290,7 +310,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!financereport') || message.content.startsWith('!freport')) {
+  if (command === 'financereport' || command === 'freport') {
     // Apply server rate limit
     const serverId = message.guild?.id;
     const userId = message.author.id;
@@ -337,7 +357,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!generatequiz') || message.content.startsWith('!quiz')) {
+  if (command === 'generatequiz' || command === 'quiz') {
     // Apply server rate limit
     const serverId = message.guild?.id;
     const userId = message.author.id;
@@ -384,7 +404,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
   
-  if (message.content.startsWith('!generatechoicesgame') || message.content.startsWith('!choicesgame')) {
+  if (command === 'generatechoicesgame' || command === 'choicesgame') {
     // Apply server rate limit
     const serverId = message.guild?.id;
     const userId = message.author.id;
@@ -432,9 +452,13 @@ client.on('messageCreate', async (message) => {
   }
 
   // Handle play game command with rate limit
-  const playGameMatch = message.content.match(/^!playgame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!play\s+([a-zA-Z0-9_-]+)$/);
-  if (playGameMatch) {
-    const gameId = playGameMatch[1];
+  if (command === 'playgame' || command === 'play') {
+    const gameId = args[1];
+    if (!gameId) {
+      await message.reply(`Please specify a game ID. Usage: ${prefix}play [gameId]`);
+      return;
+    }
+    
     const serverId = message.guild?.id;
     const userId = message.author.id;
     
@@ -480,7 +504,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!generatestory') || message.content.startsWith('!story')) {
+  if (command === 'generatestory' || command === 'story') {
     // Apply rate limit
     const serverId = message.guild?.id;
     if (serverId) {
@@ -511,7 +535,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!generateimage') || message.content.startsWith('!image')) {
+  if (command === 'generateimage' || command === 'image') {
     // Apply rate limit
     const serverId = message.guild?.id;
     if (serverId) {
@@ -543,9 +567,12 @@ client.on('messageCreate', async (message) => {
   }
 
   // Handle edit game command with rate limit
-  const editGameMatch = message.content.match(/^!editgame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!edit\s+([a-zA-Z0-9_-]+)$/);
-  if (editGameMatch) {
-    const gameId = editGameMatch[1];
+  if (command === 'editgame' || command === 'edit') {
+    const gameId = args[1];
+    if (!gameId) {
+      await message.reply(`Please specify a game ID. Usage: ${prefix}edit [gameId]`);
+      return;
+    }
     
     // Apply rate limit
     const serverId = message.guild?.id;
@@ -577,9 +604,12 @@ client.on('messageCreate', async (message) => {
   }
 
   // Handle enhance game command with rate limit
-  const enhanceGameMatch = message.content.match(/^!enhancegame\s+([a-zA-Z0-9_-]+)$/) || message.content.match(/^!enhance\s+([a-zA-Z0-9_-]+)$/);
-  if (enhanceGameMatch) {
-    const gameId = enhanceGameMatch[1];
+  if (command === 'enhancegame' || command === 'enhance') {
+    const gameId = args[1];
+    if (!gameId) {
+      await message.reply(`Please specify a game ID. Usage: ${prefix}enhance [gameId]`);
+      return;
+    }
     
     // Apply rate limit
     const serverId = message.guild?.id;
@@ -607,7 +637,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!generatemusic') || message.content.startsWith('!music')) {
+  if (command === 'generatemusic' || command === 'music') {
     // Apply rate limit
     const serverId = message.guild?.id;
     if (serverId) {
@@ -634,7 +664,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
   
-  if (message.content.startsWith('!singlegame') || message.content.startsWith('!sgame')) {
+  if (command === 'singlegame' || command === 'sgame') {
     // Check rate limit for the server
     const serverId = message.guild?.id;
     if (serverId) {
@@ -662,7 +692,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!multigame') || message.content.startsWith('!mgame')) {
+  if (command === 'multigame' || command === 'mgame') {
     // Apply rate limit
     const serverId = message.guild?.id;
     if (serverId) {
@@ -689,7 +719,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!generatehuman') || message.content.startsWith('!human')) {
+  if (command === 'generatehuman' || command === 'human') {
     // Apply rate limit
     const serverId = message.guild?.id;
     if (serverId) {
@@ -719,24 +749,31 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Keep invite and help commands unrestricted
-  if (message.content.startsWith('!invite')) {
+  // Keep invite and help commands unrestricted with custom prefix
+  if (command === 'invite') {
     await handleInviteCommand(message);
     return;
   }
   
-  if (message.content.startsWith('!help')) {
+  if (command === 'help') {
     await handleHelpCommand(message);
     return;
   }
 });
 
+// Update guildDelete event to clean up prefix cache
+client.on('guildDelete', (guild) => {
+  // Clear the prefix cache when the bot is removed from a server
+  clearPrefixCache(guild.id);
+});
+
+// Update guildMemberRemove to handle existing functionality
 client.on('guildMemberRemove', (member) => {
   clearUserQuiz(member.id);
   clearUserGame(member.id);
 });
 
-// Add guildCreate event handler for welcome message
+// Update guildCreate to include prefix information in welcome message
 client.on('guildCreate', async (guild) => {
   try {
     // Find the first text channel we can send messages to
@@ -758,6 +795,10 @@ client.on('guildCreate', async (guild) => {
           {
             name: '🔍 Available Commands', 
             value: 'Type `!help` to see all available commands and features!'
+          },
+          {
+            name: '⚙️ Customize Bot Prefix', 
+            value: 'You can change the command prefix using `!prefix <new-prefix>` (Admin only)'
           },
           {
             name: '🔒 Looking for an end-to-end encrypted chat?', 
