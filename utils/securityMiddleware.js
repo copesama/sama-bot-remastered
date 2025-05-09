@@ -20,6 +20,12 @@ function securityHeaders(req, res, next) {
     );
   }
   
+  // Don't apply CSP to image routes to prevent blocking the images
+  if (req.path.startsWith('/images/')) {
+    // Skip CSP for image routes
+    return next();
+  }
+  
   next();
 }
 

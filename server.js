@@ -129,6 +129,9 @@ app.use('/games', (req, res, next) => {
   next();
 }, express.static(GAMES_DIR));
 
+// Serve static image files
+app.use('/images', express.static(IMAGES_DIR));
+
 // Set up game routes with authentication
 setupGameRoutes(app, JWT_SECRET);
 

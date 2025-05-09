@@ -5,28 +5,8 @@ const shortid = require('shortid');
 const { EmbedBuilder } = require('discord.js');
 const { getPrefix } = require('./prefixCommand');
 
-// Debug logging utility function
-function debugLog(message, data = null) {
-  const timestamp = new Date().toISOString();
-  const logMessage = `[DEBUG ${timestamp}] ${message}`;
-  
-  console.log(logMessage);
-  if (data) {
-    try {
-      if (typeof data === 'object') {
-        console.log(JSON.stringify(data, null, 2));
-      } else {
-        console.log(data);
-      }
-    } catch (e) {
-      console.log('Could not stringify debug data:', e.message);
-    }
-  }
-}
-
 // Function to generate image using Hugging Face API (step 1: text-to-image with white circles)
 async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
-  debugLog(`Starting base image generation for prompt: "${prompt}" with ${numAvatars} avatar(s)`);
   try {
     // Calculate a reasonable percentage for the image generation prompt
     const circleSizeMinPercent = 15;
@@ -42,78 +22,34 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
     - Ensure each circle has a solid white fill with no patterns
     - Completely hide/replace heads with these white circles`;
     
-    debugLog(`Enhanced prompt created: ${enhancedPrompt.substring(0, 100)}...`);
-    
     const payload = { inputs: enhancedPrompt };
 
-    debugLog('Sending request to Hugging Face API');
     const response = await axios.post(
       'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev',
       payload,
       {
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json',
-          'Accept': 'image/png' // Explicitly request image/png as the response format
+          'Content-Type': 'application/json'
         },
         responseType: 'arraybuffer',
-        validateStatus: status => status < 500 // Allow handling of 4xx errors ourselves
       }
     );
-    
-    debugLog('Received response from Hugging Face API', {
-      status: response.status,
-      dataLength: response.data?.length || 0,
-      headers: response.headers
-    });
-
-    // Check if response status is not successful
-    if (response.status !== 200) {
-      let errorMsg = 'Unknown error';
-      try {
-        if (response.data) {
-          const errorText = Buffer.from(response.data).toString('utf8');
-          errorMsg = errorText;
-          debugLog(`API returned non-200 status code: ${response.status}`, errorMsg);
-        }
-      } catch (e) {
-        debugLog(`Error parsing error response: ${e.message}`);
-      }
-      throw new Error(`API returned status ${response.status}: ${errorMsg}`);
-    }
 
     // Generate temporary ID for the intermediate image file
     const tempImageId = `temp_${shortid.generate()}`;
     const tempImagePath = path.join(IMAGES_DIR, `${tempImageId}.png`);
-    debugLog(`Temp image path: ${tempImagePath}`);
-
-    // Check if IMAGES_DIR exists
-    if (!fs.existsSync(IMAGES_DIR)) {
-      debugLog(`Creating images directory: ${IMAGES_DIR}`);
-      fs.mkdirSync(IMAGES_DIR, { recursive: true });
-    }
 
     // Save the temporary image file
     fs.writeFileSync(tempImagePath, Buffer.from(response.data));
-    debugLog(`Base image saved to: ${tempImagePath}`);
 
     return { tempImageId, tempImagePath };
   } catch (error) {
-    debugLog('Error in generateBaseImage:', {
-      message: error.message,
-      stack: error.stack
-    });
-    
     if (error.response) {
       try {
         const errorData = Buffer.from(error.response.data).toString('utf8');
-        debugLog('API error response:', {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: errorData
-        });
       } catch (e) {
-        debugLog('Could not parse error response data', e.message);
+        // Could not parse error response data
       }
     }
     throw error;
@@ -122,31 +58,16 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
 
 // Function to place avatars into white circles using Jimp
 async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
-  debugLog(`Starting avatar placement for ${avatarUrls.length} avatars`);
-  debugLog(`Base image path: ${baseImagePath}`);
-  
   try {
-    debugLog('Importing Jimp library');
     const { Jimp, intToRGBA } = require('jimp');
-    debugLog('Loading base image with Jimp');
-    
-    // Check if the base image file exists
-    if (!fs.existsSync(baseImagePath)) {
-      debugLog(`ERROR: Base image file does not exist: ${baseImagePath}`);
-      throw new Error(`Base image file does not exist: ${baseImagePath}`);
-    }
-    
     const baseImage = await Jimp.read(baseImagePath);
     const baseWidth = baseImage.width;
     const baseHeight = baseImage.height;
-    debugLog(`Base image dimensions: ${baseWidth}x${baseHeight}`);
     
     const findWhiteCircles = async (image) => {
-      debugLog('Starting white circle detection');
       const circles = [];
       const threshold = 230;
       const circleMinRadius = Math.min(baseWidth, baseHeight) * 0.05;
-      debugLog(`Circle minimum radius: ${circleMinRadius}`);
       
       for (let y = 0; y < image.height; y += 10) {
         for (let x = 0; x < image.width; x += 10) {
@@ -216,24 +137,20 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
         }
       }
       
-      debugLog(`Found ${circles.length} circles in the base image`);
       return circles;
     };
     
     let circles = await findWhiteCircles(baseImage);
     
     circles.sort((a, b) => b.radius - a.radius);
-    debugLog(`After sorting by radius, largest radius: ${circles.length > 0 ? circles[0].radius : 'N/A'}`);
     
     if (circles.length < avatarUrls.length) {
-      debugLog(`Not enough circles detected (${circles.length}). Creating default grid layout for ${avatarUrls.length} avatars`);
       circles = [];
       const margin = baseWidth * 0.1;
       const avatarSize = Math.min(baseWidth, baseHeight) * 0.2;
       
       const avatarsPerRow = Math.ceil(Math.sqrt(avatarUrls.length));
       const spacing = (baseWidth - 2 * margin) / avatarsPerRow;
-      debugLog(`Creating grid with ${avatarsPerRow} avatars per row, spacing: ${spacing}px`);
       
       for (let i = 0; i < avatarUrls.length; i++) {
         const row = Math.floor(i / avatarsPerRow);
@@ -249,18 +166,15 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
         });
       }
     } else {
-      debugLog(`Found sufficient circles (${circles.length}). Using top ${avatarUrls.length} circles`);
       circles = circles.slice(0, avatarUrls.length);
       circles.sort((a, b) => a.centerY - b.centerY);
     }
     
     for (let i = 0; i < avatarUrls.length && i < circles.length; i++) {
       const { centerX, centerY, radius } = circles[i];
-      debugLog(`Processing avatar ${i+1}/${avatarUrls.length}, circle center(${centerX}, ${centerY}), radius: ${radius}`);
       
       try {
         let avatarUrl = avatarUrls[i];
-        debugLog(`Original avatar URL: ${avatarUrl}`);
         
         if (avatarUrl.includes('discord.com') || avatarUrl.includes('discordapp.com')) {
           if (avatarUrl.includes('?')) {
@@ -274,12 +188,10 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
           }
           
           avatarUrl = avatarUrl.replace('.webp', '.png');
-          debugLog(`Modified avatar URL: ${avatarUrl}`);
         }
         
         let avatarImage;
         try {
-          debugLog(`Fetching avatar from URL: ${avatarUrl}`);
           const avatarResponse = await axios.get(avatarUrl, { 
             responseType: 'arraybuffer',
             timeout: 10000,
@@ -289,7 +201,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
           });
           
           const contentType = avatarResponse.headers['content-type'];
-          debugLog(`Avatar fetched, content type: ${contentType}, data size: ${avatarResponse.data.length}`);
           
           if (contentType && contentType.includes('webp')) {
             avatarImage = new Jimp({ 
@@ -317,7 +228,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
             avatarImage = await Jimp.read(Buffer.from(avatarResponse.data));
           }
         } catch (avatarError) {
-          debugLog(`Error fetching avatar: ${avatarError.message}`, avatarError.stack);
           avatarImage = new Jimp({ 
             width: radius * 2, 
             height: radius * 2, 
@@ -342,7 +252,7 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
               textHeight * 2
             );
           } catch (textError) {
-            debugLog(`Error adding text to avatar image: ${textError.message}`);
+            // Error adding text to fallback circle
           }
         }
         
@@ -350,7 +260,6 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
           const scalingFactor = 1.6;
           const exactDiameter = Math.floor(radius * 2);
           const scaledDiameter = Math.floor(exactDiameter * scalingFactor);
-          debugLog(`Processing avatar image - exact diameter: ${exactDiameter}, scaled: ${scaledDiameter}`);
           
           avatarImage.resize({ w: scaledDiameter, h: scaledDiameter });
           
@@ -393,84 +302,54 @@ async function placeAvatarsInCircles(baseImagePath, avatarUrls, IMAGES_DIR) {
               opacityDest: 1
             });
           }
-          
-          debugLog(`Avatar processed and composited at position (${avatarX}, ${avatarY})`);
         } catch (error) {
-          debugLog(`Error processing avatar: ${error.message}`, error.stack);
           // Error processing avatar
         }
       } catch (outerError) {
-        debugLog(`Outer error in avatar preparation: ${outerError.message}`, outerError.stack);
         // Error in avatar preparation
       }
     }
     
     const imageId = shortid.generate();
     const imagePath = path.join(IMAGES_DIR, `${imageId}.png`);
-    debugLog(`Saving final image to: ${imagePath}`);
     
     await baseImage.write(imagePath);
-    debugLog(`Final image saved successfully`);
     
     return { imageId, imagePath };
   } catch (error) {
-    debugLog(`Critical error in placeAvatarsInCircles: ${error.message}`, {
-      stack: error.stack,
-      baseImagePath,
-      avatarUrlsCount: avatarUrls.length
-    });
     throw error;
   }
 }
 
 // Function to generate image with avatars (two-step process)
 async function generateImageWithAvatars(prompt, avatarUrls, IMAGES_DIR) {
-  debugLog(`generateImageWithAvatars started with prompt: "${prompt.substring(0, 50)}..." and ${avatarUrls.length} avatars`);
   try {
-    debugLog(`Starting step 1: Generate base image with white circles`);
     const { tempImageId, tempImagePath } = await generateBaseImage(prompt, avatarUrls.length, IMAGES_DIR);
-    debugLog(`Step 1 complete, temp image created at: ${tempImagePath}`);
     
-    debugLog(`Starting step 2: Place avatars in circles`);
     const { imageId, imagePath } = await placeAvatarsInCircles(tempImagePath, avatarUrls, IMAGES_DIR);
-    debugLog(`Step 2 complete, final image created at: ${imagePath}`);
     
     try {
-      debugLog(`Attempting to delete temporary image: ${tempImagePath}`);
       fs.unlinkSync(tempImagePath);
-      debugLog(`Temporary image deleted successfully`);
     } catch (err) {
-      debugLog(`Error deleting temporary image file: ${err.message}`);
       // Error deleting temporary image file
     }
     
     return { imageId, imagePath };
   } catch (error) {
-    debugLog(`Error in generateImageWithAvatars: ${error.message}`, {
-      stack: error.stack,
-      prompt: prompt.substring(0, 100)
-    });
     throw error;
   }
 }
 
 // Function to handle the image generation command
 async function handleImageCommand(message) {
-  debugLog(`handleImageCommand called by user: ${message.author.username} (${message.author.id})`);
   const mentionedUsers = Array.from(message.mentions.users.values());
-  debugLog(`Mentioned users: ${mentionedUsers.map(u => u.username).join(', ')}`);
-  
   const prefix = await getPrefix(message.guild?.id);
-  debugLog(`Server prefix: ${prefix}`);
   
   if (mentionedUsers.length === 0) {
-    debugLog(`No users mentioned, sending help message`);
     return message.reply(`Please mention at least one user to include their avatar in the image. Example: \`${prefix}generateimage @username1 @username2\``);
   }
   
-  debugLog(`Sending loading message`);
   const loadingMessage = await message.reply(`I found ${mentionedUsers.length} mentioned user(s). Now, please describe the scenario for the image in your next message.`);
-  debugLog(`Loading message sent: ${loadingMessage.id}`);
   
   // Return information needed to set up the waiting state, including prefix
   return { mentionedUsers, loadingMessage, prefix };
@@ -478,36 +357,15 @@ async function handleImageCommand(message) {
 
 // Function to process the image prompt
 async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingMessage, IMAGES_DIR) {
-  debugLog(`processImagePrompt called for user: ${message.author.username} (${message.author.id})`);
-  debugLog(`Image prompt: "${imagePrompt}"`);
-  debugLog(`Mentioned users: ${mentionedUsers.map(u => u.username).join(', ')}`);
+  await loadingMessage.edit('🎨 Generating your custom image in two steps...\n1️⃣ Creating base image from your prompt with placeholder circles\n2️⃣ Adding user avatars to the circles\n\nThis process might take 2-3 minutes!');
   
   try {
-    await loadingMessage.edit('🎨 Generating your custom image in two steps...\n1️⃣ Creating base image from your prompt with placeholder circles\n2️⃣ Adding user avatars to the circles\n\nThis process might take 2-3 minutes!');
-    debugLog(`Loading message updated with generation status`);
-  } catch (editError) {
-    debugLog(`Error updating loading message: ${editError.message}`);
-  }
-  
-  try {
-    debugLog(`Getting avatar URLs for ${mentionedUsers.length} users`);
-    const avatarUrls = mentionedUsers.map(user => {
-      const url = user.displayAvatarURL({ format: 'png', size: 512 });
-      debugLog(`Avatar URL for ${user.username}: ${url}`);
-      return url;
-    });
+    const avatarUrls = mentionedUsers.map(user => 
+      user.displayAvatarURL({ format: 'png', size: 512 })
+    );
     
-    debugLog(`Checking if IMAGES_DIR exists: ${IMAGES_DIR}`);
-    if (!fs.existsSync(IMAGES_DIR)) {
-      debugLog(`Creating IMAGES_DIR directory`);
-      fs.mkdirSync(IMAGES_DIR, { recursive: true });
-    }
-    
-    debugLog(`Starting image generation with ${avatarUrls.length} avatar URLs`);
     const { imageId, imagePath } = await generateImageWithAvatars(imagePrompt, avatarUrls, IMAGES_DIR);
-    debugLog(`Image generation successful. ID: ${imageId}, Path: ${imagePath}`);
     
-    debugLog(`Creating embed for generated image`);
     const imageEmbed = new EmbedBuilder()
       .setColor('#ff6600')
       .setTitle('🎨 Your Custom Image with Avatars is Ready!')
@@ -516,62 +374,38 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
       .setFooter({ text: 'Generated using AI with Discord avatars' })
       .setTimestamp();
     
-    debugLog(`Sending final image to channel`);
     await message.channel.send({ 
       content: `${message.author} Here's your generated image with ${mentionedUsers.length} user avatars:`,
       embeds: [imageEmbed],
       files: [{ attachment: imagePath, name: `${imageId}.png` }]
     });
-    debugLog(`Final image sent to channel successfully`);
     
-    try {
-      await loadingMessage.edit('✅ Composite image generated successfully!');
-      debugLog(`Loading message updated with success status`);
-    } catch (editError) {
-      debugLog(`Error updating loading message with success: ${editError.message}`);
-    }
+    await loadingMessage.edit('✅ Composite image generated successfully!');
     
     try {
       await message.delete();
-      debugLog(`Original command message deleted`);
     } catch (error) {
-      debugLog(`Error deleting message: ${error.message}`);
+      console.error('Error deleting message:', error);
     }
     
-    debugLog(`Setting timer to clean up image file in 5 seconds`);
+    // Increase the timeout for deleting the image file to ensure it's properly served
     setTimeout(() => {
       try {
         fs.unlinkSync(imagePath);
-        debugLog(`Image file deleted: ${imagePath}`);
       } catch (err) {
-        debugLog(`Error deleting image file: ${err.message}`);
+        console.error('Error deleting image file:', err);
       }
-    }, 5000);
+    }, 60000); // Increase to 60 seconds from 5 seconds
     
   } catch (error) {
-    debugLog(`Critical error in processImagePrompt:`, {
-      message: error.message,
-      stack: error.stack,
-      prompt: imagePrompt
-    });
-    
+    console.error('Image generation error:', error); // Log the full error for debugging
     let errorMessage = 'Sorry, there was an error generating your image. Please try again later.';
     
     if (error.message && error.message.includes('timeout')) {
       errorMessage = 'Sorry, image generation timed out. Please try a simpler prompt or try again later.';
-    } else if (error.message && error.message.includes('API returned status')) {
-      errorMessage = 'Sorry, the image generation API encountered an error. This may be due to content policy restrictions or technical issues. Please try a different prompt.';
-    } else if (error.message) {
-      // Include specific error message but keep generic message for user
-      debugLog(`Specific error: ${error.message}`);
     }
     
-    try {
-      await loadingMessage.edit(errorMessage);
-      debugLog(`Loading message updated with error status: ${errorMessage}`);
-    } catch (editError) {
-      debugLog(`Error updating loading message with error: ${editError.message}`);
-    }
+    await loadingMessage.edit(errorMessage);
   }
 }
 
@@ -584,10 +418,6 @@ async function processImagePrompt(message, imagePrompt, mentionedUsers, loadingM
  * @param {string} imagesDir - Directory to store images
  */
 async function handleImagePromptInput(userId, imageData, imagePrompt, message, imagesDir) {
-  debugLog(`handleImagePromptInput called for user ID: ${userId}`);
-  debugLog(`Image prompt: "${imagePrompt}"`);
-  debugLog(`Images directory: ${imagesDir}`);
-  
   const { mentionedUsers, loadingMessage } = imageData;
   
   return await processImagePrompt(message, imagePrompt, mentionedUsers, loadingMessage, imagesDir);
