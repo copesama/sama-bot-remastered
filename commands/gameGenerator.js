@@ -515,7 +515,6 @@ function setupGameRoutes(app, jwtSecret) {
         }
       }
     } catch (error) {
-      console.error("Error retrieving game:", error);
       res.status(500).send('Error retrieving the game');
     }
   });
@@ -600,7 +599,6 @@ async function handlePlayGameCommand(message, gameId, gamesDir, port, jwtSecret)
     
     await message.reply({ content: `${message.author} Here's your game link:`, embeds: [gameEmbed] });
   } catch (error) {
-    console.error("Error handling play game command:", error);
     message.reply("Sorry, there was an error retrieving your game. Please try again later.");
   }
 }
@@ -633,7 +631,6 @@ async function handleEditGameCommand(message, gameId, gamesDir) {
     
     return { gameId, loadingMessage };
   } catch (error) {
-    console.error("Error handling edit game command:", error);
     message.reply("Sorry, there was an error retrieving your game. Please try again later.");
     return null;
   }
@@ -689,7 +686,6 @@ async function handleEnhanceGameCommand(message, gameId, gamesDir) {
       await loadingMessage.edit({ content: '✅ Game successfully enhanced!', embeds: [gameEmbed] });
       
     } catch (error) {
-      console.error("Error enhancing game:", error);
       await loadingMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
     }
   } catch (error) {
@@ -748,7 +744,6 @@ async function handleGameEditInput(userId, editData, editPrompt, gamesDir) {
     
     return true;
   } catch (error) {
-    console.error("Error handling game edit:", error);
     await loadingMessage.edit('Sorry, there was an error editing your game. Please try again later.');
     return false;
   }
@@ -771,7 +766,6 @@ async function handleGameButtonInteraction(interaction, gamesDir, port, jwtSecre
     const actionType = parts[0];
     const gameId = parts.slice(1).join('_');
     
-    console.log(`Button pressed: ${actionType} for game ${gameId}`);
     
     switch(actionType) {
       case 'play':
@@ -880,13 +874,11 @@ async function handleGameButtonInteraction(interaction, gamesDir, port, jwtSecre
           });
           
         } catch (error) {
-          console.error("Error enhancing game:", error);
           await enhanceMessage.edit('Sorry, there was an error enhancing your game. Please try again later.');
         }
         break;
     }
   } catch (error) {
-    console.error("Error handling game button interaction:", error);
     await interaction.followUp({ 
       content: 'An error occurred while processing your request.', 
       ephemeral: true 

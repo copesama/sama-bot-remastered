@@ -65,7 +65,6 @@ function sanitizeCookies(req, res, next) {
         secure: process.env.NODE_ENV === 'production'
       });
     } catch (err) {
-      console.error("Error sanitizing gameUserData cookie:", err);
       // Clear the cookie if it can't be sanitized
       res.clearCookie('gameUserData');
     }

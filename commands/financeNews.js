@@ -30,7 +30,6 @@ async function loadSubscribedChannels() {
     
     return subscribedChannelsCache;
   } catch (error) {
-    console.error('Failed to load subscribed channels from MongoDB:', error);
     subscribedChannelsCache = new Map();
     return subscribedChannelsCache;
   }
@@ -68,7 +67,6 @@ async function subscribeChannel(guildId, channelId) {
       alreadySubscribed: alreadySubscribed
     };
   } catch (error) {
-    console.error('Failed to subscribe channel:', error);
     return {
       success: false,
       alreadySubscribed: false
@@ -97,7 +95,6 @@ async function unsubscribeChannel(guildId) {
     
     return wasSubscribed;
   } catch (error) {
-    console.error('Failed to unsubscribe channel:', error);
     return false;
   }
 }
@@ -196,7 +193,6 @@ async function getLatestFinancialAnalysis() {
       
     return analysis;
   } catch (error) {
-    console.error('Failed to retrieve financial analysis from database:', error);
     return null;
   }
 }
@@ -223,7 +219,6 @@ async function saveFinancialAnalysis(content, stocks) {
     await newAnalysis.save();
     return newAnalysis;
   } catch (error) {
-    console.error('Failed to save financial analysis to database:', error);
     return null;
   }
 }
@@ -473,7 +468,6 @@ async function sendMarketPerformanceReport(client) {
       }
     }
   } catch (error) {
-    console.error('Error sending market performance report:', error);
   }
 }
 
@@ -561,7 +555,6 @@ async function generateFinancialAnalysis(newsArticles) {
       return "No financial analysis available at this time.";
     }
   } catch (error) {
-    console.error('Error generating financial analysis:', error);
     return "Failed to generate financial analysis due to an error.";
   }
 }
@@ -691,7 +684,6 @@ async function initFinanceNews(client, apiKey) {
     await loadSubscribedChannels();
     scheduleDailyNews(client, apiKey);
   } catch (error) {
-    console.error('Failed to initialize finance news:', error);
   }
 }
 
@@ -727,7 +719,6 @@ async function handleFinanceReportCommand(message, client) {
     });
     
   } catch (error) {
-    console.error('Error handling finance report command:', error);
     try {
       await message.reply('Sorry, there was an error generating the financial report. Please try again later.');
     } catch (e) {
