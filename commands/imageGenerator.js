@@ -25,7 +25,7 @@ async function generateBaseImage(prompt, numAvatars, IMAGES_DIR) {
     const payload = { inputs: enhancedPrompt };
 
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/HiDream-ai/HiDream-I1-Full',
+      'https://api-inference.huggingface.co/models/playgroundai/playground-v2.5-1024px-aesthetic',
       payload,
       {
         headers: {
