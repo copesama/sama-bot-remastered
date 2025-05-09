@@ -815,9 +815,11 @@ async function handleGameButtonInteraction(interaction, gamesDir, port, jwtSecre
           }
         }
         
+        // Changed: Make the response non-ephemeral (visible to everyone)
+        // so the user can reply to it in the channel
         await interaction.followUp({ 
-          content: `Please reply with your edit request for game ${gameId}. Be specific about what you want to change.`,
-          ephemeral: true 
+          content: `${interaction.user}, please reply with your edit request for game ${gameId}. Be specific about what you want to change.`,
+          ephemeral: false 
         });
         break;
         
