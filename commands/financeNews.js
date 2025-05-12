@@ -630,6 +630,17 @@ function createNewsEmbed(newsArticles, analysis = null) {
 }
 
 /**
+ * Checks if a given date is a weekend (Saturday or Sunday)
+ * @param {Date} date - The date to check
+ * @returns {boolean} - True if it's a weekend, false otherwise
+ */
+function isWeekend(date) {
+  const day = date.getDay();
+  // 0 is Sunday, 6 is Saturday
+  return day === 0 || day === 6;
+}
+
+/**
  * Schedule a job to send daily finance news to all subscribed channels
  * @param {Object} client - Discord client
  * @param {string} apiKey - NewsAPI API key
@@ -648,6 +659,11 @@ function scheduleDailyNews(client, apiKey) {
   // Run at 8:25 AM EST/EDT (13:25 UTC) for morning news
   dailyNewsJob = schedule.scheduleJob('0 25 13 * * *', async function() {
     try {
+      // Skip on weekends
+      if (isWeekend(new Date())) {
+        return;
+      }
+      
       // Clear cached articles to ensure fresh data
       cachedNewsArticles = null;
       lastFetchDate = null;
@@ -698,8 +714,13 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  // Run at 4:10 PM EST/EDT (20:10 UTC) for market performance report
+  // Run at 4:15 PM EST/EDT (20:15 UTC) for market performance report
   dailyReportJob = schedule.scheduleJob('0 15 20 * * *', async function() {
+    // Skip on weekends
+    if (isWeekend(new Date())) {
+      return;
+    }
+    
     await sendMarketPerformanceReport(client);
   });
 }
