@@ -114,7 +114,7 @@ function getSubscribedChannel(guildId) {
  * @param {number} limit - Maximum number of news items to return
  * @returns {Promise<Array>} - Array of news articles
  */
-async function fetchFinanceNews(apiKey, limit = 14) {
+async function fetchFinanceNews(apiKey, limit = 25) {
   // Check if we already have fresh news (less than 24 hours old)
   const now = new Date();
   if (cachedNewsArticles && lastFetchDate && 
@@ -128,6 +128,7 @@ async function fetchFinanceNews(apiKey, limit = 14) {
     const formattedDate = today.toISOString().split('T')[0];
     
     // Fetch financial news from NewsAPI
+    // NewsAPI allows up to 100 articles per request, but we'll use 25 due to Discord embed limits
     const response = await axios.get('https://newsapi.org/v2/top-headlines', {
       params: {
         apiKey: apiKey,
@@ -581,20 +582,49 @@ function createNewsEmbed(newsArticles, analysis = null) {
     return embed;
   }
 
-  newsArticles.forEach((article, index) => {
+  // Discord has a limit of 25 fields per embed
+  // Also need to ensure we don't exceed total character limit (~6000 chars)
+  const maxEmbedFields = 25;
+  let totalCharCount = 0;
+  let fieldCount = 0;
+  
+  for (let i = 0; i < newsArticles.length && fieldCount < maxEmbedFields; i++) {
+    const article = newsArticles[i];
+    
     if (article.title && article.url) {
       const source = article.source && article.source.name ? article.source.name : 'Unknown Source';
       let description = article.description || article.content || 'No summary available';
       description = description.replace(/<[^>]*>?/gm, '');
+      
+      // Trim description if too long
+      if (description.length > 200) {
+        description = description.substring(0, 197) + '...';
+      }
+      
       const timestamp = article.publishedAt 
         ? new Date(article.publishedAt).toLocaleString() 
         : 'Unknown date';
+      
+      const fieldName = `${i + 1}. ${article.title}`;
+      const fieldValue = `**Summary:** ${description}\n\n[Read more](${article.url}) • Source: ${source} • ${timestamp}`;
+      
+      // Check if adding this field would exceed Discord's limits
+      // Each field has approximately fieldName.length + fieldValue.length + some overhead
+      const fieldCharCount = fieldName.length + fieldValue.length + 20; // 20 chars overhead
+      
+      if (totalCharCount + fieldCharCount > 5800) { // Stay under 6000 to be safe
+        break;
+      }
+      
+      totalCharCount += fieldCharCount;
+      fieldCount++;
+      
       embed.addFields({ 
-        name: `${index + 1}. ${article.title}`,
-        value: `**Summary:** ${description}\n\n[Read more](${article.url}) • Source: ${source} • ${timestamp}`
+        name: fieldName,
+        value: fieldValue
       });
     }
-  });
+  }
 
   return embed;
 }
@@ -622,7 +652,7 @@ function scheduleDailyNews(client, apiKey) {
       cachedNewsArticles = null;
       lastFetchDate = null;
       
-      const newsArticles = await fetchFinanceNews(apiKey, 14);
+      const newsArticles = await fetchFinanceNews(apiKey, 25); // Fetch maximum number of articles
       
       if (newsArticles.length === 0) {
         return;
@@ -784,7 +814,7 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       return;
     }
     
-    const newsArticles = await fetchFinanceNews(apiKey, 14);
+    const newsArticles = await fetchFinanceNews(apiKey, 25); // Fetch up to 25 articles
     
     const newsEmbed = createNewsEmbed(newsArticles);
     await loadingMessage.edit({ 
