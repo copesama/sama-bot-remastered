@@ -48,7 +48,7 @@ function createHelpEmbed(prefix = '!') {
           `\`${prefix}financenews status\` - Check if your server is subscribed to daily financial updates\n\n` +
           'Subscribed channels receive:\n' +
           '   - Morning financial news and market analysis (5 minutes before market open)\n' +
-          '   - Evening performance report of mentioned stocks (15 minutes after market close)'
+          '   - Evening performance report of mentioned stocks (1 hour after market close)'
       },
       { 
         name: '🎓 Quiz Command', 

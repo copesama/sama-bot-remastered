@@ -597,8 +597,8 @@ function createNewsEmbed(newsArticles, analysis = null) {
       description = description.replace(/<[^>]*>?/gm, '');
       
       // Trim description if too long
-      if (description.length > 200) {
-        description = description.substring(0, 197) + '...';
+      if (description.length > 300) {
+        description = description.substring(0, 297) + '...';
       }
       
       const timestamp = article.publishedAt 
@@ -714,8 +714,8 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  // Run at 4:15 PM EST/EDT (20:15 UTC) for market performance report
-  dailyReportJob = schedule.scheduleJob('0 15 20 * * *', async function() {
+  // Run at 5:00 PM EST/EDT (17:00 UTC) for market performance report
+  dailyReportJob = schedule.scheduleJob('0 00 21 * * *', async function() {
     // Skip on weekends
     if (isWeekend(new Date())) {
       return;
@@ -801,9 +801,9 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       if (action === 'subscribe') {
         const result = await subscribeChannel(message.guild.id, message.channel.id);
         if (result.alreadySubscribed) {
-          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:25 AM EST and market reports at 4:15 PM EST.');
+          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:25 AM EST and market reports at 5:00 PM EST.');
         } else {
-          await message.reply('✅ This channel will now receive daily financial analysis at 8:25 AM EST and market performance reports at 4:15 PM EST.');
+          await message.reply('✅ This channel will now receive daily financial analysis at 8:25 AM EST and market performance reports at 5:00 PM EST.');
         }
         return;
       } 
