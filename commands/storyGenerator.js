@@ -18,7 +18,7 @@ REQUIREMENTS:
 - Write in an engaging narrative style with descriptive language
 - The story should be well-structured and 1000-2000 words in length
 - Divide the story into clear paragraphs with natural breaks
-- Write in the SAME LANGUAGE as the user's prompt. If the prompt is in Greek, write the story in Greek. If in English, write it in English, etc.`;
+- Write in the SAME LANGUAGE as the user's prompt.`;
 
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -27,7 +27,7 @@ REQUIREMENTS:
         messages: [
           {
             role: 'system',
-            content: 'You are an expert creative writer skilled in crafting engaging stories featuring specific characters. Create an immersive narrative that includes all provided character names and follows the scenario described by the user. Your writing should be vivid, with natural dialogue, good pacing, and a satisfying conclusion.  Write in the SAME LANGUAGE as the user\'s prompt. If the prompt is in Greek, write the story in Greek. If in English, write it in English, etc.'
+            content: 'You are an expert creative writer skilled in crafting engaging stories featuring specific characters. Create an immersive narrative that includes all provided character names and follows the scenario described by the user. Your writing should be vivid, with natural dialogue, good pacing, and a satisfying conclusion.  Write in the SAME LANGUAGE as the user\'s prompt.'
           },
           {
             role: 'user',

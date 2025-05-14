@@ -35,8 +35,7 @@ The question should:
 - Still encourage the user to share their personal views and opinions
 - Be neutral but engaging
 - Be specifically about ${topic}
-
-IMPORTANT: Respond in the same language as my request (e.g., if I asked in Greek, respond in Greek; if I asked in English, respond in English, etc.). Make sure the question is extremely simple and understandable by everyone, regardless of their education level.`
+- Write in the SAME LANGUAGE as the user's prompt.`
           }
         ],
         temperature: 0.5
@@ -107,7 +106,7 @@ The generated text should:
 5. Feel as though I wrote it myself, maintaining my authentic voice
 6. Preserve any idiosyncrasies, casual elements, or stylistic inconsistencies present in my writing
 7. NOT sound AI-generated or overly polished - maintain the natural imperfections of human writing
-8. Use the SAME LANGUAGE that I used in my response (e.g., if I wrote in Greek, English, German, etc., respond in that same language)
+8. Write in the SAME LANGUAGE as the user's prompt.
 9. Maintain EXACTLY the same grammar level as my sample - if I make grammar mistakes, make similar types of mistakes with the same frequency
 10. Use ONLY vocabulary at the same level of complexity as my sample - don't use words I wouldn't use
 11. If I use slang, repetitive phrases, or have other speech patterns, incorporate these at the same frequency
