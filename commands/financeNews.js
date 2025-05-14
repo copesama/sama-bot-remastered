@@ -475,15 +475,16 @@ async function sendMarketPerformanceReport(client) {
 /**
  * Generates financial analysis and stock advice using OpenRouter API
  * @param {Array} newsArticles - Array of news articles
+ * @param {boolean} forceNew - Force generation of new analysis even if recent one exists
  * @returns {Promise<string>} - Financial analysis and stock advice
  */
-async function generateFinancialAnalysis(newsArticles) {
+async function generateFinancialAnalysis(newsArticles, forceNew = false) {
   try {
     // Check if we have a recent analysis (less than 24 hours old)
     const latestAnalysis = await getLatestFinancialAnalysis();
     const now = new Date();
     
-    if (latestAnalysis && latestAnalysis.createdAt && 
+    if (!forceNew && latestAnalysis && latestAnalysis.createdAt && 
         (now.getTime() - latestAnalysis.createdAt.getTime() < (23 * 60 * 60 * 1000) + (59 * 60 * 1000))) {
       return latestAnalysis.content;
     }
@@ -674,7 +675,8 @@ function scheduleDailyNews(client, apiKey) {
         return;
       }
       
-      const analysis = await generateFinancialAnalysis(newsArticles);
+      // Force generation of new analysis for daily updates
+      const analysis = await generateFinancialAnalysis(newsArticles, true);
       
       const newsEmbed = createNewsEmbed(newsArticles);
       
