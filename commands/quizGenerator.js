@@ -38,8 +38,7 @@ IMPORTANT REQUIREMENTS:
 5. Questions should be factually accurate and well-researched
 6. Ensure varied question formats (who, what, when, where, how, etc.)
 7. Each question should have a brief explanation of the correct answer
-8. Return ONLY valid JSON with no additional text, comments or markdown
-9. Create the quiz in the SAME LANGUAGE as the user's prompt.
+8. Return ONLY valid JSON with no additional text, comments or markdown.
 
 The output must be a valid JSON array that can be directly parsed.`
           },
