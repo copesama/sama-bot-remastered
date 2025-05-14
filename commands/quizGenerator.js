@@ -6,29 +6,6 @@ const { getPrefix } = require('./prefixCommand');
 const activeQuizzes = new Map();
 
 /**
- * Shuffles the options array and updates the correctIndex accordingly
- * @param {Object} questionData The question data to shuffle
- * @returns {Object} A new question object with shuffled options and updated correctIndex
- */
-function shuffleOptions(questionData) {
-  // Create a copy of the original question to avoid modifying the original
-  const shuffledQuestion = JSON.parse(JSON.stringify(questionData));
-  const correctAnswer = shuffledQuestion.options[shuffledQuestion.correctIndex];
-  
-  // Fisher-Yates shuffle algorithm for the options
-  for (let i = shuffledQuestion.options.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffledQuestion.options[i], shuffledQuestion.options[j]] = 
-    [shuffledQuestion.options[j], shuffledQuestion.options[i]];
-  }
-  
-  // Find the new index of the correct answer
-  shuffledQuestion.correctIndex = shuffledQuestion.options.indexOf(correctAnswer);
-  
-  return shuffledQuestion;
-}
-
-/**
  * Generates a quiz based on the provided prompt using OpenRouter API
  * @param {string} prompt The topic for the quiz
  * @param {number} questionCount Number of questions to generate
@@ -110,12 +87,24 @@ The output must be a valid JSON array that can be directly parsed.`
       throw new Error(`Invalid quiz format: Expected an array of ${questionCount} questions`);
     }
     
-    // Validate each question
+    // Validate each question and randomize answer positions
     quizQuestions.forEach((q, index) => {
       if (!q.question || !Array.isArray(q.options) || q.options.length !== 4 || 
           q.correctIndex === undefined || !q.explanation) {
         throw new Error(`Question ${index + 1} has an invalid format`);
       }
+      
+      // Randomize the positions of the answers
+      const correctOption = q.options[q.correctIndex];
+      
+      // Shuffle the options
+      for (let i = q.options.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [q.options[i], q.options[j]] = [q.options[j], q.options[i]];
+      }
+      
+      // Find the new index of the correct answer
+      q.correctIndex = q.options.findIndex(option => option === correctOption);
     });
     
     return quizQuestions;
@@ -137,17 +126,14 @@ The output must be a valid JSON array that can be directly parsed.`
  * @returns {EmbedBuilder} Discord embed for the question
  */
 function createQuestionEmbed(questionData, questionNumber, totalQuestions, prompt) {
-  // Shuffle the options and update correctIndex
-  const shuffledQuestion = shuffleOptions(questionData);
-  
-  const optionsText = shuffledQuestion.options.map((option, index) => {
+  const optionsText = questionData.options.map((option, index) => {
     return `**${String.fromCharCode(65 + index)}.** ${option}`;
   }).join('\n\n');
 
   return new EmbedBuilder()
     .setColor('#4285F4')
     .setTitle(`Quiz Question ${questionNumber} of ${totalQuestions}`)
-    .setDescription(`**Topic:** ${prompt}\n\n**${shuffledQuestion.question}**\n\n${optionsText}`)
+    .setDescription(`**Topic:** ${prompt}\n\n**${questionData.question}**\n\n${optionsText}`)
     .setFooter({ text: `Question ${questionNumber}/${totalQuestions} • Respond by clicking a button below` });
 }
 
@@ -343,12 +329,6 @@ async function sendNextQuestion(channel, userId) {
   const currentQ = quizSession.currentQuestion;
   const questionData = quizSession.questions[currentQ];
   
-  // Shuffle options and update correctIndex
-  const shuffledQuestion = shuffleOptions(questionData);
-  
-  // Store the shuffled question for this round
-  quizSession.currentShuffledQuestion = shuffledQuestion;
-  
   // Create question embed and buttons
   const embed = createQuestionEmbed(
     questionData, 
@@ -381,11 +361,8 @@ async function sendNextQuestion(channel, userId) {
     // Parse the selected option index from the button ID
     const selectedIndex = parseInt(interaction.customId.split('_')[2]);
     
-    // Get the shuffled question data that was used for display
-    const shuffled = quizSession.currentShuffledQuestion || shuffledQuestion;
-    
     // Check if the answer is correct
-    const isCorrect = selectedIndex === shuffled.correctIndex;
+    const isCorrect = selectedIndex === questionData.correctIndex;
     
     // Update score and results
     if (isCorrect) {
@@ -394,8 +371,8 @@ async function sendNextQuestion(channel, userId) {
     
     quizSession.results.push({
       correct: isCorrect,
-      selectedOption: shuffled.options[selectedIndex],
-      correctOption: shuffled.options[shuffled.correctIndex],
+      selectedOption: questionData.options[selectedIndex],
+      correctOption: questionData.options[questionData.correctIndex],
       explanation: questionData.explanation
     });
     
@@ -403,13 +380,13 @@ async function sendNextQuestion(channel, userId) {
     const resultEmbed = new EmbedBuilder()
       .setColor(isCorrect ? '#4CAF50' : '#F44336')
       .setTitle(isCorrect ? '✅ Correct!' : '❌ Incorrect')
-      .setDescription(`**Question:** ${questionData.question}\n\n**Your answer:** ${shuffled.options[selectedIndex]}\n\n**Correct answer:** ${shuffled.options[shuffled.correctIndex]}\n\n**Explanation:** ${questionData.explanation}`)
+      .setDescription(`**Question:** ${questionData.question}\n\n**Your answer:** ${questionData.options[selectedIndex]}\n\n**Correct answer:** ${questionData.options[questionData.correctIndex]}\n\n**Explanation:** ${questionData.explanation}`)
       .setFooter({ text: `Question ${currentQ + 1}/${quizSession.questions.length} • Your current score: ${quizSession.score}/${currentQ + 1}` });
     
     // Disable all buttons
     const disabledButtons = new ActionRowBuilder();
     buttons.components.forEach((button, index) => {
-      const style = index === shuffled.correctIndex ? ButtonStyle.Success : 
+      const style = index === questionData.correctIndex ? ButtonStyle.Success : 
                     (index === selectedIndex && !isCorrect ? ButtonStyle.Danger : ButtonStyle.Secondary);
       
       disabledButtons.addComponents(
@@ -447,14 +424,11 @@ async function sendNextQuestion(channel, userId) {
   // Handle collector end (timeout or answer received)
   collector.on('end', async (collected, reason) => {
     if (reason === 'time' && quizSession.message && quizSession.message.id === questionMessage.id) {
-      // Get the shuffled question data that was used for display
-      const shuffled = quizSession.currentShuffledQuestion || shuffledQuestion;
-      
       // Timeout - user didn't answer in time
       const timeoutEmbed = new EmbedBuilder()
         .setColor('#607D8B')
         .setTitle("⏰ Time's up!")
-        .setDescription(`**Question:** ${questionData.question}\n\n**Correct answer:** ${shuffled.options[shuffled.correctIndex]}\n\n**Explanation:** ${questionData.explanation}`)
+        .setDescription(`**Question:** ${questionData.question}\n\n**Correct answer:** ${questionData.options[questionData.correctIndex]}\n\n**Explanation:** ${questionData.explanation}`)
         .setFooter({ text: `Question ${currentQ + 1}/${quizSession.questions.length} • Moving to next question...` });
       
       // Disable all buttons
@@ -462,7 +436,7 @@ async function sendNextQuestion(channel, userId) {
       buttons.components.forEach((button, index) => {
         disabledButtons.addComponents(
           ButtonBuilder.from(button)
-            .setStyle(index === shuffled.correctIndex ? ButtonStyle.Success : ButtonStyle.Secondary)
+            .setStyle(index === questionData.correctIndex ? ButtonStyle.Success : ButtonStyle.Secondary)
             .setDisabled(true)
         );
       });
@@ -477,7 +451,7 @@ async function sendNextQuestion(channel, userId) {
       quizSession.results.push({
         correct: false,
         selectedOption: "No answer (timed out)",
-        correctOption: shuffled.options[shuffled.correctIndex],
+        correctOption: questionData.options[questionData.correctIndex],
         explanation: questionData.explanation
       });
       
