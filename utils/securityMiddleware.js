@@ -16,7 +16,7 @@ function securityHeaders(req, res, next) {
   if (req.path.startsWith('/game/')) {
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
     );
   }
   
