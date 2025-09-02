@@ -102,17 +102,16 @@ async function generateSinglePlayerGame(prompt) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert game developer. Create a complete, playable HTML game using Phaser.js framework based on the user prompt. 
-            The game should be entirely self-contained in a single HTML file with Phaser.js loaded from CDN.
+            content: `You are an expert game developer. Create a complete, playable HTML game based on the user prompt. 
+            The game should be entirely self-contained in a single HTML file with embedded JavaScript and CSS.
             
             CRITICAL REQUIREMENTS:
-            1. The game MUST be fully functional and error-free using Phaser.js
-            2. Use Phaser's API for game logic, rendering, physics, and input handling
-            3. Include Phaser.js via CDN: <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
-            4. Create a Phaser game instance with a canvas element (e.g., <div id="game-container"></div>)
-            5. Use Phaser scenes for game structure (e.g., preload, create, update)
-            6. INCLUDE a clickable "Powered by Luck Off" link that opens https://luckoff.chat/ in a new tab
-            7. The "Powered by Luck Off" link must be visible and properly styled in the game interface
+            1. The game MUST be fully functional and error-free
+            2. Use HTML5 Canvas for all rendering, graphics, and animations to ensure smooth performance
+            3. Initialize Canvas with proper context and handle resizing
+            4. Use simple graphics and mechanics that work reliably in browsers
+            5. INCLUDE a clickable "Powered by Luck Off" link that opens https://luckoff.chat/ in a new tab
+            6. The "Powered by Luck Off" link must be visible and properly styled in the game interface
             
             USER DATA IMPLEMENTATION:
             - Extract user data from cookie:
@@ -121,33 +120,32 @@ async function generateSinglePlayerGame(prompt) {
             - MUST always DISPLAY the user's username and avatar (from gameUserData cookie) somewhere visible in the game interface
             
             Include comprehensive error handling and clear user feedback.
-            The final game MUST be completely playable as a single-player experience using Phaser.js.`
+            The final game MUST be completely playable as a single-player experience.`
           },
           {
             role: 'user',
-            content: `Create a browser game using Phaser.js based on this prompt: ${prompt}. 
+            content: `Create a browser game based on this prompt: ${prompt}. 
             
             TECHNICAL IMPLEMENTATION GUIDELINES:
-            1. Focus on a SIMPLE game concept optimized for single-player using Phaser
-            2. Include Phaser CDN and set up a game config with scenes
-            3. Use Phaser's built-in physics (e.g., Arcade Physics) for mechanics
-            4. Handle input with Phaser's input system (keyboard, mouse, touch)
-            5. Render graphics using Phaser's sprite and text systems
-            6. Ensure the game initializes properly with Phaser.Game(config)
-            7. Use requestAnimationFrame implicitly via Phaser's game loop
+            1. Focus on a SIMPLE game concept optimized for single-player
+            2. Use HTML5 Canvas for all drawing operations (e.g., ctx.fillRect, ctx.drawImage for sprites)
+            3. Implement requestAnimationFrame for smooth Canvas-based animations
+            4. Handle Canvas context properly and clear the canvas each frame
+            5. Create clean HTML structure with clear element IDs
+            6. Use inlined CSS and JS for a single file solution
             
             GAME FEATURES TO INCLUDE:
-            1. Clear visual representation of the player using Phaser sprites
-            2. Simple UI showing score/progress and basic instructions with Phaser text
+            1. Clear visual representation of the player using Canvas
+            2. Simple UI showing score/progress and basic instructions
             3. Win/lose conditions where appropriate
             4. A footer or header with a styled "Powered by Luck Off" link to https://luckoff.chat/
             5. Always display the user's username and avatar (from gameUserData cookie) in the game interface
             
             CODE STRUCTURE:
-            1. Initialize Phaser game config first
-            2. Define scenes (preload, create, update) for game logic
-            3. Implement game loop and rendering functions using Phaser
-            4. Create distinct functions for each game mechanic within scenes
+            1. Initialize Canvas and context first
+            2. Set up event listeners for inputs
+            3. Implement game loop with Canvas rendering functions
+            4. Create distinct functions for each game mechanic
             5. Add thorough comments explaining critical sections
             
             ATTRIBUTION REQUIREMENT:
@@ -213,18 +211,18 @@ async function editGame(gameId, editPrompt, originalHtml) {
             content: `You are an expert game developer. A user has provided an HTML game and wants to modify it according to their edit prompt.
             
             CRITICAL REQUIREMENTS:
-            1. Preserve the existing game structure, converting to Phaser.js if not already using it
-            2. Make changes according to the edit prompt using Phaser.js API
-            3. Ensure the game remains fully functional and error-free with Phaser
-            4. Return the complete HTML file with your modifications, including Phaser CDN if needed
+            1. Preserve the existing game structure
+            2. Make changes according to the edit prompt
+            3. Ensure the game remains fully functional and error-free
+            4. Use HTML5 Canvas for all rendering and animations (convert if necessary)
             5. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
             6. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
             
-            Make targeted modifications to fulfill the edit request while maintaining all existing functionality using Phaser.js.`
+            Make targeted modifications to fulfill the edit request while maintaining all existing functionality.`
           },
           {
             role: 'user',
-            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game uses Phaser.js for game mechanics and includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab. If the game isn't using Phaser, convert it to use Phaser.js.`
+            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game uses HTML5 Canvas for rendering and includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab.`
           }
         ],
         temperature: 0.6
@@ -269,25 +267,25 @@ async function enhanceGame(gameId, originalHtml) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert game developer tasked with enhancing and improving an existing HTML game using Phaser.js. 
+            content: `You are an expert game developer tasked with enhancing and improving an existing HTML game. 
             
             CRITICAL ENHANCEMENT REQUIREMENTS:
-            1. Fix any bugs or errors in the game code, converting to Phaser.js if necessary
-            2. Improve game mechanics and features using Phaser's API
-            3. Enhance visuals and user interface with Phaser sprites and text
-            4. Add appropriate sound effects where missing (using Phaser's audio system)
-            5. Optimize performance and responsiveness with Phaser
-            6. Ensure mobile compatibility using Phaser's input handling
+            1. Fix any bugs or errors in the game code
+            2. Improve game mechanics and features where possible
+            3. Enhance visuals and user interface using HTML5 Canvas
+            4. Add appropriate sound effects where missing
+            5. Optimize performance and responsiveness
+            6. Ensure mobile compatibility if not already present
             7. Add helpful game instructions if they're missing or unclear
             8. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
             9. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
             
-            Analyze the game thoroughly and implement enhancements that improve the player experience while maintaining the core gameplay concept using Phaser.js.
-            Return the complete enhanced HTML file with Phaser.js integration.`
+            Analyze the game thoroughly and implement enhancements that improve the player experience while maintaining the core gameplay concept.
+            Return the complete enhanced HTML file.`
           },
           {
             role: 'user',
-            content: `Here is an HTML game that needs enhancement:\n\n${originalHtml}\n\nPlease analyze this game, fix any bugs, and enhance its features using Phaser.js. Keep the core game concept intact while improving the user experience, visuals, and performance. Convert to Phaser.js if not already using it, and make sure any existing "Powered by Luck Off" link is preserved or add one if it's missing.`
+            content: `Here is an HTML game that needs enhancement:\n\n${originalHtml}\n\nPlease analyze this game, fix any bugs, and enhance its features. Keep the core game concept intact while improving the user experience, visuals, and performance using HTML5 Canvas. Make sure any existing "Powered by Luck Off" link is preserved or add one if it's missing.`
           }
         ],
         temperature: 0.8
@@ -442,7 +440,7 @@ function setupGameRoutes(app, jwtSecret) {
         // Inject Content-Security-Policy header to prevent XSS attacks
         res.setHeader(
           'Content-Security-Policy',
-          "default-src 'self'; script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net https://labs.phaser.io data: blob:; connect-src 'self' https://raw.githubusercontent.com https://labs.phaser.io; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
+          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
         );
         
         // Check if the game needs sanitization
@@ -499,7 +497,7 @@ function setupGameRoutes(app, jwtSecret) {
           // Inject Content-Security-Policy header
           res.setHeader(
             'Content-Security-Policy',
-            "default-src 'self'; script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net https://labs.phaser.io data: blob:; connect-src 'self' https://raw.githubusercontent.com https://labs.phaser.io; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
           );
           
           // Import game from file system to MongoDB for future use
