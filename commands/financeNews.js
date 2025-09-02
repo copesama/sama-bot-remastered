@@ -508,7 +508,7 @@ async function generateFinancialAnalysis(newsArticles, forceNew = false) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'microsoft/mai-ds-r1:free',
+        model: 'tngtech/deepseek-r1t2-chimera:free',
         messages: [
           {
             role: 'system',
