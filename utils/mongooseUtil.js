@@ -70,7 +70,7 @@ const gameSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
-    expires: '1m' // Automatically delete games after 7 days
+    expires: '7d' // Automatically delete games after 7 days
   },
   updatedAt: {
     type: Date,
