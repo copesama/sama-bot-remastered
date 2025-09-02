@@ -336,8 +336,8 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     const cachedAnalysis = latestAnalysis.content;
     
     // Find stocks mentioned in the analysis
-    const buySection = cachedAnalysis.match(/BUY\s*([\s\S]*?)(?:SELL|AVOID|DISCLAIMER|$)/i);
-    const sellSection = cachedAnalysis.match(/(?:SELL|AVOID)\s*([\s\S]*?)(?:DISCLAIMER|$)/i);
+    const buySection = cachedAnalysis.match(/BUY\s*([\s\S]*?)(?:SELL\/AVOID|AVOID|SELL|DISCLAIMER|$)/i);
+    const sellSection = cachedAnalysis.match(/(?:SELL\/AVOID|AVOID|SELL)\s*([\s\S]*?)(?:DISCLAIMER|$)/i);
     
     let buyTickers = [];
     let sellTickers = [];
