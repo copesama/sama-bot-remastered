@@ -442,7 +442,7 @@ function setupGameRoutes(app, jwtSecret) {
         // Inject Content-Security-Policy header to prevent XSS attacks
         res.setHeader(
           'Content-Security-Policy',
-          "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
+          "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
         );
         
         // Check if the game needs sanitization
@@ -499,7 +499,7 @@ function setupGameRoutes(app, jwtSecret) {
           // Inject Content-Security-Policy header
           res.setHeader(
             'Content-Security-Policy',
-            "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net data:; connect-src 'self' https://cdn.discordapp.com https://ui-avatars.com https://i.imgur.com https://media.discordapp.net; font-src 'self' https://fonts.gstatic.com; frame-src 'none'; media-src 'self' data:;"
           );
           
           // Import game from file system to MongoDB for future use
