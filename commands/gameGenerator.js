@@ -102,15 +102,17 @@ async function generateSinglePlayerGame(prompt) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert game developer. Create a complete, playable HTML game based on the user prompt. 
-            The game should be entirely self-contained in a single HTML file with embedded JavaScript and CSS.
+            content: `You are an expert game developer. Create a complete, playable HTML game using Phaser.js framework based on the user prompt. 
+            The game should be entirely self-contained in a single HTML file with Phaser.js loaded from CDN.
             
             CRITICAL REQUIREMENTS:
-            1. The game MUST be fully functional and error-free
-            2. Use simple graphics and mechanics that work reliably in browsers
-            3. Test all game logic in your response
-            4. INCLUDE a clickable "Powered by Luck Off" link that opens https://luckoff.chat/ in a new tab
-            5. The "Powered by Luck Off" link must be visible and properly styled in the game interface
+            1. The game MUST be fully functional and error-free using Phaser.js
+            2. Use Phaser's API for game logic, rendering, physics, and input handling
+            3. Include Phaser.js via CDN: <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+            4. Create a Phaser game instance with a canvas element (e.g., <div id="game-container"></div>)
+            5. Use Phaser scenes for game structure (e.g., preload, create, update)
+            6. INCLUDE a clickable "Powered by Luck Off" link that opens https://luckoff.chat/ in a new tab
+            7. The "Powered by Luck Off" link must be visible and properly styled in the game interface
             
             USER DATA IMPLEMENTATION:
             - Extract user data from cookie:
@@ -119,32 +121,33 @@ async function generateSinglePlayerGame(prompt) {
             - MUST always DISPLAY the user's username and avatar (from gameUserData cookie) somewhere visible in the game interface
             
             Include comprehensive error handling and clear user feedback.
-            The final game MUST be completely playable as a single-player experience.`
+            The final game MUST be completely playable as a single-player experience using Phaser.js.`
           },
           {
             role: 'user',
-            content: `Create a browser game based on this prompt: ${prompt}. 
+            content: `Create a browser game using Phaser.js based on this prompt: ${prompt}. 
             
             TECHNICAL IMPLEMENTATION GUIDELINES:
-            1. Focus on a SIMPLE game concept optimized for single-player
-            2. Create clean HTML structure with clear element IDs
-            3. Use requestAnimationFrame for smooth animation
-            4. Implement basic physics if needed (keep it simple)
-            5. Ensure the game initializes properly
-            6. Use inlined CSS and JS for a single file solution
+            1. Focus on a SIMPLE game concept optimized for single-player using Phaser
+            2. Include Phaser CDN and set up a game config with scenes
+            3. Use Phaser's built-in physics (e.g., Arcade Physics) for mechanics
+            4. Handle input with Phaser's input system (keyboard, mouse, touch)
+            5. Render graphics using Phaser's sprite and text systems
+            6. Ensure the game initializes properly with Phaser.Game(config)
+            7. Use requestAnimationFrame implicitly via Phaser's game loop
             
             GAME FEATURES TO INCLUDE:
-            1. Clear visual representation of the player
-            2. Simple UI showing score/progress and basic instructions
+            1. Clear visual representation of the player using Phaser sprites
+            2. Simple UI showing score/progress and basic instructions with Phaser text
             3. Win/lose conditions where appropriate
             4. A footer or header with a styled "Powered by Luck Off" link to https://luckoff.chat/
             5. Always display the user's username and avatar (from gameUserData cookie) in the game interface
             
             CODE STRUCTURE:
-            1. Initialize game variables first
-            2. Set up event listeners for inputs
-            3. Implement game loop and rendering functions
-            4. Create distinct functions for each game mechanic
+            1. Initialize Phaser game config first
+            2. Define scenes (preload, create, update) for game logic
+            3. Implement game loop and rendering functions using Phaser
+            4. Create distinct functions for each game mechanic within scenes
             5. Add thorough comments explaining critical sections
             
             ATTRIBUTION REQUIREMENT:
@@ -210,18 +213,18 @@ async function editGame(gameId, editPrompt, originalHtml) {
             content: `You are an expert game developer. A user has provided an HTML game and wants to modify it according to their edit prompt.
             
             CRITICAL REQUIREMENTS:
-            1. Preserve the existing game structure
-            2. Make changes according to the edit prompt
-            3. Ensure the game remains fully functional and error-free
-            4. Return the complete HTML file with your modifications
+            1. Preserve the existing game structure, converting to Phaser.js if not already using it
+            2. Make changes according to the edit prompt using Phaser.js API
+            3. Ensure the game remains fully functional and error-free with Phaser
+            4. Return the complete HTML file with your modifications, including Phaser CDN if needed
             5. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
             6. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
             
-            Make targeted modifications to fulfill the edit request while maintaining all existing functionality.`
+            Make targeted modifications to fulfill the edit request while maintaining all existing functionality using Phaser.js.`
           },
           {
             role: 'user',
-            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab.`
+            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game uses Phaser.js for game mechanics and includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab. If the game isn't using Phaser, convert it to use Phaser.js.`
           }
         ],
         temperature: 0.6
@@ -266,25 +269,25 @@ async function enhanceGame(gameId, originalHtml) {
         messages: [
           {
             role: 'system',
-            content: `You are an expert game developer tasked with enhancing and improving an existing HTML game. 
+            content: `You are an expert game developer tasked with enhancing and improving an existing HTML game using Phaser.js. 
             
             CRITICAL ENHANCEMENT REQUIREMENTS:
-            1. Fix any bugs or errors in the game code
-            2. Improve game mechanics and features where possible
-            3. Enhance visuals and user interface
-            4. Add appropriate sound effects where missing
-            5. Optimize performance and responsiveness
-            6. Ensure mobile compatibility if not already present
+            1. Fix any bugs or errors in the game code, converting to Phaser.js if necessary
+            2. Improve game mechanics and features using Phaser's API
+            3. Enhance visuals and user interface with Phaser sprites and text
+            4. Add appropriate sound effects where missing (using Phaser's audio system)
+            5. Optimize performance and responsiveness with Phaser
+            6. Ensure mobile compatibility using Phaser's input handling
             7. Add helpful game instructions if they're missing or unclear
             8. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
             9. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
             
-            Analyze the game thoroughly and implement enhancements that improve the player experience while maintaining the core gameplay concept.
-            Return the complete enhanced HTML file.`
+            Analyze the game thoroughly and implement enhancements that improve the player experience while maintaining the core gameplay concept using Phaser.js.
+            Return the complete enhanced HTML file with Phaser.js integration.`
           },
           {
             role: 'user',
-            content: `Here is an HTML game that needs enhancement:\n\n${originalHtml}\n\nPlease analyze this game, fix any bugs, and enhance its features. Keep the core game concept intact while improving the user experience, visuals, and performance. Make sure any existing "Powered by Luck Off" link is preserved or add one if it's missing.`
+            content: `Here is an HTML game that needs enhancement:\n\n${originalHtml}\n\nPlease analyze this game, fix any bugs, and enhance its features using Phaser.js. Keep the core game concept intact while improving the user experience, visuals, and performance. Convert to Phaser.js if not already using it, and make sure any existing "Powered by Luck Off" link is preserved or add one if it's missing.`
           }
         ],
         temperature: 0.8
