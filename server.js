@@ -75,15 +75,15 @@ const {
   incrementUserUsage
 } = require('./utils/rateLimiter');
 
-// Import the marketing generator module
+// Import the AI train module
 const { 
-  handleMarketingCommand, 
-  handleMarketingInfoInput,
-  handleMarketingRemoveCommand,
-  handleMarketingRemoveSelection,
-  usersWaitingForMarketingInfo,
-  usersWaitingForMarketingRemove
-} = require('./commands/marketingGenerator');
+  handleAITrainCommand, 
+  handleAITrainInput,
+  handleRemoveCommand,
+  handleRemoveInput,
+  usersWaitingForAITrainInput,
+  usersWaitingForRemoveInput
+} = require('./commands/aiTrain');
 
 // Initialize Discord client
 const client = new Client({
@@ -260,33 +260,27 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Handle marketing info input
-  if (usersWaitingForMarketingInfo.has(message.author.id)) {
-    const marketingData = usersWaitingForMarketingInfo.get(message.author.id);
-    const userInfo = message.content;
-    
-    usersWaitingForMarketingInfo.delete(message.author.id);
+  // Handle remove input for aitrain
+  if (usersWaitingForRemoveInput.has(message.author.id)) {
+    const choice = message.content;
     
     try {
-      await handleMarketingInfoInput(message.author.id, marketingData, userInfo, message);
+      await handleRemoveInput(message.author.id, choice, message);
     } catch (error) {
-      console.error('Error in marketing info handling:', error);
+      console.error('Error in remove input handling:', error);
     }
     
     return;
   }
 
-  // Handle marketing remove selection
-  if (usersWaitingForMarketingRemove.has(message.author.id)) {
-    const removeData = usersWaitingForMarketingRemove.get(message.author.id);
-    const selection = message.content.trim();
-    
-    usersWaitingForMarketingRemove.delete(message.author.id);
+  // Handle AI train input
+  if (usersWaitingForAITrainInput.has(message.author.id)) {
+    const userInput = message.content;
     
     try {
-      await handleMarketingRemoveSelection(message.author.id, removeData, selection, message);
+      await handleAITrainInput(message.author.id, userInput, message);
     } catch (error) {
-      console.error('Error in marketing remove handling:', error);
+      console.error('Error in AI train input handling:', error);
     }
     
     return;
@@ -788,6 +782,60 @@ client.on('messageCreate', async (message) => {
     const result = await handleHumanGeneratorCommand(message);
     if (result) {
       usersWaitingForHumanResponse.set(message.author.id, result);
+    }
+    return;
+  }
+
+  if (command === 'aitrain') {
+    const subcommand = args[1]?.toLowerCase();
+    const productName = subcommand === 'remove' ? null : args.slice(1).join(' ').trim();
+    
+    const serverId = message.guild?.id;
+    const userId = message.author.id;
+    
+    if (serverId) {
+      const rateLimitResult = checkRateLimit(serverId, 'aitrain');
+      
+      if (rateLimitResult.isLimited) {
+        const embed = new EmbedBuilder()
+          .setTitle('Command Rate Limited')
+          .setDescription(`This server has reached the daily limit for the !aitrain command.`)
+          .addFields(
+            { name: 'Daily Limit', value: `${rateLimitResult.limit} uses per ${rateLimitResult.resetTimeHours} hours` },
+            { name: 'Next Reset', value: formatResetTime(rateLimitResult.resetTimeMs) }
+          )
+          .setColor('#FF0000');
+        
+        await message.reply({ embeds: [embed] });
+        return;
+      }
+    }
+    
+    const userRateLimitResult = checkUserRateLimit(userId, 'aitrain');
+    if (userRateLimitResult.isLimited) {
+      const embed = new EmbedBuilder()
+        .setTitle('Personal Rate Limit')
+        .setDescription(`You have reached your daily limit for the !aitrain command.`)
+        .addFields(
+          { name: 'Your Daily Limit', value: `${userRateLimitResult.limit} uses per ${userRateLimitResult.resetTimeHours} hours` },
+          { name: 'Next Reset', value: formatResetTime(userRateLimitResult.resetTimeMs) }
+        )
+        .setColor('#FF0000');
+      
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+    
+    if (serverId) incrementUsage(serverId, 'aitrain');
+    incrementUserUsage(userId, 'aitrain');
+    
+    if (subcommand === 'remove') {
+      await handleRemoveCommand(message);
+    } else {
+      const result = await handleAITrainCommand(message, productName);
+      if (result) {
+        usersWaitingForAITrainInput.set(message.author.id, result);
+      }
     }
     return;
   }
