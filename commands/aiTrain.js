@@ -68,19 +68,22 @@ async function handleAITrainCommand(message, productName) {
     const prefix = await getPrefix(message.guild?.id);
     
     if (!productName) {
-      return message.reply(`Please provide a product name. Example: \`${prefix}aitrain MyAwesomeApp\``);
+      await message.reply(`Please provide a product name. Example: \`${prefix}aitrain MyAwesomeApp\``);
+      return null;
     }
 
     // Check if product name already exists
     const existingProduct = await Product.findOne({ productName });
     if (existingProduct) {
-      return message.reply(`A product named "${productName}" already exists. Use \`${prefix}aitrain remove\` to manage it.`);
+      await message.reply(`A product named "${productName}" already exists. Use \`${prefix}aitrain remove\` to manage it.`);
+      return null;
     }
 
     // Check total count
     const totalProducts = await Product.countDocuments();
     if (totalProducts >= 5) {
-      return message.reply('Maximum of 5 products reached. Use \`${prefix}aitrain remove\` to free up space.');
+      await message.reply('Maximum of 5 products reached. Use \`${prefix}aitrain remove\` to free up space.');
+      return null;
     }
 
     const loadingMessage = await message.reply(`Setting up AI training for "${productName}"...`);
@@ -99,7 +102,10 @@ async function handleAITrainCommand(message, productName) {
     usersWaitingForAITrainInput.set(message.author.id, { productName, loadingMessage, prefix });
     return { productName, loadingMessage, prefix };
   } catch (error) {
-    message.reply('Error setting up AI training. Please try again.');
+    console.error('Error in handleAITrainCommand:', error);
+    if (message) {
+      await message.reply('Error setting up AI training. Please try again.');
+    }
     return null;
   }
 }
@@ -115,17 +121,24 @@ async function handleAITrainInput(userId, userInput, message) {
   const data = usersWaitingForAITrainInput.get(userId);
   if (!data) {
     const prefix = await getPrefix(message.guild?.id);
-    return message.reply(`No active training session. Start with \`${prefix}aitrain <product>\``), false;
+    await message.reply(`No active training session. Start with \`${prefix}aitrain <product>\``);
+    return false;
   }
 
   const { productName, loadingMessage, prefix } = data;
 
   if (userInput.trim().length < 100) {
-    await loadingMessage.edit(`Response too short (<100 chars). Please provide more details and try again.`);
+    if (loadingMessage?.edit) {
+      await loadingMessage.edit(`Response too short (<100 chars). Please provide more details and try again.`);
+    } else {
+      await message.reply(`Response too short (<100 chars). Please provide more details and try again.`);
+    }
     return false;
   }
 
-  await loadingMessage.edit(`Processing your info for "${productName}"... This may take a moment.`);
+  if (loadingMessage?.edit) {
+    await loadingMessage.edit(`Processing your info for "${productName}"... This may take a moment.`);
+  }
 
   try {
     const structuredContent = await generateStructuredContent(productName, userInput);
@@ -133,7 +146,11 @@ async function handleAITrainInput(userId, userInput, message) {
     // Double-check limits before saving
     const totalProducts = await Product.countDocuments();
     if (totalProducts >= 5) {
-      await loadingMessage.edit(`Maximum products reached during processing. Try removing one first.`);
+      if (loadingMessage?.edit) {
+        await loadingMessage.edit(`Maximum products reached during processing. Try removing one first.`);
+      } else {
+        await message.reply(`Maximum products reached during processing. Try removing one first.`);
+      }
       return false;
     }
 
@@ -166,12 +183,19 @@ async function handleAITrainInput(userId, userInput, message) {
       if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 1000));
     }
 
-    await loadingMessage.edit(`✅ "${productName}" is now available. Use \`${prefix}aitrain remove\` to manage products.`);
+    if (loadingMessage?.edit) {
+      await loadingMessage.edit(`✅ "${productName}" is now available. Use \`${prefix}aitrain remove\` to manage products.`);
+    }
 
     usersWaitingForAITrainInput.delete(userId);
     return true;
   } catch (error) {
-    await loadingMessage.edit(`Error processing "${productName}". Please try again.`);
+    console.error('Error in handleAITrainInput:', error);
+    if (loadingMessage?.edit) {
+      await loadingMessage.edit(`Error processing "${productName}". Please try again.`);
+    } else {
+      await message.reply(`Error processing "${productName}". Please try again.`);
+    }
     usersWaitingForAITrainInput.delete(userId);
     return false;
   }
@@ -188,7 +212,8 @@ async function handleRemoveCommand(message) {
     const products = await Product.find({}).sort({ createdAt: -1 });
 
     if (products.length === 0) {
-      return message.reply('No products stored yet.');
+      await message.reply('No products stored yet.');
+      return;
     }
 
     let list = 'Available products:\n';
@@ -209,7 +234,8 @@ async function handleRemoveCommand(message) {
 
     usersWaitingForRemoveInput.set(message.author.id, { products, prefix });
   } catch (error) {
-    message.reply('Error listing products.');
+    console.error('Error in handleRemoveCommand:', error);
+    await message.reply('Error listing products.');
   }
 }
 
@@ -224,7 +250,8 @@ async function handleRemoveInput(userId, choice, message) {
   const data = usersWaitingForRemoveInput.get(userId);
   if (!data) {
     const prefix = await getPrefix(message.guild?.id);
-    return message.reply(`No remove session active. Use \`${prefix}aitrain remove\``), false;
+    await message.reply(`No remove session active. Use \`${prefix}aitrain remove\``);
+    return false;
   }
 
   const { products, prefix } = data;
@@ -256,6 +283,7 @@ async function handleRemoveInput(userId, choice, message) {
     usersWaitingForRemoveInput.delete(userId);
     return true;
   } catch (error) {
+    console.error('Error in handleRemoveInput:', error);
     await message.reply('Error removing product.');
     return false;
   }
