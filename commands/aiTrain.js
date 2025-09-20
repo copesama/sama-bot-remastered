@@ -1,7 +1,6 @@
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 const { getPrefix } = require('./prefixCommand');
-const { AiTrainProduct } = require('../utils/mongooseUtil');
 
 // Maps to track users waiting for product info or removal selection
 const usersWaitingForProductInfo = new Map();
@@ -14,6 +13,7 @@ const usersWaitingForRemovalSelection = new Map();
  * @returns {Promise<string>} - The refactored, structured product info
  */
 async function refactorProductInfo(productName, userInfo) {
+  console.log(`[DEBUG] Refactoring product info for: ${productName}`);
   try {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -41,6 +41,7 @@ async function refactorProductInfo(productName, userInfo) {
 
     return response.data.choices[0].message.content.trim();
   } catch (error) {
+    console.error('[DEBUG] Error in refactorProductInfo:', error.message);
     throw new Error('Failed to refactor product info. Please try again later.');
   }
 }
@@ -53,10 +54,13 @@ async function refactorProductInfo(productName, userInfo) {
  * @returns {Promise<Object|null>} - Info for waiting state or null on error
  */
 async function handleAiTrainCommand(message, subCommand, productName) {
+  console.log(`[DEBUG] Handling !aitrain command: subCommand=${subCommand}, productName=${productName}`);
   const prefix = await getPrefix(message.guild?.id);
 
   if (subCommand === 'remove') {
+    console.log('[DEBUG] Handling remove subcommand');
     // Query products owned by the user
+    const { AiTrainProduct } = require('../utils/mongooseUtil');
     const userProducts = await AiTrainProduct.find({ ownerId: message.author.id });
     if (userProducts.length === 0) {
       return message.reply(`You have no products stored. Use \`${prefix}aitrain <product-name>\` to add one.`);
@@ -73,7 +77,9 @@ async function handleAiTrainCommand(message, subCommand, productName) {
     const selectionMessage = await message.reply({ embeds: [embed] });
     return { selectionMessage, userProducts };
   } else if (productName) {
+    console.log('[DEBUG] Handling add product:', productName);
     // Check global limit
+    const { AiTrainProduct } = require('../utils/mongooseUtil');
     const totalProducts = await AiTrainProduct.countDocuments();
     if (totalProducts >= 5) {
       return message.reply('Global limit reached: Only 5 products can be stored at a time. Use `!aitrain remove` to free up space.');
@@ -89,6 +95,7 @@ async function handleAiTrainCommand(message, subCommand, productName) {
     const infoMessage = await message.reply({ embeds: [embed] });
     return { productName, infoMessage, prefix };
   } else {
+    console.log('[DEBUG] No valid args, sending usage');
     return message.reply(`Usage: \`${prefix}aitrain <product-name>\` to add, or \`${prefix}aitrain remove\` to remove.`);
   }
 }
@@ -102,6 +109,7 @@ async function handleAiTrainCommand(message, subCommand, productName) {
  * @returns {Promise<boolean>} - Success status
  */
 async function handleProductInfoInput(userId, trainData, userInfo, message) {
+  console.log(`[DEBUG] Handling product info input for user: ${userId}`);
   const { productName, infoMessage, prefix } = trainData;
 
   if (userInfo.split(/\s+/).length < 25) { // ~100 words minimum
@@ -115,6 +123,7 @@ async function handleProductInfoInput(userId, trainData, userInfo, message) {
     const refactoredInfo = await refactorProductInfo(productName, userInfo);
 
     // Store in DB
+    const { AiTrainProduct } = require('../utils/mongooseUtil');
     const newProduct = new AiTrainProduct({
       productName,
       ownerId: userId,
@@ -136,6 +145,7 @@ async function handleProductInfoInput(userId, trainData, userInfo, message) {
     usersWaitingForProductInfo.delete(userId);
     return true;
   } catch (error) {
+    console.error('[DEBUG] Error storing product:', error.message);
     await infoMessage.edit(`Error storing product: ${error.message}`);
     usersWaitingForProductInfo.delete(userId);
     return false;
@@ -151,6 +161,7 @@ async function handleProductInfoInput(userId, trainData, userInfo, message) {
  * @returns {Promise<boolean>} - Success status
  */
 async function handleRemovalSelection(userId, removalData, selection, message) {
+  console.log(`[DEBUG] Handling removal selection for user: ${userId}, selection: ${selection}`);
   const { selectionMessage, userProducts } = removalData;
   const index = parseInt(selection.trim(), 10) - 1;
 
@@ -160,6 +171,7 @@ async function handleRemovalSelection(userId, removalData, selection, message) {
   }
 
   const productToRemove = userProducts[index];
+  const { AiTrainProduct } = require('../utils/mongooseUtil');
   await AiTrainProduct.deleteOne({ _id: productToRemove._id });
 
   const embed = new EmbedBuilder()
