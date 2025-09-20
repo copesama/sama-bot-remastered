@@ -149,7 +149,8 @@ async function handleHumanGeneratorCommand(message) {
     let topic = message.content.slice(commandPrefix.length).trim();
     
     if (!topic) {
-      return message.reply(`Please provide a topic. Example: \`${prefix}generatehuman climate change\``);
+      await message.reply(`Please provide a topic. Example: \`${prefix}generatehuman climate change\``);
+      return null;
     }
     
     const loadingMessage = await message.reply(`Generating a question about "${topic}"...`);

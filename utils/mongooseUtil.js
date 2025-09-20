@@ -88,30 +88,6 @@ gameSchema.pre('updateOne', function() {
   this.set({ updatedAt: new Date() });
 });
 
-/**
- * AI Train Product schema - stores structured marketing content for products
- */
-const productSchema = new mongoose.Schema({
-  productName: { 
-    type: String, 
-    required: true,
-    unique: true,
-    index: true
-  },
-  structuredContent: { 
-    type: String, 
-    required: true 
-  },
-  ownerId: { 
-    type: String, 
-    required: true 
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
-
 // Simple HTML sanitizer function to use in templates
 function sanitizeHtmlForTemplate(html) {
   if (!html) return '';
@@ -211,7 +187,6 @@ function sanitizeGameHtml(html) {
 const FinanceChannel = mongoose.model('FinanceChannel', financeChannelSchema);
 const FinanceAnalysis = mongoose.model('FinanceAnalysis', financeAnalysisSchema);
 const Game = mongoose.model('Game', gameSchema);
-const Product = mongoose.model('Product', productSchema);
 
 /**
  * Connect to MongoDB
@@ -244,7 +219,6 @@ module.exports = {
   FinanceChannel,
   FinanceAnalysis,
   Game,
-  Product,
   sanitizeHtmlForTemplate,
   sanitizeGameHtml
 };
