@@ -109,6 +109,11 @@ const productSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  // New field to track if monitoring is active
+  isMonitoring: {
+    type: Boolean,
+    default: true
   }
 });
 

@@ -75,14 +75,15 @@ const {
   incrementUserUsage
 } = require('./utils/rateLimiter');
 
-// Import the AI train module
+// Import the AI train module with new monitoring function
 const { 
   handleAITrainCommand, 
   handleAITrainInput,
   handleRemoveCommand,
   handleRemoveInput,
   usersWaitingForAITrainInput,
-  usersWaitingForRemoveInput
+  usersWaitingForRemoveInput,
+  startMonitoring
 } = require('./commands/aiTrain');
 
 // Initialize Discord client
@@ -163,6 +164,13 @@ client.once('ready', async () => {
   try {
     await connectToDatabase();
     console.log('MongoDB connected successfully');
+    
+    // Restart monitoring for existing active products
+    const { Product } = require('./utils/mongooseUtil');
+    const activeProducts = await Product.find({ isMonitoring: true });
+    for (const product of activeProducts) {
+      startMonitoring(product._id.toString(), product.ownerId, product.structuredContent, client);
+    }
     
     // Initialize modules that need database access
     initFinanceNews(client, process.env.NEWSAPI_KEY);
@@ -278,7 +286,7 @@ client.on('messageCreate', async (message) => {
     const userInput = message.content;
     
     try {
-      await handleAITrainInput(message.author.id, userInput, message);
+      await handleAITrainInput(message.author.id, userInput, message, client);
     } catch (error) {
       console.error('Error in AI train input handling:', error);
     }
