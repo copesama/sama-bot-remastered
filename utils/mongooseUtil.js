@@ -184,23 +184,22 @@ function sanitizeGameHtml(html) {
 }
 
 /**
- * AI Train Product schema - stores refactored product info for sales training
+ * Marketing product schema - stores refactored marketing profiles
  */
-const aiTrainProductSchema = new mongoose.Schema({
-  productName: {
-    type: String,
-    required: true,
-    unique: true, // Ensure unique product names globally
-    maxlength: 100
+const marketingProductSchema = new mongoose.Schema({
+  productName: { 
+    type: String, 
+    required: true, 
+    unique: true, 
+    index: true 
   },
-  ownerId: {
-    type: String,
-    required: true,
-    index: true
+  ownerId: { 
+    type: String, 
+    required: true 
   },
-  refactoredInfo: {
-    type: String,
-    required: true
+  structuredInfo: { 
+    type: String, 
+    required: true 
   },
   createdAt: {
     type: Date,
@@ -212,7 +211,7 @@ const aiTrainProductSchema = new mongoose.Schema({
 const FinanceChannel = mongoose.model('FinanceChannel', financeChannelSchema);
 const FinanceAnalysis = mongoose.model('FinanceAnalysis', financeAnalysisSchema);
 const Game = mongoose.model('Game', gameSchema);
-const AiTrainProduct = mongoose.model('AiTrainProduct', aiTrainProductSchema);
+const MarketingProduct = mongoose.model('MarketingProduct', marketingProductSchema);
 
 /**
  * Connect to MongoDB
@@ -245,7 +244,7 @@ module.exports = {
   FinanceChannel,
   FinanceAnalysis,
   Game,
-  AiTrainProduct,
+  MarketingProduct,
   sanitizeHtmlForTemplate,
   sanitizeGameHtml
 };

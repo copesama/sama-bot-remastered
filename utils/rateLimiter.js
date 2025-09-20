@@ -22,7 +22,6 @@ const defaultLimits = {
   'edit': { limit: 16, resetIntervalHours: 24 },
   'enhance': { limit: 16, resetIntervalHours: 24 },
   'human': { limit: 16, resetIntervalHours: 24 },
-  'aitrain': { limit: 5, resetIntervalHours: 24 }, // New: 5 uses per day
 };
 
 // Default user-specific limits
@@ -40,7 +39,6 @@ const defaultUserLimits = {
   'edit': { limit: 15, resetIntervalHours: 24 },
   'enhance': { limit: 15, resetIntervalHours: 24 },
   'human': { limit: 15, resetIntervalHours: 24 },
-  'aitrain': { limit: 5, resetIntervalHours: 24 }, // New: 5 uses per day
 };
 
 /**

@@ -75,14 +75,15 @@ const {
   incrementUserUsage
 } = require('./utils/rateLimiter');
 
-// Import the ai train module
+// Import the marketing generator module
 const { 
-  handleAiTrainCommand, 
-  handleProductInfoInput,
-  handleRemovalSelection,
-  usersWaitingForProductInfo,
-  usersWaitingForRemovalSelection
-} = require('./commands/aiTrain');
+  handleMarketingCommand, 
+  handleMarketingInfoInput,
+  handleMarketingRemoveCommand,
+  handleMarketingRemoveSelection,
+  usersWaitingForMarketingInfo,
+  usersWaitingForMarketingRemove
+} = require('./commands/marketingGenerator');
 
 // Initialize Discord client
 const client = new Client({
@@ -259,33 +260,33 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Handle product info input for !aitrain
-  if (usersWaitingForProductInfo.has(message.author.id)) {
-    const trainData = usersWaitingForProductInfo.get(message.author.id);
+  // Handle marketing info input
+  if (usersWaitingForMarketingInfo.has(message.author.id)) {
+    const marketingData = usersWaitingForMarketingInfo.get(message.author.id);
     const userInfo = message.content;
     
-    usersWaitingForProductInfo.delete(message.author.id);
+    usersWaitingForMarketingInfo.delete(message.author.id);
     
     try {
-      await handleProductInfoInput(message.author.id, trainData, userInfo, message);
+      await handleMarketingInfoInput(message.author.id, marketingData, userInfo, message);
     } catch (error) {
-      console.error('Error in product info handling:', error);
+      console.error('Error in marketing info handling:', error);
     }
     
     return;
   }
 
-  // Handle removal selection for !aitrain
-  if (usersWaitingForRemovalSelection.has(message.author.id)) {
-    const removalData = usersWaitingForRemovalSelection.get(message.author.id);
-    const selection = message.content;
+  // Handle marketing remove selection
+  if (usersWaitingForMarketingRemove.has(message.author.id)) {
+    const removeData = usersWaitingForMarketingRemove.get(message.author.id);
+    const selection = message.content.trim();
     
-    usersWaitingForRemovalSelection.delete(message.author.id);
+    usersWaitingForMarketingRemove.delete(message.author.id);
     
     try {
-      await handleRemovalSelection(message.author.id, removalData, selection, message);
+      await handleMarketingRemoveSelection(message.author.id, removeData, selection, message);
     } catch (error) {
-      console.error('Error in removal selection handling:', error);
+      console.error('Error in marketing remove handling:', error);
     }
     
     return;
