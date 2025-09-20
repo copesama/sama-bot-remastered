@@ -88,6 +88,30 @@ gameSchema.pre('updateOne', function() {
   this.set({ updatedAt: new Date() });
 });
 
+/**
+ * AI Train Product schema - stores structured marketing content for products
+ */
+const productSchema = new mongoose.Schema({
+  productName: { 
+    type: String, 
+    required: true,
+    unique: true,
+    index: true
+  },
+  structuredContent: { 
+    type: String, 
+    required: true 
+  },
+  ownerId: { 
+    type: String, 
+    required: true 
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
 // Simple HTML sanitizer function to use in templates
 function sanitizeHtmlForTemplate(html) {
   if (!html) return '';
@@ -182,29 +206,6 @@ function sanitizeGameHtml(html) {
   
   return finalHtml;
 }
-
-/**
- * Product schema - stores AI-trained product sales data
- */
-const productSchema = new mongoose.Schema({
-  productName: {
-    type: String,
-    required: true,
-    unique: true // Ensure unique product names
-  },
-  structuredData: {
-    type: mongoose.Schema.Types.Mixed, // JSON object for structured info
-    required: true
-  },
-  ownerId: {
-    type: String,
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
 
 // Initialize models
 const FinanceChannel = mongoose.model('FinanceChannel', financeChannelSchema);
