@@ -75,12 +75,14 @@ const {
   incrementUserUsage
 } = require('./utils/rateLimiter');
 
-// Import the aitrain module
+// Import the AI train module
 const { 
-  handleAitrainCommand, 
-  handleAitrainInput,
-  handleAitrainRemoveCommand,
-  handleAitrainRemoveInput
+  handleAitTrainCommand, 
+  handleProductInfoInput, 
+  handleRemoveCommand, 
+  handleRemoveSelection,
+  usersWaitingForProductInfo,
+  usersWaitingForRemove 
 } = require('./commands/aiTrain');
 
 // Initialize Discord client
@@ -149,10 +151,6 @@ const usersWaitingForStoryPrompt = new Map();
 
 // Track users who are in "edit mode"
 const usersInEditMode = new Map();
-
-// Keep track of users waiting for aitrain info and remove choice
-const usersWaitingForAitrainInfo = new Map();
-const usersWaitingForAitrainRemove = new Map();
 
 // Discord bot event handlers
 client.once('ready', async () => {
@@ -262,14 +260,15 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Handle aitrain waiting states
-  if (usersWaitingForAitrainInfo.has(message.author.id)) {
-    await handleAitrainInput(message, usersWaitingForAitrainInfo);
+  // Handle product info input for AI train
+  if (usersWaitingForProductInfo.has(message.author.id)) {
+    await handleProductInfoInput(message);
     return;
   }
 
-  if (usersWaitingForAitrainRemove.has(message.author.id)) {
-    await handleAitrainRemoveInput(message, usersWaitingForAitrainRemove);
+  // Handle remove selection for AI train
+  if (usersWaitingForRemove.has(message.author.id)) {
+    await handleRemoveSelection(message);
     return;
   }
   
@@ -808,8 +807,6 @@ client.on('guildDelete', (guild) => {
 client.on('guildMemberRemove', (member) => {
   clearUserQuiz(member.id);
   clearUserGame(member.id);
-  usersWaitingForAitrainInfo.delete(member.id);
-  usersWaitingForAitrainRemove.delete(member.id);
 });
 
 // Update guildCreate to include prefix information in welcome message

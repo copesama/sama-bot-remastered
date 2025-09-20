@@ -22,7 +22,7 @@ const defaultLimits = {
   'edit': { limit: 16, resetIntervalHours: 24 },
   'enhance': { limit: 16, resetIntervalHours: 24 },
   'human': { limit: 16, resetIntervalHours: 24 },
-  'aitrain': { limit: 10, resetIntervalHours: 24 }, // Add this
+  'aitrain': { limit: 3, resetIntervalHours: 24 },
 };
 
 // Default user-specific limits
@@ -40,7 +40,7 @@ const defaultUserLimits = {
   'edit': { limit: 15, resetIntervalHours: 24 },
   'enhance': { limit: 15, resetIntervalHours: 24 },
   'human': { limit: 15, resetIntervalHours: 24 },
-  'aitrain': { limit: 9, resetIntervalHours: 24 }, // Add this
+  'aitrain': { limit: 2, resetIntervalHours: 24 },
 };
 
 /**

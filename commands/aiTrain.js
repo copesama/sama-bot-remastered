@@ -1,14 +1,20 @@
 const axios = require('axios');
-const { Product } = require('../utils/mongooseUtil');
 const { EmbedBuilder } = require('discord.js');
+const { Product } = require('../utils/mongooseUtil');
+
+// Track users waiting for product info
+const usersWaitingForProductInfo = new Map();
+
+// Track users waiting for remove selection
+const usersWaitingForRemove = new Map();
 
 /**
- * Refactors raw product info into structured marketing JSON using OpenRouter API
- * @param {string} rawInfo - User-provided product information
- * @param {string} productName - Name of the product
- * @returns {Object} - Structured product data
+ * Generates structured product info using OpenRouter API
+ * @param {string} productName Product name
+ * @param {string} rawInfo User-provided info
+ * @returns {Object} Structured product data
  */
-async function refactorProductInfo(rawInfo, productName) {
+async function generateStructuredProductInfo(productName, rawInfo) {
   try {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -17,20 +23,24 @@ async function refactorProductInfo(rawInfo, productName) {
         messages: [
           {
             role: 'system',
-            content: `You are a professional marketing expert. Refactor the provided raw product information into structured, professional marketing content.
+            content: `You are a marketing expert. Refactor the provided product info into a structured, professional sales training document.
 
-Output EXACTLY in this JSON format (no additional text):
+Output EXACTLY valid JSON in this format:
 {
-  "overview": "Brief professional overview of the product",
-  "features": ["List of key features"],
-  "uniqueAspects": ["What makes it unique"],
-  "strengths": ["Key strengths for sales"],
-  "weaknesses": ["Honest weaknesses (keep minimal and constructive)"],
-  "comparisons": "Comparison to 2-3 similar products",
-  "salesPitch": "Compelling sales script for a salesperson"
+  "productName": "Product Name",
+  "overview": "Brief professional overview of what the product offers",
+  "uniqueFeatures": ["Feature 1", "Feature 2"],
+  "strengths": ["Strength 1", "Strength 2"],
+  "weaknesses": ["Weakness 1", "Weakness 2"],
+  "comparisons": "Comparison to similar products",
+  "salesPitch": "Compelling marketing-style sales pitch",
+  "keySellingPoints": ["Point 1", "Point 2"]
 }
 
-Ensure content is engaging, factual, and optimized for sales promotion. Base it strictly on the provided info.`
+Requirements:
+- Make it marketing-oriented, positive, and persuasive
+- Ensure factual based on input
+- No additional text outside JSON`
           },
           {
             role: 'user',
@@ -53,155 +63,149 @@ Ensure content is engaging, factual, and optimized for sales promotion. Base it 
       structuredData = JSON.parse(content);
     } catch (e) {
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      structuredData = jsonMatch ? JSON.parse(jsonMatch[1]) : JSON.parse(content.match(/\[\s*\{[\s\S]*\}\s*\]/)?.[0] || '{}');
+      if (jsonMatch) {
+        structuredData = JSON.parse(jsonMatch[1]);
+      } else {
+        throw new Error('Failed to parse structured data');
+      }
     }
 
-    // Validate structure
-    if (!structuredData.overview || !Array.isArray(structuredData.features)) {
+    if (!structuredData.productName || typeof structuredData.overview !== 'string') {
       throw new Error('Invalid structure from API');
     }
 
     return structuredData;
   } catch (error) {
-    throw new Error('Failed to refactor product info');
+    throw error;
   }
 }
 
 /**
- * Handles the !aitrain command initiation
- * @param {Object} message - Discord message
- * @param {string} productName - Product name from command
- * @param {Map} waitingMap - Global map for waiting users
+ * Handles !aitrain <product-name> command
+ * @param {Object} message Discord message
+ * @param {string} productName Product name
  */
-async function handleAitrainCommand(message, productName, waitingMap) {
-  // Check if product already exists
-  const existing = await Product.findOne({ productName });
-  if (existing) {
-    return message.reply(`❌ Product "${productName}" already exists. Use \`!aitrain remove\` to delete it first.`);
-  }
-
-  // Check total count
-  const total = await Product.countDocuments();
-  if (total >= 5) {
-    return message.reply('❌ Maximum of 5 products reached. Use \`!aitrain remove\` to free up space.');
-  }
-
-  waitingMap.set(message.author.id, { productName, stage: 'info' });
-  return message.reply(`📝 Product training initiated for "${productName}".\n\nPlease reply with details about the product: what it offers, unique features, strengths, weaknesses, comparisons to similar products, and any sales info.`);
+async function handleAitTrainCommand(message, productName) {
+  const embed = new EmbedBuilder()
+    .setColor('#4285F4')
+    .setTitle('AI Train: Product Info Needed')
+    .setDescription(`Tell me about "${productName}":\n• What it offers\n• Unique aspects\n• Strengths & weaknesses\n• Comparisons to similar products\n• Sales promotion points\n\nReply with the details.`);
+  
+  await message.reply({ embeds: [embed] });
+  usersWaitingForProductInfo.set(message.author.id, { productName });
 }
 
 /**
- * Processes user input for product info
- * @param {Object} message - Discord message
- * @param {Map} waitingMap - Global map for waiting users
+ * Handles user input for product info
+ * @param {Object} message Discord message
  */
-async function handleAitrainInput(message, waitingMap) {
+async function handleProductInfoInput(message) {
   const userId = message.author.id;
-  const data = waitingMap.get(userId);
-  if (!data || data.stage !== 'info') return;
+  if (!usersWaitingForProductInfo.has(userId)) return;
 
-  const { productName } = data;
+  const { productName } = usersWaitingForProductInfo.get(userId);
   const rawInfo = message.content.trim();
+  usersWaitingForProductInfo.delete(userId);
 
-  if (rawInfo.length < 50) {
-    return message.reply('❌ Please provide more detailed information (at least 50 characters).');
+  if (rawInfo.length < 10) {
+    await message.reply('Please provide more detailed info (at least 10 characters).');
+    return;
   }
 
+  await message.delete().catch(() => {});
+
+  const loadingMsg = await message.channel.send(`🔄 Structuring info for "${productName}"...`);
+  
   try {
-    await message.delete().catch(() => {}); // Clean up input message
+    const totalProducts = await Product.countDocuments();
+    if (totalProducts >= 5) {
+      await loadingMsg.edit('❌ Max 5 products reached. Use !aitrain remove to free space.');
+      return;
+    }
 
-    const loadingMsg = await message.channel.send(`🔄 Refactoring "${productName}" info...`);
-    const structuredData = await refactorProductInfo(rawInfo, productName);
+    const structuredData = await generateStructuredProductInfo(productName, rawInfo);
 
-    // Store in DB
     const product = new Product({
       productName,
+      structuredData,
       ownerId: userId,
-      productData: structuredData
+      createdAt: new Date()
     });
     await product.save();
 
-    waitingMap.delete(userId);
-
     const embed = new EmbedBuilder()
-      .setTitle(`✅ "${productName}" Training Complete!`)
-      .setDescription('Your product data has been stored and refactored for sales use.')
-      .addFields(
-        { name: 'Overview', value: structuredData.overview, inline: false },
-        { name: 'Key Features', value: structuredData.features.slice(0, 3).join('\n'), inline: false },
-        { name: 'Unique Aspects', value: structuredData.uniqueAspects.join('\n'), inline: false },
-        { name: 'Sales Pitch', value: structuredData.salesPitch.substring(0, 500) + '...', inline: false }
-      )
       .setColor('#4CAF50')
-      .setFooter({ text: 'Use !aitrain remove to manage products.' });
-
-    await loadingMsg.edit({ content: `<@${userId}>`, embeds: [embed] });
+      .setTitle(`✅ "${productName}" Trained!`)
+      .setDescription('Structured sales data stored. Total products: ' + (totalProducts + 1) + '/5')
+      .addFields({ name: 'Overview', value: structuredData.overview.substring(0, 500) + '...' });
+    
+    await loadingMsg.edit({ embeds: [embed] });
   } catch (error) {
-    waitingMap.delete(userId);
-    console.error('Aitrain error:', error);
-    await message.reply('❌ Failed to process product info. Please try again.');
+    console.error('Error processing product:', error);
+    await loadingMsg.edit('❌ Error structuring info. Try again.');
   }
 }
 
 /**
- * Handles the !aitrain remove command
- * @param {Object} message - Discord message
- * @param {Map} waitingMap - Global map for waiting users
+ * Handles !aitrain remove command
+ * @param {Object} message Discord message
  */
-async function handleAitrainRemoveCommand(message, waitingMap) {
-  const products = await Product.find({}).sort({ createdAt: -1 });
+async function handleRemoveCommand(message) {
+  const products = await Product.find({}, 'productName ownerId createdAt');
   if (products.length === 0) {
-    return message.reply('ℹ️ No products stored yet.');
+    await message.reply('No products stored yet.');
+    return;
   }
 
   const embed = new EmbedBuilder()
-    .setTitle('🗑️ Select Product to Remove')
-    .setDescription('Reply with the number (1-' + products.length + ') of the product you own.')
-    .setColor('#FF9800');
-
-  products.forEach((p, i) => {
-    embed.addFields({ name: `${i + 1}. ${p.productName}`, value: `Owner: <@${p.ownerId}>`, inline: false });
-  });
+    .setColor('#FF9800')
+    .setTitle('AI Train: Remove Product')
+    .setDescription('Reply with the number of the product to remove (only yours):')
+    .addFields(products.map((p, i) => ({
+      name: `${i + 1}. ${p.productName}`,
+      value: `<@${p.ownerId}> • ${p.createdAt.toLocaleDateString()}`,
+      inline: false
+    })));
 
   await message.reply({ embeds: [embed] });
-  waitingMap.set(message.author.id, { stage: 'remove', products });
+  usersWaitingForRemove.set(message.author.id, products);
 }
 
 /**
- * Processes removal choice
- * @param {Object} message - Discord message
- * @param {Map} waitingMap - Global map for waiting users
+ * Handles user selection for removal
+ * @param {Object} message Discord message
  */
-async function handleAitrainRemoveInput(message, waitingMap) {
+async function handleRemoveSelection(message) {
   const userId = message.author.id;
-  const data = waitingMap.get(userId);
-  if (!data || data.stage !== 'remove') return;
+  if (!usersWaitingForRemove.has(userId)) return;
 
-  const { products } = data;
-  const choice = parseInt(message.content.trim());
-  if (isNaN(choice) || choice < 1 || choice > products.length) {
-    return message.reply(`❌ Invalid choice. Must be 1-${products.length}.`);
-  }
+  const products = usersWaitingForRemove.get(userId);
+  const selection = parseInt(message.content.trim());
+  usersWaitingForRemove.delete(userId);
 
-  const selected = products[choice - 1];
-  if (selected.ownerId !== userId) {
-    return message.reply('❌ You can only remove your own products.');
-  }
-
-  try {
-    await Product.deleteOne({ _id: selected._id });
-    waitingMap.delete(userId);
+  if (isNaN(selection) || selection < 1 || selection > products.length) {
+    await message.reply('Invalid selection.');
     await message.delete().catch(() => {});
-    return message.channel.send(`✅ "${selected.productName}" removed successfully.`);
-  } catch (error) {
-    console.error('Remove error:', error);
-    await message.reply('❌ Failed to remove product.');
+    return;
   }
+
+  const product = products[selection - 1];
+  if (product.ownerId !== userId) {
+    await message.reply('❌ You can only remove your own products.');
+    await message.delete().catch(() => {});
+    return;
+  }
+
+  await Product.deleteOne({ _id: product._id });
+  await message.reply(`✅ "${product.productName}" removed.`);
+  await message.delete().catch(() => {});
 }
 
 module.exports = {
-  handleAitrainCommand,
-  handleAitrainInput,
-  handleAitrainRemoveCommand,
-  handleAitrainRemoveInput
+  handleAitTrainCommand,
+  handleProductInfoInput,
+  handleRemoveCommand,
+  handleRemoveSelection,
+  usersWaitingForProductInfo,
+  usersWaitingForRemove
 };

@@ -88,39 +88,6 @@ gameSchema.pre('updateOne', function() {
   this.set({ updatedAt: new Date() });
 });
 
-/**
- * Product schema - stores AI-refactored product training data
- */
-const productSchema = new mongoose.Schema({
-  productName: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
-  ownerId: {
-    type: String,
-    required: true
-  },
-  productData: {
-    type: Object, // Structured JSON data
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-});
-
-// Update the timestamp when document is updated
-productSchema.pre('updateOne', function() {
-  this.set({ updatedAt: new Date() });
-});
-
 // Simple HTML sanitizer function to use in templates
 function sanitizeHtmlForTemplate(html) {
   if (!html) return '';
@@ -216,11 +183,34 @@ function sanitizeGameHtml(html) {
   return finalHtml;
 }
 
+/**
+ * Product schema - stores AI-trained product sales data
+ */
+const productSchema = new mongoose.Schema({
+  productName: {
+    type: String,
+    required: true,
+    unique: true // Ensure unique product names
+  },
+  structuredData: {
+    type: mongoose.Schema.Types.Mixed, // JSON object for structured info
+    required: true
+  },
+  ownerId: {
+    type: String,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
 // Initialize models
 const FinanceChannel = mongoose.model('FinanceChannel', financeChannelSchema);
 const FinanceAnalysis = mongoose.model('FinanceAnalysis', financeAnalysisSchema);
 const Game = mongoose.model('Game', gameSchema);
-const Product = mongoose.model('Product', productSchema); // Add this
+const Product = mongoose.model('Product', productSchema);
 
 /**
  * Connect to MongoDB
@@ -253,7 +243,7 @@ module.exports = {
   FinanceChannel,
   FinanceAnalysis,
   Game,
-  Product, // Add this
+  Product,
   sanitizeHtmlForTemplate,
   sanitizeGameHtml
 };
