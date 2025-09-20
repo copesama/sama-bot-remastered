@@ -8,9 +8,9 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "axios": "^1.11.0",
+    "axios": "^1.12.2",
     "discord.js": "^14.22.1",
-    "dotenv": "^17.2.1",
+    "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "shortid": "^2.2.17",
     "cookie-parser": "^1.4.7",
@@ -21,7 +21,7 @@
     "form-data":"^4.0.4",
     "jimp": "^1.6.0",
     "node-schedule":"^2.1.1",
-    "mongoose": "^8.18.0",
+    "mongoose": "^8.18.1",
     "sanitize-html":"^2.17.0"
   },
   "engines": {

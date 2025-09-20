@@ -75,6 +75,16 @@ const {
   incrementUserUsage
 } = require('./utils/rateLimiter');
 
+// Import the AI Train module
+const { 
+  handleAiTrainCommand, 
+  handleAiTrainRemoveCommand, 
+  handleProductInfoInput, 
+  handleRemoveSelection,
+  usersWaitingForProductInfo,
+  usersWaitingForRemoveSelection
+} = require('./commands/aiTrain');
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -247,6 +257,29 @@ client.on('messageCreate', async (message) => {
       console.error('Error in human response handling:', error);
     }
     
+    return;
+  }
+
+  // Handle AI Train input
+  if (usersWaitingForProductInfo.has(message.author.id)) {
+    const trainData = usersWaitingForProductInfo.get(message.author.id);
+    usersWaitingForProductInfo.delete(message.author.id);
+    try {
+      await handleProductInfoInput(message.author.id, trainData, message.content, message);
+    } catch (error) {
+      console.error('Error in AI Train input:', error);
+    }
+    return;
+  }
+
+  if (usersWaitingForRemoveSelection.has(message.author.id)) {
+    const removeData = usersWaitingForRemoveSelection.get(message.author.id);
+    usersWaitingForRemoveSelection.delete(message.author.id);
+    try {
+      await handleRemoveSelection(message.author.id, removeData, message.content, message);
+    } catch (error) {
+      console.error('Error in remove selection:', error);
+    }
     return;
   }
   
