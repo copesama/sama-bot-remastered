@@ -75,14 +75,13 @@ const {
   incrementUserUsage
 } = require('./utils/rateLimiter');
 
-// Import the AI Train module
+// Import the ai train module
 const { 
   handleAiTrainCommand, 
-  handleAiTrainRemoveCommand, 
-  handleProductInfoInput, 
-  handleRemoveSelection,
+  handleProductInfoInput,
+  handleRemovalSelection,
   usersWaitingForProductInfo,
-  usersWaitingForRemoveSelection
+  usersWaitingForRemovalSelection
 } = require('./commands/aiTrain');
 
 // Initialize Discord client
@@ -260,26 +259,35 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Handle AI Train input
+  // Handle product info input for !aitrain
   if (usersWaitingForProductInfo.has(message.author.id)) {
     const trainData = usersWaitingForProductInfo.get(message.author.id);
+    const userInfo = message.content;
+    
     usersWaitingForProductInfo.delete(message.author.id);
+    
     try {
-      await handleProductInfoInput(message.author.id, trainData, message.content, message);
+      await handleProductInfoInput(message.author.id, trainData, userInfo, message);
     } catch (error) {
-      console.error('Error in AI Train input:', error);
+      console.error('Error in product info handling:', error);
     }
+    
     return;
   }
 
-  if (usersWaitingForRemoveSelection.has(message.author.id)) {
-    const removeData = usersWaitingForRemoveSelection.get(message.author.id);
-    usersWaitingForRemoveSelection.delete(message.author.id);
+  // Handle removal selection for !aitrain
+  if (usersWaitingForRemovalSelection.has(message.author.id)) {
+    const removalData = usersWaitingForRemovalSelection.get(message.author.id);
+    const selection = message.content;
+    
+    usersWaitingForRemovalSelection.delete(message.author.id);
+    
     try {
-      await handleRemoveSelection(message.author.id, removeData, message.content, message);
+      await handleRemovalSelection(message.author.id, removalData, selection, message);
     } catch (error) {
-      console.error('Error in remove selection:', error);
+      console.error('Error in removal selection handling:', error);
     }
+    
     return;
   }
   

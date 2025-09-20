@@ -1,17 +1,17 @@
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 const { getPrefix } = require('./prefixCommand');
-const { AiTrainProduct, getTotalProductCount } = require('../utils/mongooseUtil');
+const { AiTrainProduct } = require('../utils/mongooseUtil');
 
-// Maps to track users waiting for input
+// Maps to track users waiting for product info or removal selection
 const usersWaitingForProductInfo = new Map();
-const usersWaitingForRemoveSelection = new Map();
+const usersWaitingForRemovalSelection = new Map();
 
 /**
- * Refactors user-provided product info into a professional, marketing-styled format using OpenRouter API
+ * Refactors user-provided product info into a structured, professional, marketing-styled format using OpenRouter API
  * @param {string} productName - The product name
  * @param {string} userInfo - The raw user input about the product
- * @returns {Promise<string>} - The refactored description
+ * @returns {Promise<string>} - The refactored, structured product info
  */
 async function refactorProductInfo(productName, userInfo) {
   try {
@@ -22,11 +22,11 @@ async function refactorProductInfo(productName, userInfo) {
         messages: [
           {
             role: 'system',
-            content: 'You are a marketing expert. Refactor the provided product information into a structured, professional, and persuasive marketing description. Organize it into sections like: Overview, Unique Features, Strengths, Weaknesses, Comparisons, and Sales Promotion Tips. Make it engaging, concise, and ready for sales use.'
+            content: 'You are a marketing expert. Refactor the provided product information into a structured, professional, and marketing-styled format. Organize it into clear sections like: What It Offers, What Makes It Unique, Strengths, Weaknesses, Comparison to Similar Products, and Sales Promotion Tips. Make it persuasive, concise, and ready for sales use. Maintain the original language and key details.'
           },
           {
             role: 'user',
-            content: `Product Name: ${productName}\n\nUser Info: ${userInfo}\n\nRefactor this into a professional marketing description.`
+            content: `Product Name: ${productName}\n\nUser Info: ${userInfo}\n\nPlease refactor this into a structured marketing format.`
           }
         ],
         temperature: 0.7
@@ -38,6 +38,7 @@ async function refactorProductInfo(productName, userInfo) {
         }
       }
     );
+
     return response.data.choices[0].message.content.trim();
   } catch (error) {
     throw new Error('Failed to refactor product info. Please try again later.');
@@ -45,133 +46,136 @@ async function refactorProductInfo(productName, userInfo) {
 }
 
 /**
- * Handles the initial !aitrain <product-name> command
+ * Handles the initial !aitrain command
  * @param {Object} message - The Discord message object
- * @returns {Promise<Object>} - Info for waiting state
+ * @param {string} subCommand - 'add' or 'remove' based on args
+ * @param {string} productName - The product name (for add)
+ * @returns {Promise<Object|null>} - Info for waiting state or null on error
  */
-async function handleAiTrainCommand(message) {
+async function handleAiTrainCommand(message, subCommand, productName) {
   const prefix = await getPrefix(message.guild?.id);
-  const args = message.content.slice(`${prefix}aitrain`.length).trim().split(/\s+/);
-  const productName = args.join(' ').trim();
 
-  if (!productName) {
-    return message.reply(`Please provide a product name. Usage: \`${prefix}aitrain <product-name>\``);
+  if (subCommand === 'remove') {
+    // Query products owned by the user
+    const userProducts = await AiTrainProduct.find({ ownerId: message.author.id });
+    if (userProducts.length === 0) {
+      return message.reply(`You have no products stored. Use \`${prefix}aitrain <product-name>\` to add one.`);
+    }
+
+    // List products for selection
+    const productList = userProducts.map((p, i) => `${i + 1}. ${p.productName}`).join('\n');
+    const embed = new EmbedBuilder()
+      .setColor('#f39c12')
+      .setTitle('Select Product to Remove')
+      .setDescription(`Your stored products:\n${productList}\n\nReply with the number of the product to remove.`)
+      .setFooter({ text: 'Type a number (e.g., 1) in your next message' });
+
+    const selectionMessage = await message.reply({ embeds: [embed] });
+    return { selectionMessage, userProducts };
+  } else if (productName) {
+    // Check global limit
+    const totalProducts = await AiTrainProduct.countDocuments();
+    if (totalProducts >= 5) {
+      return message.reply('Global limit reached: Only 5 products can be stored at a time. Use `!aitrain remove` to free up space.');
+    }
+
+    // Ask for product info
+    const embed = new EmbedBuilder()
+      .setColor('#3498db')
+      .setTitle(`Add Product: ${productName}`)
+      .setDescription('Please provide detailed info about the product, including:\n• What it offers\n• What makes it unique\n• Strengths and weaknesses\n• Comparison to similar products\n• Anything a salesperson would need to promote it\n\nWrite at least 100 words for best results.')
+      .setFooter({ text: 'Reply with your product info in the next message' });
+
+    const infoMessage = await message.reply({ embeds: [embed] });
+    return { productName, infoMessage, prefix };
+  } else {
+    return message.reply(`Usage: \`${prefix}aitrain <product-name>\` to add, or \`${prefix}aitrain remove\` to remove.`);
   }
-
-  const totalProducts = await getTotalProductCount();
-  if (totalProducts >= 5) {
-    return message.reply('Global limit reached: Only 5 products can be stored at a time. Use `!aitrain remove` to free up space.');
-  }
-
-  const embed = new EmbedBuilder()
-    .setColor('#3498db')
-    .setTitle(`Product Info for "${productName}"`)
-    .setDescription('Please provide detailed information about the product in your next message. Include:\n• What it offers\n• What\'s unique\n• Strengths and weaknesses\n• Comparisons to similar products\n• Anything a salesperson would need to promote it\n\nAim for at least 100 words for best results.');
-
-  const infoMessage = await message.reply({ embeds: [embed] });
-  return { productName, infoMessage, prefix };
 }
 
 /**
- * Handles the !aitrain remove command
- * @param {Object} message - The Discord message object
- * @returns {Promise<Object>} - Info for waiting state
- */
-async function handleAiTrainRemoveCommand(message) {
-  const products = await AiTrainProduct.find({});
-  if (products.length === 0) {
-    return message.reply('No products stored to remove.');
-  }
-
-  const productList = products.map((p, i) => `${i + 1}. ${p.productName} (Owner: <@${p.ownerId}>)`).join('\n');
-  const embed = new EmbedBuilder()
-    .setColor('#e74c3c')
-    .setTitle('Select Product to Remove')
-    .setDescription(`Reply with the number of the product to remove:\n${productList}`);
-
-  const selectMessage = await message.reply({ embeds: [embed] });
-  return { products, selectMessage };
-}
-
-/**
- * Processes user-provided product info, refactors it, and stores in DB
- * @param {string} userId - The user ID
- * @param {Object} trainData - Data from initial command
+ * Handles user's product info input
+ * @param {string} userId - The Discord user ID
+ * @param {Object} trainData - Data from waiting state
  * @param {string} userInfo - The user's product info
  * @param {Object} message - The Discord message object
+ * @returns {Promise<boolean>} - Success status
  */
 async function handleProductInfoInput(userId, trainData, userInfo, message) {
   const { productName, infoMessage, prefix } = trainData;
 
-  if (userInfo.split(/\s+/).length < 20) {
-    await infoMessage.edit('Your response is too short. Please provide at least 100 words of detailed product information.');
-    return;
+  if (userInfo.split(/\s+/).length < 25) { // ~100 words minimum
+    await infoMessage.edit('Your response is too short. Please provide at least 100 words of detailed product info.');
+    return false;
   }
 
-  await infoMessage.edit(`Refactoring and storing information for "${productName}"...`);
+  await infoMessage.edit(`Refactoring and storing info for "${productName}"... This may take a moment.`);
 
   try {
-    const refactoredDescription = await refactorProductInfo(productName, userInfo);
-    const totalProducts = await getTotalProductCount();
+    const refactoredInfo = await refactorProductInfo(productName, userInfo);
 
-    if (totalProducts >= 5) {
-      await infoMessage.edit('Global limit reached while processing. Product not stored.');
-      return;
-    }
-
-    await AiTrainProduct.create({
+    // Store in DB
+    const newProduct = new AiTrainProduct({
       productName,
       ownerId: userId,
-      refactoredDescription
+      refactoredInfo,
+      createdAt: new Date()
     });
+    await newProduct.save();
 
     const embed = new EmbedBuilder()
       .setColor('#27ae60')
-      .setTitle(`Product "${productName}" Stored`)
-      .setDescription('Your product information has been refactored and stored successfully!')
-      .addFields({ name: 'Refactored Description', value: refactoredDescription.substring(0, 1000) + '...' });
+      .setTitle(`Product Stored: ${productName}`)
+      .setDescription('Your product info has been refactored and stored successfully!')
+      .addFields(
+        { name: 'Refactored Info Preview', value: refactoredInfo.substring(0, 500) + '...' },
+        { name: 'Next Steps', value: `Use \`${prefix}aitrain remove\` to manage your products.` }
+      );
 
     await message.channel.send({ embeds: [embed] });
-    await infoMessage.edit(`✅ Product "${productName}" stored. Use \`${prefix}aitrain remove\` to manage products.`);
+    usersWaitingForProductInfo.delete(userId);
+    return true;
   } catch (error) {
-    await infoMessage.edit('Failed to process and store product info. Please try again.');
+    await infoMessage.edit(`Error storing product: ${error.message}`);
+    usersWaitingForProductInfo.delete(userId);
+    return false;
   }
-
-  usersWaitingForProductInfo.delete(userId);
 }
 
 /**
- * Handles removal selection
- * @param {string} userId - The user ID
- * @param {Object} removeData - Data from remove command
- * @param {string} selection - The user's selection
+ * Handles user's removal selection
+ * @param {string} userId - The Discord user ID
+ * @param {Object} removalData - Data from waiting state
+ * @param {string} selection - The user's selection (number)
  * @param {Object} message - The Discord message object
+ * @returns {Promise<boolean>} - Success status
  */
-async function handleRemoveSelection(userId, removeData, selection, message) {
-  const { products, selectMessage } = removeData;
-  const index = parseInt(selection.trim()) - 1;
+async function handleRemovalSelection(userId, removalData, selection, message) {
+  const { selectionMessage, userProducts } = removalData;
+  const index = parseInt(selection.trim(), 10) - 1;
 
-  if (isNaN(index) || index < 0 || index >= products.length) {
-    await selectMessage.edit('Invalid selection. Please reply with a valid number.');
-    return;
+  if (isNaN(index) || index < 0 || index >= userProducts.length) {
+    await selectionMessage.edit('Invalid selection. Please reply with a valid number.');
+    return false;
   }
 
-  const product = products[index];
-  if (product.ownerId !== userId) {
-    await selectMessage.edit('You can only remove products you own.');
-    return;
-  }
+  const productToRemove = userProducts[index];
+  await AiTrainProduct.deleteOne({ _id: productToRemove._id });
 
-  await AiTrainProduct.deleteOne({ _id: product._id });
-  await selectMessage.edit(`✅ Product "${product.productName}" removed successfully.`);
-  usersWaitingForRemoveSelection.delete(userId);
+  const embed = new EmbedBuilder()
+    .setColor('#e74c3c')
+    .setTitle('Product Removed')
+    .setDescription(`Successfully removed "${productToRemove.productName}".`);
+
+  await message.channel.send({ embeds: [embed] });
+  usersWaitingForRemovalSelection.delete(userId);
+  return true;
 }
 
 module.exports = {
   handleAiTrainCommand,
-  handleAiTrainRemoveCommand,
   handleProductInfoInput,
-  handleRemoveSelection,
+  handleRemovalSelection,
   usersWaitingForProductInfo,
-  usersWaitingForRemoveSelection
+  usersWaitingForRemovalSelection
 };

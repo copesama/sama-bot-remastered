@@ -88,30 +88,6 @@ gameSchema.pre('updateOne', function() {
   this.set({ updatedAt: new Date() });
 });
 
-/**
- * AI Train product schema - stores refactored product information
- */
-const aiTrainProductSchema = new mongoose.Schema({
-  productName: {
-    type: String,
-    required: true,
-    unique: true,
-    maxlength: 100
-  },
-  ownerId: {
-    type: String,
-    required: true
-  },
-  refactoredDescription: {
-    type: String,
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
-
 // Simple HTML sanitizer function to use in templates
 function sanitizeHtmlForTemplate(html) {
   if (!html) return '';
@@ -207,6 +183,31 @@ function sanitizeGameHtml(html) {
   return finalHtml;
 }
 
+/**
+ * AI Train Product schema - stores refactored product info for sales training
+ */
+const aiTrainProductSchema = new mongoose.Schema({
+  productName: {
+    type: String,
+    required: true,
+    unique: true, // Ensure unique product names globally
+    maxlength: 100
+  },
+  ownerId: {
+    type: String,
+    required: true,
+    index: true
+  },
+  refactoredInfo: {
+    type: String,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
 // Initialize models
 const FinanceChannel = mongoose.model('FinanceChannel', financeChannelSchema);
 const FinanceAnalysis = mongoose.model('FinanceAnalysis', financeAnalysisSchema);
@@ -239,26 +240,12 @@ const connectToDatabase = async () => {
   }
 };
 
-/**
- * Get the total count of stored products globally
- * @returns {Promise<number>} - Total number of products
- */
-const getTotalProductCount = async () => {
-  try {
-    return await AiTrainProduct.countDocuments();
-  } catch (error) {
-    console.error('Error fetching product count:', error);
-    return 0;
-  }
-};
-
 module.exports = {
   connectToDatabase,
   FinanceChannel,
   FinanceAnalysis,
   Game,
   AiTrainProduct,
-  getTotalProductCount,
   sanitizeHtmlForTemplate,
   sanitizeGameHtml
 };
