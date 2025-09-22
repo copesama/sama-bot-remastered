@@ -114,6 +114,11 @@ const productSchema = new mongoose.Schema({
   isMonitoring: {
     type: Boolean,
     default: true
+  },
+  // New field to track the last monitoring run time for continuity
+  lastMonitoringTime: {
+    type: Date,
+    default: null
   }
 });
 

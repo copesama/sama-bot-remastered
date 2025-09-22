@@ -165,11 +165,11 @@ client.once('ready', async () => {
     await connectToDatabase();
     console.log('MongoDB connected successfully');
     
-    // Restart monitoring for existing active products
+    // Restart monitoring for existing active products with continuity
     const { Product } = require('./utils/mongooseUtil');
     const activeProducts = await Product.find({ isMonitoring: true });
     for (const product of activeProducts) {
-      startMonitoring(product._id.toString(), product.ownerId, product.structuredContent, client);
+      startMonitoring(product._id.toString(), product.ownerId, product.structuredContent, client, product.lastMonitoringTime);
     }
     
     // Initialize modules that need database access

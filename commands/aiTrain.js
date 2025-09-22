@@ -40,9 +40,25 @@ const AI_PROVIDERS = [
  * @param {string} userId - User ID for DM
  * @param {string} structuredContent - Product content as prompt
  * @param {Object} client - Discord client for DM
+ * @param {Date|null} lastMonitoringTime - Last run time for continuity
  */
-async function startMonitoring(productId, userId, structuredContent, client) {
-  const intervalId = setInterval(async () => {
+async function startMonitoring(productId, userId, structuredContent, client, lastMonitoringTime) {
+  const cycleDuration = 5 * 60 * 60 * 1000; // 5 hours in ms
+  const now = new Date();
+
+  // Calculate next run time
+  let nextRunTime;
+  if (lastMonitoringTime) {
+    nextRunTime = new Date(lastMonitoringTime.getTime() + cycleDuration);
+  } else {
+    // For new products, first run after 5 hours
+    nextRunTime = new Date(now.getTime() + cycleDuration);
+  }
+
+  const delay = Math.max(0, nextRunTime.getTime() - now.getTime());
+
+  // Function to run the monitoring cycle
+  const runCycle = async () => {
     const responses = [];
     const prompt = `${structuredContent}\n\nDo you find this product good? Explain why.`;
 
@@ -86,9 +102,21 @@ async function startMonitoring(productId, userId, structuredContent, client) {
     } catch (error) {
       console.error(`Failed to DM user ${userId}:`, error.message);
     }
-  }, 5 * 60 * 60 * 1000); // 5 hours
 
-  monitoringIntervals.set(productId, intervalId);
+    // Update lastMonitoringTime in DB after cycle completes
+    try {
+      await Product.findByIdAndUpdate(productId, { lastMonitoringTime: new Date() });
+    } catch (error) {
+      console.error(`Error updating lastMonitoringTime for product ${productId}:`, error.message);
+    }
+  };
+
+  // Schedule the first run with delay, then set interval
+  setTimeout(() => {
+    runCycle(); // Run immediately after delay
+    const intervalId = setInterval(runCycle, cycleDuration);
+    monitoringIntervals.set(productId, intervalId);
+  }, delay);
 }
 
 /**
@@ -246,8 +274,8 @@ async function handleAITrainInput(userId, userInput, message, client) {
     });
     await newProduct.save();
 
-    // Start monitoring after saving
-    startMonitoring(newProduct._id.toString(), message.author.id, structuredContent, client);
+    // Start monitoring after saving (lastMonitoringTime will be null initially)
+    startMonitoring(newProduct._id.toString(), message.author.id, structuredContent, client, null);
 
     const successEmbed = new EmbedBuilder()
       .setColor('#27ae60')
