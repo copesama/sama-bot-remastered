@@ -418,5 +418,6 @@ module.exports = {
   handleRemoveCommand,
   handleRemoveInput,
   usersWaitingForAITrainInput,
-  usersWaitingForRemoveInput
+  usersWaitingForRemoveInput,
+  startMonitoring
 };
