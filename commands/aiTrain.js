@@ -12,7 +12,7 @@ const monitoringIntervals = new Map();
 
 // List of AI providers
 const AI_PROVIDERS = [
-  'x-ai/grok-4-fast:free',
+  'alibaba/tongyi-deepresearch-30b-a3b:free',
   'tngtech/deepseek-r1t2-chimera:free',
   'z-ai/glm-4.5-air:free',
   'qwen/qwen3-235b-a22b:free',
@@ -130,7 +130,7 @@ async function generateStructuredContent(productName, userInput) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4-fast:free',
+        model: 'microsoft/mai-ds-r1:free',
         messages: [
           {
             role: 'system',

@@ -123,12 +123,12 @@ function createHelpEmbed(prefix = '!') {
       {
         name: '🤖 AI Attribution',
         value: 
-          'Game Generator: TNG: DeepSeek R1T2 Chimera via OpenRouter\n' +
+          'Game Generator: microsoft/mai-ds-r1:free via OpenRouter\n' +
           'Story Generator: Microsoft MAI-DS-R1 (story) & Microsoft MAI-DS-R1 (scene descriptions) via OpenRouter\n' +
           'Quiz Generator: Microsoft MAI-DS-R1 via OpenRouter\n' +
           'Image Generator: FLUX.1 Model via Hugging Face\n' +
           'Music Generator: MiniMax-01 Model via Segmind API\n' +
-          'Financial Analysis: TNG: DeepSeek R1T2 Chimera via OpenRouter\n' +
+          'Financial Analysis: microsoft/mai-ds-r1:free via OpenRouter\n' +
           'Human Text Generator: Microsoft MAI-DS-R1 via OpenRouter\n' +
           'Market Data: Alpha Vantage API & News API'
       }

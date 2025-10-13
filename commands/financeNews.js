@@ -508,7 +508,7 @@ async function generateFinancialAnalysis(newsArticles, forceNew = false) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4-fast:free',
+        model: 'microsoft/mai-ds-r1:free',
         messages: [
           {
             role: 'system',
