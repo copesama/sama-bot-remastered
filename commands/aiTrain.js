@@ -17,21 +17,19 @@ const AI_PROVIDERS = [
   'z-ai/glm-4.5-air:free',
   'qwen/qwen3-235b-a22b:free',
   'moonshotai/kimi-k2:free',
-  'google/gemini-2.0-flash-exp:free',
   'microsoft/mai-ds-r1:free',
   'mistralai/mistral-small-3.2-24b-instruct:free',
   'meta-llama/llama-4-maverick:free',
   'qwen/qwen3-14b:free',
   'mistralai/mistral-nemo:free',
   'openai/gpt-oss-20b:free',
-  'deepseek/deepseek-r1-0528:free',
   'deepseek/deepseek-chat-v3.1:free',
-  'deepseek/deepseek-r1:free',
-  'tencent/hunyuan-a13b-instruct:free',
   'nvidia/nemotron-nano-9b-v2:free',
   'google/gemma-3n-e2b-it:free',
   'google/gemma-3n-e4b-it:free',
-  'meta-llama/llama-3.3-8b-instruct:free'
+  'meta-llama/llama-3.3-8b-instruct:free',
+  'nvidia/nemotron-nano-12b-v2-vl:free',
+  'meituan/longcat-flash-chat:free'
 ];
 
 /**
@@ -43,7 +41,7 @@ const AI_PROVIDERS = [
  * @param {Date|null} lastMonitoringTime - Last run time for continuity
  */
 async function startMonitoring(productId, userId, structuredContent, client, lastMonitoringTime) {
-  const cycleDuration = 5 * 60 * 60 * 1000; // 5 hours in ms
+  const cycleDuration = 6 * 60 * 60 * 1000; // 6 hours in ms
   const now = new Date();
 
   // Calculate next run time
@@ -51,7 +49,7 @@ async function startMonitoring(productId, userId, structuredContent, client, las
   if (lastMonitoringTime) {
     nextRunTime = new Date(lastMonitoringTime.getTime() + cycleDuration);
   } else {
-    // For new products, first run after 5 hours
+    // For new products, first run after 6 hours
     nextRunTime = new Date(now.getTime() + cycleDuration);
   }
 

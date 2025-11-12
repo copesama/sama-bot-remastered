@@ -657,8 +657,8 @@ function scheduleDailyNews(client, apiKey) {
   }
   
   // Schedule new jobs with proper cron format
-  // Run at 8:25 AM EST/EDT (13:25 UTC) for morning news
-  dailyNewsJob = schedule.scheduleJob('0 25 13 * * *', async function() {
+  // Run at 10:25 AM EST/EDT (14:25 UTC) for morning news
+  dailyNewsJob = schedule.scheduleJob('0 25 14 * * *', async function() {
     try {
       // Skip on weekends
       if (isWeekend(new Date())) {
@@ -716,8 +716,8 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  // Run at 5:00 PM EST/EDT (17:00 UTC) for market performance report
-  dailyReportJob = schedule.scheduleJob('0 00 21 * * *', async function() {
+  // Run at 6:00 PM EST/EDT (22:00 UTC) for market performance report
+  dailyReportJob = schedule.scheduleJob('0 00 22 * * *', async function() {
     // Skip on weekends
     if (isWeekend(new Date())) {
       return;
@@ -803,9 +803,9 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       if (action === 'subscribe') {
         const result = await subscribeChannel(message.guild.id, message.channel.id);
         if (result.alreadySubscribed) {
-          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 8:25 AM EST and market reports at 5:00 PM EST.');
+          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 10:25 AM EDT and market reports at 6:00 PM EDT.');
         } else {
-          await message.reply('✅ This channel will now receive daily financial analysis at 8:25 AM EST and market performance reports at 5:00 PM EST.');
+          await message.reply('✅ This channel will now receive daily financial analysis at 10:25 AM EDT and market performance reports at 6:00 PM EDT.');
         }
         return;
       } 
