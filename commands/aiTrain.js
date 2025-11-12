@@ -339,7 +339,7 @@ async function handleRemoveCommand(message) {
     const removeEmbed = new EmbedBuilder()
       .setColor('#e74c3c')
       .setTitle('Remove Product')
-      .setDescription(`${list}\n\nReply with the number (1-${products.length}) or exact product name to remove. You can only remove your own products.`);
+      .setDescription(`${list}\n\nReply with the number (1-${products.length}) or exact product name to remove. Reply with "0" to cancel. You can only remove your own products.`);
 
     await message.reply({
       content: `${message.author}, which product do you want to remove?`,
@@ -369,6 +369,14 @@ async function handleRemoveInput(userId, choice, message) {
   }
 
   const { products, prefix } = data;
+
+  // Check for cancel option
+  if (choice.trim() === '0') {
+    await message.reply('Remove cancelled.');
+    usersWaitingForRemoveInput.delete(userId);
+    return false;
+  }
+
   let productToRemove = null;
 
   // Try parsing as number
