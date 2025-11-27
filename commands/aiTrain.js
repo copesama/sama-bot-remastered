@@ -17,7 +17,7 @@ const AI_PROVIDERS = [
   'z-ai/glm-4.5-air:free',
   'qwen/qwen3-235b-a22b:free',
   'moonshotai/kimi-k2:free',
-  'microsoft/mai-ds-r1:free',
+  'x-ai/grok-4.1-fast:free',
   'mistralai/mistral-small-3.2-24b-instruct:free',
   'meta-llama/llama-4-maverick:free',
   'qwen/qwen3-14b:free',
@@ -128,7 +128,7 @@ async function generateStructuredContent(productName, userInput) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'microsoft/mai-ds-r1:free',
+        model: 'x-ai/grok-4.1-fast:free',
         messages: [
           {
             role: 'system',

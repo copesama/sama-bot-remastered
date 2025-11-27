@@ -16,7 +16,7 @@ async function generateGameContent(scenario) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'microsoft/mai-ds-r1:free',
+        model: 'x-ai/grok-4.1-fast:free',
         messages: [
           {
             role: 'system',
