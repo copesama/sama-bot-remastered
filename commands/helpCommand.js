@@ -123,13 +123,13 @@ function createHelpEmbed(prefix = '!') {
       {
         name: '🤖 AI Attribution',
         value: 
-          'Game Generator: x-ai/grok-4.1-fast:free via OpenRouter\n' +
-          'Story Generator: x-ai/grok-4.1-fast:free (story) & x-ai/grok-4.1-fast:free (scene descriptions) via OpenRouter\n' +
-          'Quiz Generator: x-ai/grok-4.1-fast:free via OpenRouter\n' +
+          'Game Generator: amazon/nova-2-lite-v1:free via OpenRouter\n' +
+          'Story Generator: amazon/nova-2-lite-v1:free (story) & amazon/nova-2-lite-v1:free (scene descriptions) via OpenRouter\n' +
+          'Quiz Generator: amazon/nova-2-lite-v1:free via OpenRouter\n' +
           'Image Generator: FLUX.1 Model via Hugging Face\n' +
           'Music Generator: MiniMax-01 Model via Segmind API\n' +
-          'Financial Analysis: x-ai/grok-4.1-fast:free via OpenRouter\n' +
-          'Human Text Generator: x-ai/grok-4.1-fast:free via OpenRouter\n' +
+          'Financial Analysis: amazon/nova-2-lite-v1:free via OpenRouter\n' +
+          'Human Text Generator: amazon/nova-2-lite-v1:free via OpenRouter\n' +
           'Market Data: Alpha Vantage API & News API'
       }
     )

@@ -98,7 +98,7 @@ async function generateSinglePlayerGame(prompt) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4.1-fast:free',
+        model: 'amazon/nova-2-lite-v1:free',
         messages: [
           {
             role: 'system',
@@ -204,7 +204,7 @@ async function editGame(gameId, editPrompt, originalHtml) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4.1-fast:free',
+        model: 'amazon/nova-2-lite-v1:free',
         messages: [
           {
             role: 'system',
@@ -263,7 +263,7 @@ async function enhanceGame(gameId, originalHtml) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4.1-fast:free',
+        model: 'amazon/nova-2-lite-v1:free',
         messages: [
           {
             role: 'system',

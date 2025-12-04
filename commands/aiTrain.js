@@ -17,17 +17,17 @@ const AI_PROVIDERS = [
   'z-ai/glm-4.5-air:free',
   'qwen/qwen3-235b-a22b:free',
   'moonshotai/kimi-k2:free',
-  'x-ai/grok-4.1-fast:free',
-  'mistralai/mistral-small-3.2-24b-instruct:free',
-  'meta-llama/llama-4-maverick:free',
-  'qwen/qwen3-14b:free',
-  'mistralai/mistral-nemo:free',
+  'amazon/nova-2-lite-v1:free',
+  'arcee-ai/trinity-mini:free',
+  'mistralai/mistral-small-3.1-24b-instruct:free',
+  'tngtech/tng-r1t-chimera:free',
+  'google/gemini-2.0-flash-exp:free',
   'openai/gpt-oss-20b:free',
-  'deepseek/deepseek-chat-v3.1:free',
+  'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
   'nvidia/nemotron-nano-9b-v2:free',
   'google/gemma-3n-e2b-it:free',
   'google/gemma-3n-e4b-it:free',
-  'meta-llama/llama-3.3-8b-instruct:free',
+  'allenai/olmo-3-32b-think:free',
   'nvidia/nemotron-nano-12b-v2-vl:free',
   'meituan/longcat-flash-chat:free'
 ];
@@ -128,7 +128,7 @@ async function generateStructuredContent(productName, userInput) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4.1-fast:free',
+        model: 'amazon/nova-2-lite-v1:free',
         messages: [
           {
             role: 'system',

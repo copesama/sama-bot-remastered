@@ -23,7 +23,7 @@ REQUIREMENTS:
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4.1-fast:free',
+        model: 'amazon/nova-2-lite-v1:free',
         messages: [
           {
             role: 'system',
@@ -62,7 +62,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'x-ai/grok-4.1-fast:free',
+        model: 'amazon/nova-2-lite-v1:free',
         messages: [
           {
             role: 'system',
