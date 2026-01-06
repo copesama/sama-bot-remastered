@@ -123,13 +123,13 @@ function createHelpEmbed(prefix = '!') {
       {
         name: '🤖 AI Attribution',
         value: 
-          'Game Generator: amazon/nova-2-lite-v1:free via OpenRouter\n' +
-          'Story Generator: amazon/nova-2-lite-v1:free (story) & amazon/nova-2-lite-v1:free (scene descriptions) via OpenRouter\n' +
-          'Quiz Generator: amazon/nova-2-lite-v1:free via OpenRouter\n' +
+          'Game Generator: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
+          'Story Generator: xiaomi/mimo-v2-flash:free (story) & xiaomi/mimo-v2-flash:free (scene descriptions) via OpenRouter\n' +
+          'Quiz Generator: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
           'Image Generator: FLUX.1 Model via Hugging Face\n' +
           'Music Generator: MiniMax-01 Model via Segmind API\n' +
-          'Financial Analysis: amazon/nova-2-lite-v1:free via OpenRouter\n' +
-          'Human Text Generator: amazon/nova-2-lite-v1:free via OpenRouter\n' +
+          'Financial Analysis: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
+          'Human Text Generator: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
           'Market Data: Alpha Vantage API & News API'
       }
     )

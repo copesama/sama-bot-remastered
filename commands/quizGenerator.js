@@ -16,7 +16,7 @@ async function generateQuizContent(prompt, questionCount = 10) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'amazon/nova-2-lite-v1:free',
+        model: 'xiaomi/mimo-v2-flash:free',
         messages: [
           {
             role: 'system',

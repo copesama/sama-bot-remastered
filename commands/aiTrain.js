@@ -12,24 +12,25 @@ const monitoringIntervals = new Map();
 
 // List of AI providers
 const AI_PROVIDERS = [
-  'alibaba/tongyi-deepresearch-30b-a3b:free',
+  'nvidia/nemotron-3-nano-30b-a3b:free',
   'tngtech/deepseek-r1t2-chimera:free',
-  'z-ai/glm-4.5-air:free',
-  'qwen/qwen3-235b-a22b:free',
-  'moonshotai/kimi-k2:free',
-  'amazon/nova-2-lite-v1:free',
+  'nex-agi/deepseek-v3.1-nex-n1:free',
+  'openai/gpt-oss-120b:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
   'arcee-ai/trinity-mini:free',
   'mistralai/mistral-small-3.1-24b-instruct:free',
   'tngtech/tng-r1t-chimera:free',
-  'google/gemini-2.0-flash-exp:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
   'openai/gpt-oss-20b:free',
   'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
   'nvidia/nemotron-nano-9b-v2:free',
   'google/gemma-3n-e2b-it:free',
   'google/gemma-3n-e4b-it:free',
-  'allenai/olmo-3-32b-think:free',
+  'qwen/qwen-2.5-vl-7b-instruct:free',
   'nvidia/nemotron-nano-12b-v2-vl:free',
-  'meituan/longcat-flash-chat:free'
+  'nousresearch/hermes-3-llama-3.1-405b:free',
+  'meta-llama/llama-3.1-405b-instruct:free',
+  'mistralai/mistral-7b-instruct:free'
 ];
 
 /**
@@ -128,7 +129,7 @@ async function generateStructuredContent(productName, userInput) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'amazon/nova-2-lite-v1:free',
+        model: 'xiaomi/mimo-v2-flash:free',
         messages: [
           {
             role: 'system',
