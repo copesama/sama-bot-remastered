@@ -505,56 +505,73 @@ async function generateFinancialAnalysis(newsArticles, forceNew = false) {
       `${index + 1}. ${item.title} - ${item.description} (Source: ${item.source})`
     ).join('\n\n');
 
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model: 'tngtech/deepseek-r1t2-chimera:free',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a professional financial analyst and investment advisor with decades of experience in the stock market. 
-            Analyze the provided financial news headlines and summaries and provide:
-            1. A detailed market sentiment and trend analysis. Don't display any stock ticker for this section
-            2. SPECIFIC short-term stock recommendations including:
-               - Stocks to BUY with clear reasoning
-               - Stocks to SELL or AVOID with clear reasoning 
-               - Include a mix of well-known and lesser-known stocks
-               - Display the stock tickers like this $STOCK:
-               - Don't display any tickers in the reasoning
-               - Don't add any other category than BUY and SELL/AVOID
-            
-            IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
+    let attempts = 0;
+    const maxAttempts = 5;
 
-            Keep your analysis professional, balanced, and evidence-based. Make your stock recommendations extremely clear and actionable.
-            Format your response in clear sections with bullet points, with stock tickers in bold.
-            Add a disclaimer that this is for informational purposes only and not financial advice.
-            Keep total response under 350 words, but make it detailed and actionable.`
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        const response = await axios.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            model: 'tngtech/deepseek-r1t2-chimera:free',
+            messages: [
+              {
+                role: 'system',
+                content: `You are a professional financial analyst and investment advisor with decades of experience in the stock market. 
+                Analyze the provided financial news headlines and summaries and provide:
+                1. A detailed market sentiment and trend analysis. Don't display any stock ticker for this section
+                2. SPECIFIC short-term stock recommendations including:
+                   - Stocks to BUY with clear reasoning
+                   - Stocks to SELL or AVOID with clear reasoning 
+                   - Include a mix of well-known and lesser-known stocks
+                   - Display the stock tickers like this $STOCK:
+                   - Don't display any tickers in the reasoning
+                   - Don't add any other category than BUY and SELL/AVOID
+                
+                IMPORTANT: Do NOT include cryptocurrencies in your recommendations. Focus only on traditional stocks traded on major exchanges.
+
+                Keep your analysis professional, balanced, and evidence-based. Make your stock recommendations extremely clear and actionable.
+                Format your response in clear sections with bullet points, with stock tickers in bold.
+                Add a disclaimer that this is for informational purposes only and not financial advice.
+                Keep total response under 350 words, but make it detailed and actionable.`
+              },
+              {
+                role: 'user',
+                content: `Please analyze these financial news headlines and summaries and provide market insights with specific stock recommendations:\n\n${newsText}`
+              }
+            ],
+            temperature: 0.4
           },
           {
-            role: 'user',
-            content: `Please analyze these financial news headlines and summaries and provide market insights with specific stock recommendations:\n\n${newsText}`
+            headers: {
+              'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+              'Content-Type': 'application/json'
+            }
           }
-        ],
-        temperature: 0.4
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+        );
 
-    if (response.data && response.data.choices && response.data.choices[0].message.content) {
-      const analysisContent = response.data.choices[0].message.content;
-      const stockTickers = extractStockTickers(analysisContent);
-      
-      // Save to database
-      await saveFinancialAnalysis(analysisContent, stockTickers);
-      
-      return analysisContent;
-    } else {
-      return "No financial analysis available at this time.";
+        if (response.data && response.data.choices && response.data.choices[0].message.content) {
+          const analysisContent = response.data.choices[0].message.content;
+          const stockTickers = extractStockTickers(analysisContent);
+          
+          // Save to database
+          await saveFinancialAnalysis(analysisContent, stockTickers);
+          
+          return analysisContent;
+        } else {
+          // If valid response structure is missing, treat as failure to trigger retry
+           throw new Error("Invalid API response structure");
+        }
+      } catch (error) {
+        console.error(`Attempt ${attempts}/${maxAttempts} failed: ${error.message}`);
+        // If this was the last attempt, return failure message
+        if (attempts >= maxAttempts) {
+           return "Failed to generate financial analysis after multiple attempts.";
+        }
+        // Wait 2 seconds before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
   } catch (error) {
     return "Failed to generate financial analysis due to an error.";
