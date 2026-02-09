@@ -123,13 +123,13 @@ function createHelpEmbed(prefix = '!') {
       {
         name: '🤖 AI Attribution',
         value: 
-          'Game Generator: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
-          'Story Generator: xiaomi/mimo-v2-flash:free (story) & xiaomi/mimo-v2-flash:free (scene descriptions) via OpenRouter\n' +
-          'Quiz Generator: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
+          'Game Generator: tngtech/deepseek-r1t2-chimera:free via OpenRouter\n' +
+          'Story Generator: tngtech/deepseek-r1t2-chimera:free (story) & tngtech/deepseek-r1t2-chimera:free (scene descriptions) via OpenRouter\n' +
+          'Quiz Generator: tngtech/deepseek-r1t2-chimera:free via OpenRouter\n' +
           'Image Generator: FLUX.1 Model via Hugging Face\n' +
           'Music Generator: MiniMax-01 Model via Segmind API\n' +
-          'Financial Analysis: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
-          'Human Text Generator: xiaomi/mimo-v2-flash:free via OpenRouter\n' +
+          'Financial Analysis: tngtech/deepseek-r1t2-chimera:free via OpenRouter\n' +
+          'Human Text Generator: tngtech/deepseek-r1t2-chimera:free via OpenRouter\n' +
           'Market Data: Alpha Vantage API & News API'
       }
     )
