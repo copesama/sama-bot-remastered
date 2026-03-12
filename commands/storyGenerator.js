@@ -23,7 +23,7 @@ REQUIREMENTS:
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'tngtech/deepseek-r1t2-chimera:free',
+        model: 'nvidia/nemotron-3-super-120b-a12b:free',
         messages: [
           {
             role: 'system',
@@ -62,7 +62,7 @@ async function extractDescriptionFromStoryChunk(chunk, characterNames) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'tngtech/deepseek-r1t2-chimera:free',
+        model: 'nvidia/nemotron-3-super-120b-a12b:free',
         messages: [
           {
             role: 'system',
