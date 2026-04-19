@@ -10,6 +10,7 @@ let dailyReportJob = null;
 let cachedNewsArticles = null;
 let lastFetchDate = null;
 let isDbConnected = false;
+const EASTERN_TIMEZONE = 'America/New_York';
 
 /**
  * Loads subscribed channels from MongoDB
@@ -673,9 +674,15 @@ function scheduleDailyNews(client, apiKey) {
     dailyReportJob.cancel();
   }
   
-  // Schedule new jobs with proper cron format
-  // Run at 10:25 AM EST/EDT (14:25 UTC) for morning news
-  dailyNewsJob = schedule.scheduleJob('0 25 14 * * *', async function() {
+  // Schedule new jobs using an explicit timezone so they stay stable across DST changes.
+  // Run at 9:25 AM ET for morning news.
+  const morningNewsRule = new schedule.RecurrenceRule();
+  morningNewsRule.tz = EASTERN_TIMEZONE;
+  morningNewsRule.hour = 9;
+  morningNewsRule.minute = 25;
+  morningNewsRule.second = 0;
+
+  dailyNewsJob = schedule.scheduleJob(morningNewsRule, async function() {
     try {
       // Skip on weekends
       if (isWeekend(new Date())) {
@@ -733,8 +740,14 @@ function scheduleDailyNews(client, apiKey) {
     }
   });
   
-  // Run at 6:00 PM EST/EDT (22:00 UTC) for market performance report
-  dailyReportJob = schedule.scheduleJob('0 00 22 * * *', async function() {
+  // Run at 5:00 PM ET for market performance report.
+  const marketReportRule = new schedule.RecurrenceRule();
+  marketReportRule.tz = EASTERN_TIMEZONE;
+  marketReportRule.hour = 17;
+  marketReportRule.minute = 0;
+  marketReportRule.second = 0;
+
+  dailyReportJob = schedule.scheduleJob(marketReportRule, async function() {
     // Skip on weekends
     if (isWeekend(new Date())) {
       return;
@@ -820,9 +833,9 @@ async function handleFinanceNewsCommand(message, apiKey, client) {
       if (action === 'subscribe') {
         const result = await subscribeChannel(message.guild.id, message.channel.id);
         if (result.alreadySubscribed) {
-          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 10:25 AM EDT and market reports at 6:00 PM EDT.');
+          await message.reply('✅ This channel is already subscribed to daily financial updates. News will be posted at 9:25 AM ET and market reports at 5:00 PM ET.');
         } else {
-          await message.reply('✅ This channel will now receive daily financial analysis at 10:25 AM EDT and market performance reports at 6:00 PM EDT.');
+          await message.reply('✅ This channel will now receive daily financial analysis at 9:25 AM ET and market performance reports at 5:00 PM ET.');
         }
         return;
       } 
