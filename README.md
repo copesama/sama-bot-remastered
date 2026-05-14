@@ -16,6 +16,10 @@ Discord bot that generates everything from user prompts! From fully functional w
 - [Node.js](https://nodejs.org/) v16.x or higher
 - A [Discord Bot Token](https://discord.com/developers/applications)
 - A [MongoDB](https://www.mongodb.com/) database
+- API Keys for various services:
+  - OpenRouter (for AI interactions)
+  - Segmind & HuggingFace (for media generation)
+  - AlphaVantage & NewsAPI (for finance news)
 
 ## Installation
 
@@ -35,7 +39,7 @@ Discord bot that generates everything from user prompts! From fully functional w
    ```bash
    cp .env.example .env
    ```
-   *Make sure to add your Discord Bot Token and MongoDB connection string in the `.env` file.*
+   *Make sure to add your Discord Bot Token, JWT Secret, SERVER_URL, and required API keys (OpenRouter, Segmind, HuggingFace, AlphaVantage, NewsAPI) in the `.env` file.*
 
 ## Usage
 
