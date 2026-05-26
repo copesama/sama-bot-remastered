@@ -914,7 +914,7 @@ client.on('guildCreate', async (guild) => {
           },
           {
             name: '🔒 Looking for an end-to-end encrypted chat?', 
-            value: 'Do you want to chat completely anonymously? Come to [Luck Off](https://luckoff.chat/). It\'s free and no registration/installation needed.'
+            value: 'Do you want to chat completely anonymously? Come to [Luck Off](https://luckoff.app/). It\'s free and no registration/installation needed.'
           }
         )
         .setFooter({ text: 'Use responsibly and enjoy!' });

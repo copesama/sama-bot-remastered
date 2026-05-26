@@ -198,7 +198,7 @@ function createResultsEmbed(score, totalQuestions, prompt, questionResults) {
     { name: '❌ Incorrect Answers', value: incorrectAnswers.toString(), inline: true },
     { 
       name: '💬 Looking for a completely anonymous chatting experience?', 
-      value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
+      value: 'Try [Luck Off](https://luckoff.app/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
     }
   );
   

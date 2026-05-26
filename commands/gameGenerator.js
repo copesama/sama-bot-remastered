@@ -110,7 +110,7 @@ async function generateSinglePlayerGame(prompt) {
             2. Use HTML5 Canvas for all rendering, graphics, and animations to ensure smooth performance
             3. Initialize Canvas with proper context and handle resizing
             4. Use simple graphics and mechanics that work reliably in browsers
-            5. INCLUDE a clickable "Powered by Luck Off" link that opens https://luckoff.chat/ in a new tab
+            5. INCLUDE a clickable "Powered by Luck Off" link that opens https://luckoff.app/ in a new tab
             6. The "Powered by Luck Off" link must be visible and properly styled in the game interface
             
             USER DATA IMPLEMENTATION:
@@ -138,7 +138,7 @@ async function generateSinglePlayerGame(prompt) {
             1. Clear visual representation of the player using Canvas
             2. Simple UI showing score/progress and basic instructions
             3. Win/lose conditions where appropriate
-            4. A footer or header with a styled "Powered by Luck Off" link to https://luckoff.chat/
+            4. A footer or header with a styled "Powered by Luck Off" link to https://luckoff.app/
             5. Always display the user's username and avatar (from gameUserData cookie) in the game interface
             
             CODE STRUCTURE:
@@ -149,7 +149,7 @@ async function generateSinglePlayerGame(prompt) {
             5. Add thorough comments explaining critical sections
             
             ATTRIBUTION REQUIREMENT:
-            - Include a nicely styled "Powered by Luck Off" link that opens https://luckoff.chat/ in a new tab
+            - Include a nicely styled "Powered by Luck Off" link that opens https://luckoff.app/ in a new tab
             - This attribution should be visible but not intrusive to gameplay
             
             TEST THE GAME LOGIC IN YOUR MIND STEP BY STEP BEFORE GENERATING THE CODE.`
@@ -215,14 +215,14 @@ async function editGame(gameId, editPrompt, originalHtml) {
             2. Make changes according to the edit prompt
             3. Ensure the game remains fully functional and error-free
             4. Use HTML5 Canvas for all rendering and animations (convert if necessary)
-            5. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
-            6. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
+            5. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.app/
+            6. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.app/ in a new tab
             
             Make targeted modifications to fulfill the edit request while maintaining all existing functionality.`
           },
           {
             role: 'user',
-            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game uses HTML5 Canvas for rendering and includes a visible "Powered by Luck Off" link to https://luckoff.chat/ that opens in a new tab.`
+            content: `Here is the current game HTML:\n\n${originalHtml}\n\nPlease modify this game according to this edit request: ${editPrompt}\n\nIMPORTANT: Ensure the game uses HTML5 Canvas for rendering and includes a visible "Powered by Luck Off" link to https://luckoff.app/ that opens in a new tab.`
           }
         ],
         temperature: 0.6
@@ -277,8 +277,8 @@ async function enhanceGame(gameId, originalHtml) {
             5. Optimize performance and responsiveness
             6. Ensure mobile compatibility if not already present
             7. Add helpful game instructions if they're missing or unclear
-            8. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.chat/
-            9. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.chat/ in a new tab
+            8. PRESERVE any existing "Powered by Luck Off" link to https://luckoff.app/
+            9. If there is no "Powered by Luck Off" link, ADD a clickable link that opens https://luckoff.app/ in a new tab
             
             Analyze the game thoroughly and implement enhancements that improve the player experience while maintaining the core gameplay concept.
             Return the complete enhanced HTML file.`

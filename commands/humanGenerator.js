@@ -264,7 +264,7 @@ async function handleWordCountInput(userId, wordCountInput, message) {
       .addFields(
         { 
           name: '💬 Looking for a completely anonymous chatting experience?', 
-          value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
+          value: 'Try [Luck Off](https://luckoff.app/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
         }
       )
       .setFooter({ text: `Generated based on your writing style • ${textChunks.length} part${textChunks.length > 1 ? 's' : ''} • Target: ${desiredWordCount} words` })

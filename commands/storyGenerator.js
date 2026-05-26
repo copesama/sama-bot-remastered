@@ -203,7 +203,7 @@ async function generateAndSendStoryWithImages(message, storyPrompt, characterUse
         { name: 'Image Generation', value: `${storyChunks.length - failedChunks.length}/${storyChunks.length} successful`, inline: true },
         { 
           name: '💬 Looking for a completely anonymous chatting experience?', 
-          value: 'Try [Luck Off](https://luckoff.chat/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
+          value: 'Try [Luck Off](https://luckoff.app/) - an end-to-end encrypted chat platform. Free with no registration or installation required!'
         }
       )
       .setFooter({ text: 'Generated using AI • Story with images created just for you' })
