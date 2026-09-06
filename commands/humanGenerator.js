@@ -18,7 +18,7 @@ async function generateQuestion(topic) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'nvidia/nemotron-3-super-120b-a12b:free',
+        model: 'inclusionai/ling-3.0-flash-fin:free',
         messages: [
           {
             role: 'system',
@@ -70,7 +70,7 @@ async function generateAcademicText(topic, userResponse, question, wordCount = 1
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'nvidia/nemotron-3-super-120b-a12b:free',
+        model: 'inclusionai/ling-3.0-flash-fin:free',
         messages: [
           {
             role: 'system',

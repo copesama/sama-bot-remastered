@@ -123,13 +123,13 @@ function createHelpEmbed(prefix = '!') {
       {
         name: '🤖 AI Attribution',
         value: 
-          'Game Generator: nvidia/nemotron-3-super-120b-a12b:free via OpenRouter\n' +
-          'Story Generator: nvidia/nemotron-3-super-120b-a12b:free (story) & nvidia/nemotron-3-super-120b-a12b:free (scene descriptions) via OpenRouter\n' +
-          'Quiz Generator: nvidia/nemotron-3-super-120b-a12b:free via OpenRouter\n' +
+          'Game Generator: inclusionai/ling-3.0-flash-fin:free via OpenRouter\n' +
+          'Story Generator: inclusionai/ling-3.0-flash-fin:free (story) & inclusionai/ling-3.0-flash-fin:free (scene descriptions) via OpenRouter\n' +
+          'Quiz Generator: inclusionai/ling-3.0-flash-fin:free via OpenRouter\n' +
           'Image Generator: FLUX.1 Model via Hugging Face\n' +
           'Music Generator: MiniMax-01 Model via Segmind API\n' +
-          'Financial Analysis: nvidia/nemotron-3-super-120b-a12b:free via OpenRouter\n' +
-          'Human Text Generator: nvidia/nemotron-3-super-120b-a12b:free via OpenRouter\n' +
+          'Financial Analysis: inclusionai/ling-3.0-flash-fin:free via OpenRouter\n' +
+          'Human Text Generator: inclusionai/ling-3.0-flash-fin:free via OpenRouter\n' +
           'Market Data: Alpha Vantage API & News API'
       }
     )

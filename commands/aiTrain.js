@@ -12,25 +12,24 @@ const monitoringIntervals = new Map();
 
 // List of AI providers
 const AI_PROVIDERS = [
-  'stepfun/step-3.5-flash:free',
-  'arcee-ai/trinity-large-preview:free',
-  'z-ai/glm-4.5-air:free',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-  'nvidia/nemotron-3-nano-30b-a3b:free',
-  'arcee-ai/trinity-mini:free',
-  'nvidia/nemotron-nano-9b-v2:free',
-  'nvidia/nemotron-nano-12b-v2-vl:free',
-  'openai/gpt-oss-120b:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'qwen/qwen3-next-80b-a3b-instruct:free',
-  'liquid/lfm-2.5-1.2b-thinking:free',
-  'liquid/lfm-2.5-1.2b-instruct:free',
-  'openai/gpt-oss-20b:free',
-  'mistralai/mistral-small-3.1-24b-instruct:free',
-  'qwen/qwen3-4b:free',
-  'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
-  'nousresearch/hermes-3-llama-3.1-405b:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
+  'inclusionai/ling-3.0-flash-sante:free',
+  'inclusionai/ling-3.0-flash-fin:free',
+  'dots-studio/dots-3-note-preview:free',
+  'liquid/lfm-2.5-2.6b:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'thinkingmachines/inkling-small:free',
+  'poolside/laguna-s-2.1:free',
+  'thinkingmachines/inkling:free',
+  'poolside/laguna-xs-2.1:free',
+  'cohere/north-mini-code:free',
+  'nvidia/nemotron-3.5-content-safety:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'minimax/minimax-m3:free',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'google/gemma-4-31b-it:free',
+  'minimax/minimax-m2.7:free',
+  'nvidia/nemotron-3-super-120b-a12b:free'
 ];
 
 /**
@@ -129,7 +128,7 @@ async function generateStructuredContent(productName, userInput) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'nvidia/nemotron-3-super-120b-a12b:free',
+        model: 'inclusionai/ling-3.0-flash-fin:free',
         messages: [
           {
             role: 'system',
