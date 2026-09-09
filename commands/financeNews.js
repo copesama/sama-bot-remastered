@@ -235,46 +235,47 @@ async function fetchStockPerformance(tickers) {
   
   try {
     const stockData = [];
-    const batchSize = 5;
-    for (let i = 0; i < tickers.length; i += batchSize) {
-      const batch = tickers.slice(i, i + batchSize);
-      
-      const batchPromises = batch.map(async (ticker) => {
-        try {
-          const response = await axios.get('https://www.alphavantage.co/query', {
-            params: {
-              function: 'GLOBAL_QUOTE',
-              symbol: ticker,
-              apikey: process.env.ALPHAVANTAGE_API_KEY
-            }
-          });
-          
-          if (response.data && response.data['Global Quote']) {
-            const quote = response.data['Global Quote'];
-            return {
-              ticker,
-              price: quote['05. price'] ? parseFloat(quote['05. price']).toFixed(2) : 'N/A',
-              change: quote['10. change percent'] ? quote['10. change percent'] : 'N/A',
-              valid: quote['05. price'] ? true : false
-            };
+    const requestDelay = 12000;
+
+    // Alpha Vantage's free tier allows five requests per minute. Sequential
+    // requests prevent a batch from being throttled, while the fallback entry
+    // keeps a ticker visible when the API still cannot provide a quote.
+    for (let index = 0; index < tickers.length; index++) {
+      const ticker = tickers[index];
+      let result = { ticker, price: 'N/A', change: 'N/A', valid: false };
+
+      try {
+        const response = await axios.get('https://www.alphavantage.co/query', {
+          params: {
+            function: 'GLOBAL_QUOTE',
+            symbol: ticker,
+            apikey: process.env.ALPHAVANTAGE_API_KEY
           }
-          return { ticker, price: 'N/A', change: 'N/A', valid: false };
-        } catch (error) {
-          return { ticker, price: 'N/A', change: 'N/A', valid: false };
+        });
+
+        const quote = response.data && response.data['Global Quote'];
+        if (quote && quote['05. price']) {
+          result = {
+            ticker,
+            price: parseFloat(quote['05. price']).toFixed(2),
+            change: quote['10. change percent'] || 'N/A',
+            valid: true
+          };
         }
-      });
-      
-      const batchResults = await Promise.all(batchPromises);
-      stockData.push(...batchResults);
-      
-      if (i + batchSize < tickers.length) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
+      } catch (error) {
+        // Keep the ticker in the report with an unavailable quote.
+      }
+
+      stockData.push(result);
+
+      if (index < tickers.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, requestDelay));
       }
     }
     
-    return stockData.filter(stock => stock.valid);
+    return stockData;
   } catch (error) {
-    return [];
+    return tickers.map(ticker => ({ ticker, price: 'N/A', change: 'N/A', valid: false }));
   }
 }
 
@@ -307,9 +308,10 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     return changeB - changeA;
   });
   
-  const gainers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) > 0);
-  const losers = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) < 0);
-  const neutral = stockData.filter(stock => parseFloat(stock.change.replace('%', '')) === 0);
+  const availableStockData = stockData.filter(stock => stock.valid);
+  const gainers = availableStockData.filter(stock => parseFloat(stock.change.replace('%', '')) > 0);
+  const losers = availableStockData.filter(stock => parseFloat(stock.change.replace('%', '')) < 0);
+  const neutral = availableStockData.filter(stock => parseFloat(stock.change.replace('%', '')) === 0);
   
   if (gainers.length > 0) {
     embed.addFields({ 
@@ -360,8 +362,10 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     sellTickers = [...new Set(sellTickers)].filter(ticker => !buyTickers.includes(ticker));
     
     // Match with stock data
-    const buyStocks = stockData.filter(stock => buyTickers.includes(stock.ticker));
-    const sellStocks = stockData.filter(stock => sellTickers.includes(stock.ticker));
+    const buyStocks = stockData.filter(stock => stock.valid && buyTickers.includes(stock.ticker));
+    const sellStocks = stockData.filter(stock => stock.valid && sellTickers.includes(stock.ticker));
+    const unavailableBuyTickers = buyTickers.filter(ticker => !buyStocks.some(stock => stock.ticker === ticker));
+    const unavailableSellTickers = sellTickers.filter(ticker => !sellStocks.some(stock => stock.ticker === ticker));
     
     let buyPerformance = 0;
     let sellPerformance = 0;
@@ -388,28 +392,30 @@ function createMarketReportEmbed(stockData, latestAnalysis = null) {
     // Create performance summary
     let performanceSummary = `**AI Recommendation Performance: ${sign}${totalPerformance}%**\n\n`;
     
-    if (buyStocks.length > 0) {
+    if (buyStocks.length > 0 || buyTickers.length > 0) {
       const buySign = buyPerformance >= 0 ? '+' : '';
       performanceSummary += `**BUY Recommendations (${buySign}${buyPerformance.toFixed(2)}%)**\n`;
       performanceSummary += buyStocks.map(stock => {
         const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
         return `$${stock.ticker}: ${stock.change} (${changeValue > 0 ? '✅' : '❌'})`;
-      }).join('\n') + '\n\n';
-    } else if (buyTickers.length > 0) {
-      performanceSummary += `**BUY Recommendations**\n`;
-      performanceSummary += `Could not retrieve market data for the recommended buy stocks.\n\n`;
+      }).join('\n');
+      if (unavailableBuyTickers.length > 0) {
+        performanceSummary += `${buyStocks.length > 0 ? '\n' : ''}${unavailableBuyTickers.map(ticker => `$${ticker}: N/A (quote unavailable)`).join('\n')}`;
+      }
+      performanceSummary += '\n\n';
     }
     
-    if (sellStocks.length > 0) {
+    if (sellStocks.length > 0 || sellTickers.length > 0) {
       const sellSign = sellPerformance >= 0 ? '+' : '';
       performanceSummary += `**SELL/AVOID Recommendations (${sellSign}${sellPerformance.toFixed(2)}%)**\n`;
       performanceSummary += sellStocks.map(stock => {
         const changeValue = parseFloat(stock.change.replace('%', '')) || 0;
         return `$${stock.ticker}: ${stock.change} (${changeValue < 0 ? '✅' : '❌'})`;
-      }).join('\n') + '\n\n';
-    } else if (sellTickers.length > 0) {
-      performanceSummary += `**SELL/AVOID Recommendations**\n`;
-      performanceSummary += `Could not retrieve market data for the recommended sell stocks.\n\n`;
+      }).join('\n');
+      if (unavailableSellTickers.length > 0) {
+        performanceSummary += `${sellStocks.length > 0 ? '\n' : ''}${unavailableSellTickers.map(ticker => `$${ticker}: N/A (quote unavailable)`).join('\n')}`;
+      }
+      performanceSummary += '\n\n';
     }
     
     performanceSummary += `*For BUY recommendations, positive changes are good.*\n`;
